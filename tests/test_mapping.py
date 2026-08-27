@@ -7,11 +7,11 @@
 
 import pytest
 
-from ecowitt.mapping import Mapper
+from helpers import mapper_for
 
 
 def test_a_real_payload_becomes_a_packet(payload):
-    packet, _ = Mapper().to_packet(payload('hp2561ae_pro'))
+    packet, _ = mapper_for().to_packet(payload('hp2561ae_pro'))
 
     assert packet['outTemp'] == 59.7
     assert packet['inTemp'] == 75.4
@@ -30,7 +30,7 @@ def test_the_sensors_that_the_interceptor_drops(payload):
     """
     placed = {'tf_ch1': 'extraTemp9', 'tf_ch2': 'extraTemp10',
               'soil_ec_temp1': 'soilTemp1'}
-    packet, _ = Mapper(extensions=placed).to_packet(payload('hp2561ae_pro'))
+    packet, _ = mapper_for(extensions=placed).to_packet(payload('hp2561ae_pro'))
 
     assert packet['extraTemp9'] == 66.2         # WN34, first channel
     assert packet['extraTemp10'] == 61.5        # WN34, second channel
@@ -43,21 +43,21 @@ def test_the_sensors_that_the_interceptor_drops(payload):
 
 def test_batteries_land_on_the_fields_that_skins_read(payload):
     """A battery on outTempBatteryStatus shows up in a report. On wh65_batt it does not."""
-    packet, _ = Mapper().to_packet(payload('hp2561ae_pro'))
+    packet, _ = mapper_for().to_packet(payload('hp2561ae_pro'))
 
     assert packet['outTempBatteryStatus'] == 0.0
     assert packet['lightning_Batt'] == 5.0
 
 
 def test_identifiers_do_not_reach_the_packet(payload):
-    packet, _ = Mapper().to_packet(payload('hp2561ae_pro'))
+    packet, _ = mapper_for().to_packet(payload('hp2561ae_pro'))
 
     for field in ('PASSKEY', 'model', 'stationtype', 'freq', 'heap', 'runtime'):
         assert field not in packet
 
 
 def test_unknown_fields_are_reported(payload):
-    _, guesses = Mapper().to_packet(payload('hp2561ae_pro'))
+    _, guesses = mapper_for().to_packet(payload('hp2561ae_pro'))
 
     assert {g.raw for g in guesses} == {'last24hrainin', 'yearlyrainin'}
     assert all(g.group == 'group_rain' for g in guesses)
@@ -66,20 +66,20 @@ def test_unknown_fields_are_reported(payload):
 
 def test_a_guess_is_reported_but_not_used(payload):
     """The default keeps a guess out of the database. A wrong unit is worse than a gap."""
-    packet, guesses = Mapper().to_packet(payload('hp2561ae_pro'))
+    packet, guesses = mapper_for().to_packet(payload('hp2561ae_pro'))
 
     assert guesses
     assert 'ecowitt_yearlyrainin' not in packet
 
 
 def test_infer_all_takes_the_guess_too(payload):
-    packet, _ = Mapper(infer_unknown='all').to_packet(payload('hp2561ae_pro'))
+    packet, _ = mapper_for(infer_unknown='all').to_packet(payload('hp2561ae_pro'))
 
     assert packet['ecowitt_yearlyrainin'] == 0.020
 
 
 def test_infer_off_reports_nothing_and_takes_nothing(payload):
-    packet, guesses = Mapper(infer_unknown='off').to_packet(payload('hp2561ae_pro'))
+    packet, guesses = mapper_for(infer_unknown='off').to_packet(payload('hp2561ae_pro'))
 
     assert guesses          # still reported, so the log says what was left out
     assert 'ecowitt_yearlyrainin' not in packet
@@ -87,7 +87,7 @@ def test_infer_off_reports_nothing_and_takes_nothing(payload):
 
 def test_a_derived_field_is_taken_by_default():
     """A series continued from the catalog is not a guess, so it goes in."""
-    mapper = Mapper(fields={'zz_ch1': 'zzTemp1', 'zz_ch2': 'zzTemp2'},
+    mapper = mapper_for(fields={'zz_ch1': 'zzTemp1', 'zz_ch2': 'zzTemp2'},
                     groups={'zzTemp1': 'group_temperature'}, channels={})
     packet, guesses = mapper.to_packet('zz_ch3=66.2')
 
@@ -97,7 +97,7 @@ def test_a_derived_field_is_taken_by_default():
 
 def test_a_channel_past_the_published_limit_is_not_taken():
     """Ecowitt says a WH51 stops at 16. A seventeenth is real, but worth a look."""
-    packet, guesses = Mapper().to_packet('soilmoisture17=30')
+    packet, guesses = mapper_for().to_packet('soilmoisture17=30')
 
     assert 'soilMoist17' not in packet
     assert guesses[0].certain is False
@@ -105,7 +105,7 @@ def test_a_channel_past_the_published_limit_is_not_taken():
 
 
 def test_extensions_win_over_the_catalog(payload):
-    mapper = Mapper(extensions={'yearlyrainin': 'rain_year', 'tempf': 'extraTemp8'})
+    mapper = mapper_for(extensions={'yearlyrainin': 'rain_year', 'tempf': 'extraTemp8'})
     packet, guesses = mapper.to_packet(payload('hp2561ae_pro'))
 
     assert packet['rain_year'] == 0.020
@@ -115,7 +115,7 @@ def test_extensions_win_over_the_catalog(payload):
 
 
 def test_a_field_is_only_reported_once(payload):
-    mapper = Mapper()
+    mapper = mapper_for()
     first = mapper.to_packet(payload('hp2561ae_pro'))[1]
     second = mapper.to_packet(payload('hp2561ae_pro'))[1]
 
@@ -124,7 +124,7 @@ def test_a_field_is_only_reported_once(payload):
 
 
 def test_unit_groups_grow_with_what_arrives():
-    mapper = Mapper(fields={'zz_ch1': 'zzTemp1', 'zz_ch2': 'zzTemp2'},
+    mapper = mapper_for(fields={'zz_ch1': 'zzTemp1', 'zz_ch2': 'zzTemp2'},
                     groups={'zzTemp1': 'group_temperature'}, channels={})
     assert 'zzTemp3' not in mapper.wanted_groups()
 
@@ -135,11 +135,11 @@ def test_unit_groups_grow_with_what_arrives():
 
 def test_bad_mode_is_refused():
     with pytest.raises(ValueError):
-        Mapper(infer_unknown='sometimes')
+        mapper_for(infer_unknown='sometimes')
 
 
 def test_an_empty_payload_yields_only_a_timestamp():
-    packet, guesses = Mapper().to_packet('')
+    packet, guesses = mapper_for().to_packet('')
 
     assert list(packet) == ['dateTime']
     assert guesses == []
@@ -147,19 +147,19 @@ def test_an_empty_payload_yields_only_a_timestamp():
 
 def test_placement_is_flagged_for_multi_channel_sensors():
     """A WN34 is the same part whether it sits in a bed or a pool."""
-    from ecowitt.mapping import placement_note
+    note = mapper_for().placement_note
 
-    assert placement_note('tf_ch1')
-    assert placement_note('temp1f')
-    assert placement_note('leafwetness_ch3')
+    assert note('tf_ch1')
+    assert note('temp1f')
+    assert note('leafwetness_ch3')
     # The single outdoor sensor is not a channel, and not in question.
-    assert placement_note('tempf') is None
-    assert placement_note('humidity') is None
+    assert note('tempf') is None
+    assert note('humidity') is None
 
 
 def test_a_channel_can_be_put_where_it_actually_is():
     """Channel 1 is a spike in the bed, channel 2 a lead in the pool."""
-    mapper = Mapper(extensions={'tf_ch1': 'soilTemp3', 'tf_ch2': 'extraTemp5'})
+    mapper = mapper_for(extensions={'tf_ch1': 'soilTemp3', 'tf_ch2': 'extraTemp5'})
     packet, _ = mapper.to_packet('tf_ch1=66.2&tf_ch2=78.4')
 
     assert packet['soilTemp3'] == 66.2
@@ -169,7 +169,7 @@ def test_a_channel_can_be_put_where_it_actually_is():
 
 def test_a_derived_channel_can_be_redirected_too():
     """What holds for the catalog holds for a channel the driver worked out."""
-    mapper = Mapper(extensions={'zz_ch3': 'extraTemp6'},
+    mapper = mapper_for(extensions={'zz_ch3': 'extraTemp6'},
                     fields={'zz_ch1': 'zzTemp1', 'zz_ch2': 'zzTemp2'},
                     groups={}, channels={})
     packet, guesses = mapper.to_packet('zz_ch3=78.4')
@@ -183,7 +183,7 @@ def test_two_sensors_on_one_channel_are_flagged(caplog):
     import logging
 
     with caplog.at_level(logging.WARNING):
-        packet, _ = Mapper().to_packet('soilmoisture3=30&soil_ec_hum3=45')
+        packet, _ = mapper_for().to_packet('soilmoisture3=30&soil_ec_hum3=45')
 
     assert 'One will overwrite the other' in caplog.text
     assert packet['soilMoist3'] in (30.0, 45.0)
@@ -192,7 +192,7 @@ def test_two_sensors_on_one_channel_are_flagged(caplog):
 def test_the_warning_is_said_once(caplog):
     import logging
 
-    mapper = Mapper()
+    mapper = mapper_for()
     with caplog.at_level(logging.WARNING):
         mapper.to_packet('soilmoisture3=30&soil_ec_hum3=45')
         caplog.clear()
@@ -205,6 +205,7 @@ def test_the_warning_is_said_once(caplog):
 # catalog has no such gap today, which is the point: this is what happens the day
 # Ecowitt adds a channel to one.
 AMBIGUOUS = {'temp1f': 'myTemp1', 'temp2f': 'myTemp2'}
+AMBIGUOUS_PLACEMENT = {'temp': "Multi-channel. Placement is the user's."}
 
 
 def test_a_new_channel_of_an_ambiguous_family_waits_for_a_decision(caplog):
@@ -212,8 +213,8 @@ def test_a_new_channel_of_an_ambiguous_family_waits_for_a_decision(caplog):
     cannot be told apart later, so this one waits to be confirmed."""
     import logging
 
-    mapper = Mapper(fields=AMBIGUOUS, groups={'myTemp1': 'group_temperature'},
-                    channels={})
+    mapper = mapper_for(fields=AMBIGUOUS, groups={'myTemp1': 'group_temperature'},
+                        channels={}, placement_unknown=AMBIGUOUS_PLACEMENT)
     with caplog.at_level(logging.INFO):
         packet, guesses = mapper.to_packet('temp3f=66.2')
 
@@ -224,7 +225,7 @@ def test_a_new_channel_of_an_ambiguous_family_waits_for_a_decision(caplog):
 
 def test_an_unambiguous_new_channel_is_taken():
     """Nobody puts a laser rangefinder anywhere but where it measures."""
-    mapper = Mapper(fields={'zz_ch1': 'zzDepth1', 'zz_ch2': 'zzDepth2'},
+    mapper = mapper_for(fields={'zz_ch1': 'zzDepth1', 'zz_ch2': 'zzDepth2'},
                     groups={'zzDepth1': 'group_distance'}, channels={})
     packet, guesses = mapper.to_packet('zz_ch3=1200')
 
@@ -235,7 +236,8 @@ def test_an_unambiguous_new_channel_is_taken():
 def test_the_suggested_line_is_ready_to_paste(caplog):
     import logging
 
-    mapper = Mapper(fields=AMBIGUOUS, groups={}, channels={})
+    mapper = mapper_for(fields=AMBIGUOUS, groups={}, channels={},
+                        placement_unknown=AMBIGUOUS_PLACEMENT)
     with caplog.at_level(logging.INFO):
         mapper.to_packet('temp3f=66.2')
 
@@ -247,7 +249,7 @@ def test_a_contested_field_waits_for_the_user(caplog):
     import logging
 
     with caplog.at_level(logging.WARNING):
-        packet, _ = Mapper().to_packet('tf_ch1=66.2&tempf=59.7')
+        packet, _ = mapper_for().to_packet('tf_ch1=66.2&tempf=59.7')
 
     assert packet['outTemp'] == 59.7        # nothing to decide about that one
     assert 'extraTemp9' not in packet
@@ -256,7 +258,7 @@ def test_a_contested_field_waits_for_the_user(caplog):
 
 
 def test_naming_it_settles_it():
-    packet, _ = Mapper(extensions={'tf_ch1': 'soilTemp5'}).to_packet('tf_ch1=66.2')
+    packet, _ = mapper_for(extensions={'tf_ch1': 'soilTemp5'}).to_packet('tf_ch1=66.2')
 
     assert packet['soilTemp5'] == 66.2
 
@@ -264,7 +266,7 @@ def test_naming_it_settles_it():
 def test_a_contested_field_is_said_once(caplog):
     import logging
 
-    mapper = Mapper()
+    mapper = mapper_for()
     with caplog.at_level(logging.WARNING):
         mapper.to_packet('tf_ch1=66.2')
         caplog.clear()
@@ -280,7 +282,7 @@ def test_the_hardware_settles_most_of_it(payload):
     arrive, 6 wait. Blocking is only bearable while it stays rare, which is why it
     is limited to what the hardware genuinely does not say.
     """
-    mapper = Mapper()
+    mapper = mapper_for()
     packet, _ = mapper.to_packet(payload('hp2561ae_pro'))
 
     assert len(packet) - 1 == 29        # less the timestamp

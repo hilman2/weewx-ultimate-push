@@ -5,25 +5,22 @@
 #
 """From named readings to a WeeWX packet.
 
-This is where the catalog, the user's own mapping and the inference meet. It stays
-free of WeeWX imports so that it can be tested with nothing but a captured payload:
-the unit groups it wants registered come back as data, and the driver does the
-registering.
+This is where a catalog, the user's own mapping and the inference meet. It stays free
+of WeeWX imports so that it can be tested with nothing but a captured payload: the
+unit groups it wants registered come back as data, and the driver does the registering.
+
+A mapper belongs to one dialect, not to one protocol. Weather Underground has two
+dialects on one endpoint, and inference learned from `tempf` and `soiltemp2f` has no
+business being applied to `outtemp` and `absbaro`. The driver keeps one mapper per
+dialect it has actually seen.
 """
 
 import logging
 import re
 
-from . import catalog, infer, protocol
+from . import infer, transport
 
 log = logging.getLogger(__name__)
-
-# What to do about a field the catalog does not cover.
-# Sensors that share one pool of channel numbers, so channel 3 is one channel with
-# either probe in it. If both ever arrive for the same number, that is worth saying.
-SHARED_CHANNELS = [
-    ('soilmoisture', 'soil_ec_hum'),
-]
 
 OFF = 'off'          # drop it, the way every other driver does
 SERIES = 'series'    # take it when it continues a series and its placement is not
@@ -33,9 +30,10 @@ MODES = (OFF, SERIES, ALL)
 
 
 class Mapper:
-    """Turns raw readings into a WeeWX packet.
+    """Turns the raw readings of one dialect into a WeeWX packet.
 
     Args:
+        dialect (Dialect): The catalog to read with. See protocols/__init__.py.
         extensions (dict): Raw field -> WeeWX field, overriding the catalog. This is
             the user's own mapping, from the configuration file.
         infer_unknown (str): 'off', 'series' or 'all'. See above. Default 'series',
@@ -43,52 +41,79 @@ class Mapper:
         max_behind (int): How many seconds behind ours a console's clock may be
             before its timestamp is ignored and the arrival time used instead.
         max_ahead (int): The same, for a clock that is fast.
-        fields, groups, channels, contested (dict): The catalog to work from.
-            Defaults to the one that ships with the driver. Passing them is for
-            tests, so that they do not have to change every time the catalog does.
     """
 
-    def __init__(self, extensions=None, infer_unknown=SERIES,
-                 fields=None, groups=None, channels=None, contested=None,
-                 max_behind=protocol.MAX_BEHIND, max_ahead=protocol.MAX_AHEAD):
+    def __init__(self, dialect, extensions=None, infer_unknown=SERIES,
+                 max_behind=transport.MAX_BEHIND, max_ahead=transport.MAX_AHEAD):
         if infer_unknown not in MODES:
             raise ValueError("infer_unknown must be one of %s, not '%s'"
                              % (', '.join(MODES), infer_unknown))
+        self.dialect = dialect
         self.mode = infer_unknown
         # How far the console's own clock may be out before its timestamp is dropped
         # in favour of the arrival time.
         self.max_behind = max_behind
         self.max_ahead = max_ahead
-        self.fields = dict(catalog.FIELDS if fields is None else fields)
+
+        self.fields = dict(dialect.fields)
         self.extensions = dict(extensions or {})
         self.fields.update(self.extensions)
-        # Fields another driver puts somewhere else. Until the user says which
-        # placement they want, these are not written: either answer can be the one
-        # that continues an existing series, and the wrong one cannot be undone.
-        self.undecided = dict(catalog.CONTESTED if contested is None else contested)
+        # Fields another driver, or another firmware, puts somewhere else. Until the
+        # user says which placement they want, these are not written: either answer
+        # can be the one that continues an existing series, and the wrong one cannot
+        # be undone.
+        self.undecided = dict(dialect.contested)
         for raw in self.extensions:
             # Naming a field yourself is the decision. That settles it.
             self.undecided.pop(raw, None)
-        self.groups = dict(catalog.GROUPS if groups is None else groups)
-        self.inferrer = infer.Inferrer(
-            self.fields, self.groups,
-            catalog.CHANNELS if channels is None else channels)
+        self.groups = dict(dialect.groups)
+        self.scale = dict(dialect.scale)
+        self.inferrer = infer.Inferrer(self.fields, self.groups, dialect.channels,
+                                       prefix=dialect.prefix)
         # Every unmapped field is looked at once. After that it is either part of the
         # mapping or a known refusal, and either way it does not need saying again.
         self.seen = {}
         self.ignored = set()
         self.warned = set()
 
-    def to_packet(self, text, now=None):
-        """Return (packet, guesses) for one payload.
+    def settle(self, settled):
+        """Move a field, because the upload itself said where it belongs.
+
+        A firmware that names itself can say what one of its fields means, and then
+        the catalog's default is simply wrong for this station. Two firmwares send
+        station pressure in a field every other firmware uses for sea-level pressure,
+        and both put their name in the payload.
+
+        The user still outranks the firmware: a field named in field_map_extensions
+        is not moved, because that was somebody's decision rather than a default.
+        """
+        for raw, field in (settled or {}).items():
+            if raw in self.extensions or self.fields.get(raw) == field:
+                continue
+            was = self.fields.get(raw)
+            self.undecided.pop(raw, None)
+            self.fields[raw] = field
+            self.seen.pop(raw, None)
+            log.info("This firmware means '%s' by '%s', not '%s'. Moving it.",
+                     field, raw, was or 'nothing')
+
+    def to_packet(self, raw, now=None):
+        """Return (packet, guesses) for one upload.
+
+        `raw` is the name/value pairs, which is what the driver has by the time it
+        gets here: it parsed them once already, to work out which protocol sent them.
+        A captured payload as text is accepted too, and parsed, because a diagnostic
+        run and a test both start from a file rather than from a request.
 
         The packet is ready for WeeWX apart from its unit system, which the caller
-        sets, because that is a decision about the whole driver rather than about one
-        reading. Guesses are the fields that were not in the mapping, whether or not
-        they made it into the packet.
+        sets from the dialect, because that is one decision about the whole packet
+        rather than one per reading. Guesses are the fields that were not in the
+        mapping, whether or not they made it into the packet.
         """
-        raw = protocol.parse(text)
-        readings, _ = protocol.numbers(raw)
+        if isinstance(raw, str):
+            raw = transport.parse(raw)
+        readings, _ = transport.numbers(raw, self.dialect.metadata,
+                                        self.dialect.absent)
 
         self._check_shared_channels(readings)
 
@@ -103,10 +128,13 @@ class Mapper:
                 field = self._unmapped(name, fresh)
                 if field is None:
                     continue
+            factor = self.scale.get(name)
+            if factor is not None and value is not None:
+                value = value * factor
             packet[field] = value
 
-        stamp = protocol.device_time(raw, now=now, max_behind=self.max_behind,
-                                    max_ahead=self.max_ahead)
+        stamp = transport.device_time(raw, now=now, max_behind=self.max_behind,
+                                      max_ahead=self.max_ahead)
         packet['dateTime'] = int(stamp if stamp is not None
                                  else (now if now is not None else _now()))
         return packet, fresh
@@ -123,7 +151,7 @@ class Mapper:
             "'%s = %s' for this driver's placement, or '%s = %s' if your history came "
             "from %s.",
             name, name, self.fields.get(name, '?'),
-            name, self.undecided[name], catalog.CONTESTED_WITH)
+            name, self.undecided[name], self.dialect.contested_with)
 
     def _check_shared_channels(self, readings):
         """Warn if two sensors turn out to be writing the same field after all.
@@ -133,7 +161,7 @@ class Mapper:
         channel number should never arrive from both. If it does, the assumption is
         wrong and one of the readings is about to overwrite the other.
         """
-        for first, second in SHARED_CHANNELS:
+        for first, second in self.dialect.shared_channels:
             for name in readings:
                 if not name.startswith(first):
                     continue
@@ -159,7 +187,7 @@ class Mapper:
             return None
 
         fresh.append(guess)
-        note = placement_note(name)
+        note = self.placement_note(name)
         take = self.mode == ALL or (self.mode == SERIES and guess.certain and not note)
         if not take:
             if note and guess.certain:
@@ -178,28 +206,27 @@ class Mapper:
             return None
 
         log.info("New field '%s' -> '%s' (%s), %s.%s", name, guess.field,
-                 guess.group or 'no group', guess.why, placement_note(name) or '')
+                 guess.group or 'no group', guess.why, self.placement_note(name) or '')
         self.seen[name] = guess
         if guess.group:
             self.groups[guess.field] = guess.group
         return guess.field
 
+    def placement_note(self, raw):
+        """Say so when the field name claims more than the hardware does.
+
+        A WN34 reports on tf_chN whether it is a probe in a bed or a lead in a pool,
+        and the catalog has to call it something. Whoever installed it is the only one
+        who knows, so the moment a new channel turns up is the moment to say that.
+        """
+        for prefix, note in self.dialect.placement_unknown.items():
+            if re.match(re.escape(prefix) + r'\d', raw):
+                return " Placement is a convention, not a reading: " + note
+        return None
+
     def wanted_groups(self):
         """Unit groups the packet needs, for the caller to register with WeeWX."""
         return dict(self.groups)
-
-
-def placement_note(raw):
-    """Say so when the field name claims more than the hardware does.
-
-    A WN34 reports on tf_chN whether it is a probe in a bed or a lead in a pool, and
-    the catalog has to call it something. Whoever installed it is the only one who
-    knows, so the moment a new channel turns up is the moment to say that.
-    """
-    for prefix, note in catalog.PLACEMENT_UNKNOWN.items():
-        if re.match(re.escape(prefix) + r'\d', raw):
-            return " Placement is a convention, not a reading: " + note
-    return None
 
 
 def _now():

@@ -18,19 +18,21 @@ import logging
 import os
 import time
 
-from . import VERSION, infer, protocol
+from . import VERSION, infer, transport
 
 log = logging.getLogger(__name__)
 
-DEFAULT_PATH = '/var/tmp/weewx-ecowitt-report.txt'
+DEFAULT_PATH = '/var/tmp/weewx-ultimate-push-report.txt'
 
-TEMPLATE = """weewx-ecowitt %(version)s, %(when)s
+TEMPLATE = """weewx-ultimate-push %(version)s, %(when)s
+
+Protocol: %(protocol)s
 
 This station sent %(count)d field(s) the driver could not place on its own. Paste
 this whole file into an issue at
-https://github.com/hilman2/weewx-ecowitt/issues/new
+https://github.com/hilman2/weewx-ultimate-push/issues/new
 
-The PASSKEY has been replaced already. Everything else is weather data.
+Everything that names the station has been replaced already. The rest is weather.
 
 ---- what the station sent ----
 
@@ -42,7 +44,7 @@ The PASSKEY has been replaced already. Everything else is weather data.
 """
 
 
-def write(payload, guesses, waiting, path=DEFAULT_PATH):
+def write(payload, guesses, waiting, path=DEFAULT_PATH, protocol='unknown'):
     """Write a report, and return the path. Returns None if it could not be written."""
     lines = infer.report(guesses)
     for raw, elsewhere in sorted(waiting.items()):
@@ -52,9 +54,10 @@ def write(payload, guesses, waiting, path=DEFAULT_PATH):
 
     text = TEMPLATE % {
         'version': VERSION,
+        'protocol': protocol,
         'when': time.strftime('%Y-%m-%d %H:%M:%S'),
         'count': len(lines),
-        'payload': protocol.redact(payload),
+        'payload': transport.redact(payload),
         'findings': '\n'.join(lines),
     }
     try:

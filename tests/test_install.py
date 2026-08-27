@@ -47,12 +47,12 @@ def test_nothing_is_installed_that_does_not_exist():
 
 
 def test_the_version_matches_the_package():
-    import ecowitt
+    import ultimatepush
 
     with open(os.path.join(ROOT, 'install.py'), encoding='utf-8') as fd:
         declared = re.search(r"VERSION = '([^']+)'", fd.read()).group(1)
 
-    assert declared == ecowitt.VERSION
+    assert declared == ultimatepush.VERSION
 
 
 def installer_config():
@@ -60,10 +60,10 @@ def installer_config():
     import importlib.util
     import sys
 
-    spec = importlib.util.spec_from_file_location('ecowitt_install',
+    spec = importlib.util.spec_from_file_location('ultimatepush_install',
                                                   os.path.join(ROOT, 'install.py'))
     module = importlib.util.module_from_spec(spec)
-    sys.modules['ecowitt_install'] = module
+    sys.modules['ultimatepush_install'] = module
     spec.loader.exec_module(module)
     return module.loader()['config']
 
@@ -71,9 +71,9 @@ def installer_config():
 def test_the_installer_sets_up_rain():
     """Without this the station records no rain at all.
 
-    Ecowitt sends running counters, never the amount since the last upload. WeeWX
-    wants 'rain', the amount in the packet, and StdDelta is what turns one into the
-    other. Every counter would arrive and 'rain' would stay empty.
+    Every protocol here sends running counters, never the amount since the last
+    upload. WeeWX wants 'rain', the amount in the packet, and StdDelta is what turns
+    one into the other. Every counter would arrive and 'rain' would stay empty.
     """
     import pytest
 
@@ -83,13 +83,18 @@ def test_the_installer_sets_up_rain():
     assert delta['rain']['input'] == 'dayRain'
 
 
-def test_the_counter_it_uses_is_one_the_driver_produces():
-    """A counter the field map does not fill would leave rain empty just the same."""
+def test_the_counter_it_uses_is_one_every_protocol_produces():
+    """A counter no field map fills would leave rain empty just the same.
+
+    And one that only some of them fill would leave it empty for the others, which
+    is worse: it would work on the hardware it was tested with.
+    """
     import pytest
 
     pytest.importorskip('weecfg', reason="WeeWX is not installed")
-    sys.path.insert(0, os.path.join(ROOT, 'bin'))
-    from user.ecowitt import catalog
+    from ultimatepush import protocols
 
     wanted = installer_config()['StdWXCalculate']['Delta']['rain']['input']
-    assert wanted in catalog.FIELDS.values()
+    for protocol in protocols.registry():
+        assert wanted in protocol.dialect({}).fields.values(), (
+            "%s sends no field that maps to '%s'" % (protocol.name, wanted))

@@ -3,18 +3,26 @@
 #
 #    See the file LICENSE for your full rights.
 #
-"""Turn what the hardware sent into named readings.
+"""What every protocol shares: getting name/value pairs out of an upload.
 
-Ecowitt gateways and consoles speak two protocols, and both end up here:
+Six protocols arrive here and four of them are the same shape underneath:
 
-    Ecowitt   POST, an urlencoded form body
-    Wunderground   GET, the same shape in the query string
+    Ecowitt          POST, an urlencoded form body
+    Ambient          POST or GET, likewise
+    Wunderground     GET, the same pairs in the query string
+    Acurite          GET, likewise, one frame per sensor
 
-So a single function handles both. Everything in this module is pure: text in, a
-dictionary out, no sockets, no clock, no configuration. That is what makes the field
-work testable from a captured payload.
+So a single function handles all four, and the two that are shaped otherwise,
+WeatherFlow's JSON and LaCrosse's frames, unpack themselves and hand their pairs back
+in the same form.
+
+Everything in this module is pure: text in, a dictionary out. No sockets, no
+configuration, and the clock only where a timestamp has to be judged against it. That
+is what makes the field work testable from a captured payload, on a machine with no
+WeeWX on it.
 """
 
+import hmac
 import logging
 import re
 import time
@@ -22,13 +30,20 @@ import urllib.parse
 
 log = logging.getLogger(__name__)
 
-# Fields that identify the device rather than measure anything.
+# Fields that name the device rather than measure anything, in any protocol. A
+# protocol adds its own on top; this is the floor, so that a field common to several
+# of them does not have to be repeated in each.
 METADATA = frozenset([
     'PASSKEY', 'stationtype', 'model', 'freq', 'dateutc', 'ID', 'PASSWORD',
     'action', 'realtime', 'rtfreq', 'softwaretype', 'runtime', 'heap', 'interval',
+    'mac', 'macAddress', 'serial_number', 'hub_sn', 'firmware_revision',
 ])
 
-# How the device stamps its own time.
+# Values that mean "the sensor had nothing to report". Every protocol has at least
+# one; Fine Offset firmwares add -9999, which is a protocol's own business.
+ABSENT = ('', '--', '--.-', '-', 'None', 'null')
+
+# How a device stamps its own time.
 DEVICE_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 
@@ -106,22 +121,29 @@ def _timegm(parsed):
     return calendar.timegm(parsed)
 
 
-def numbers(raw):
+def numbers(raw, metadata=METADATA, absent=()):
     """Split raw values into the numeric ones and the rest.
 
     Returns (readings, text), where readings holds everything that could be read as a
     number, and text holds identifiers, model names and anything else that could not.
+
     A value the hardware sends as an empty field, or as one of its several ways of
     saying "no reading", becomes None rather than being dropped, because a gap is a
-    fact about the sensor.
+    fact about the sensor. `absent` is what this protocol says on top of the ones
+    every protocol uses: Fine Offset firmwares send -9999, and without that a missing
+    outdoor temperature is recorded as nine thousand degrees below freezing.
     """
+    empty = ABSENT + tuple(absent)
     readings = {}
     text = {}
     for name, value in raw.items():
-        if name in METADATA:
+        if name in metadata:
             text[name] = value
             continue
-        if value in ('', '--', '--.-', '-', 'None', 'null'):
+        if isinstance(value, str) and value.strip() in empty:
+            readings[name] = None
+            continue
+        if value is None:
             readings[name] = None
             continue
         try:
@@ -131,35 +153,35 @@ def numbers(raw):
     return readings, text
 
 
-# Values that identify a station rather than describe the weather.
-SECRETS = ('PASSKEY', 'ID', 'PASSWORD', 'key', 'stationkey')
+# Values that name a station rather than describe the weather. A payload is going to
+# be pasted into an issue tracker sooner or later, and these are what somebody else
+# could use to impersonate the station or find it.
+SECRETS = ('PASSKEY', 'ID', 'PASSWORD', 'key', 'stationkey', 'mac', 'macAddress',
+           'id',
+           'serial_number', 'hub_sn')
 
 
 def redact(text):
-    """Replace the values that identify a station, leaving the readings alone.
+    """Replace the values that name a station, leaving the readings alone.
 
-    A payload is going to be pasted into an issue tracker, and the PASSKEY is what
-    Ecowitt's servers use to recognise a station. Everything else in there is weather.
+    Everything not listed in SECRETS is weather, and weather is the point of sending
+    a payload to somebody who can help with it.
     """
     for name in SECRETS:
         text = re.sub(r'(^|[?&])%s=[^&]*' % re.escape(name),
                       r'\g<1>%s=X' % name, text)
+        # WeatherFlow sends JSON, where the same values are quoted rather than
+        # urlencoded. One pass over both shapes, so a datagram is as safe to paste.
+        text = re.sub(r'("%s"\s*:\s*)"[^"]*"' % re.escape(name),
+                      r'\g<1>"X"', text)
     return text
 
 
-def station_id(text):
-    """What identifies the console that sent this.
+def same_secret(presented, expected):
+    """Whether two secrets match, without saying how far they matched.
 
-    The PASSKEY for the Ecowitt protocol, the station ID for Weather Underground.
-    Read without parsing the rest, because this runs before anything else and decides
-    whether the upload is answered at all.
-
-    Returns an empty string for hardware that identifies itself with neither. Those
-    cannot be told apart, which is a limit of the protocol rather than a decision
-    made here.
+    Constant time, so that somebody who can reach the port cannot find a password one
+    character at a time by measuring how long the comparison took.
     """
-    for name in ('PASSKEY', 'ID'):
-        match = re.search(r'(^|[?&])%s=([^&]+)' % name, text or '')
-        if match:
-            return match.group(2)
-    return ''
+    return hmac.compare_digest(str(presented).encode('utf-8'),
+                               str(expected).encode('utf-8'))

@@ -7,12 +7,15 @@
 
 Run this before wiring anything up, or when a sensor is missing from the reports:
 
-    python -m user.ecowitt --port 8000
+    python -m user.ultimatepush --port 8000
 
-It waits for one upload, then prints what arrived, what the driver could not place,
-the commands that would give the readings somewhere to live, and which of those fields
-already hold somebody else's history. Nothing is changed, and WeeWX does not have to be
-stopped as long as this uses a different port.
+It waits for one upload, works out which protocol sent it, then prints what arrived,
+what the driver could not place, the commands that would give the readings somewhere
+to live, and which of those fields already hold somebody else's history. Nothing is
+changed, and WeeWX does not have to be stopped as long as this uses a different port.
+
+Every protocol the driver knows is listened for, and each one is answered the way its
+hardware expects, so a console will not decide the upload failed and stop.
 """
 
 import argparse
@@ -20,19 +23,18 @@ import logging
 import sys
 import time
 
-from . import VERSION, catalog, columns, infer
-from .mapping import Mapper, placement_note
+from . import VERSION, columns, infer, protocols, server, transport
+from .mapping import Mapper
 
 try:
     from weewx.listener import HTTPListener
 except ImportError:
     from user.listener import HTTPListener
 
-ECOWITT_RESPONSE = '{"errcode":"0","errmsg":"ok"}'
-
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog='python -m user.ecowitt', description=__doc__)
+    parser = argparse.ArgumentParser(prog='python -m user.ultimatepush',
+                                     description=__doc__)
     parser.add_argument('--port', default=8000, help="Port to listen on. Default 8000.")
     parser.add_argument('--address', default='', help="Address to bind to.")
     parser.add_argument('--path', help="Accept this path only.")
@@ -96,7 +98,7 @@ def _decisions(mapper):
         print("        # %s" % raw)
         print("        #%s = %s        # this driver" % (raw, mapper.fields.get(raw)))
         print("        #%s = %s        # %s"
-              % (raw, mapper.undecided[raw], catalog.CONTESTED_WITH))
+              % (raw, mapper.undecided[raw], mapper.dialect.contested_with))
     print("\nAnything else is allowed too. A WN34 on a pool lead is not a soil"
           "\ntemperature, so somewhere in extraTemp is often what you want. The"
           "\ntemperature fields your schema already has:")
@@ -122,7 +124,7 @@ def _report(packet, guesses, mapper, config):
         print("\n%d fields were not in the catalog" % len(guesses))
         for line in infer.report(guesses):
             print("  " + line)
-        flagged = {g.raw for g in guesses if placement_note(g.raw)}
+        flagged = {g.raw for g in guesses if mapper.placement_note(g.raw)}
         if flagged:
             print("\n  Placement of these is a convention, not a reading. Say where "
                   "they\n  really are with field_map_extensions: %s"

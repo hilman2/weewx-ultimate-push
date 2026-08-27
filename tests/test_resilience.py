@@ -22,15 +22,27 @@ FIXTURE_PASSKEY = '0000000000000000000000000000AAAA'
 
 weewx = pytest.importorskip('weewx', reason="WeeWX is not installed")
 
-from ecowitt import mapping                                  # noqa: E402
-from ecowitt.driver import EcowittDriver                     # noqa: E402
+from ultimatepush import mapping                                  # noqa: E402
+from ultimatepush.driver import UltimatePushDriver                     # noqa: E402
 
 
 @pytest.fixture
 def driver():
-    made = EcowittDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file='')
+    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file='')
     yield made
     made.closePort()
+
+
+def sole_listener(driver):
+    """The one HTTP listener behind the driver's fan.
+
+    These tests are about what the listener guarantees, so they have to name it. The
+    driver iterates a fan over however many listeners its protocols need, and with
+    only the posting protocols enabled there is exactly one.
+    """
+    listeners = driver.listener.listeners
+    assert len(listeners) == 1
+    return listeners[0]
 
 
 def post(driver, body, path='/'):
@@ -82,15 +94,22 @@ def test_an_oversized_upload_is_refused_not_read(driver):
     assert next(driver.genLoopPackets())['outTemp'] == 63.0
 
 
-def test_a_response_that_raises_still_stores_the_reading():
-    """The device gets an empty 200 rather than nothing at all."""
-    made = EcowittDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file='',
-                         response=lambda request: 1 / 0)
-    try:
-        assert post(made, 'PASSKEY=%s&tempf=64.0' % FIXTURE_PASSKEY) == 200
-        assert next(made.genLoopPackets())['outTemp'] == 64.0
-    finally:
-        made.closePort()
+def test_an_answer_that_raises_still_stores_the_reading(driver, monkeypatch):
+    """Working out which protocol sent it happens before the answer goes back.
+
+    If that raises, the device must still get a 200 and the reading must still be
+    kept. A console that reads no answer counts the upload as failed and retries,
+    and eventually stops.
+    """
+    from ultimatepush import protocols
+
+    def explode(request, raw, among):
+        raise RuntimeError('no idea')
+
+    monkeypatch.setattr(protocols, 'detect', explode)
+    assert post(driver, 'PASSKEY=%s&tempf=64.0' % FIXTURE_PASSKEY) == 200
+    monkeypatch.undo()
+    assert next(driver.genLoopPackets())['outTemp'] == 64.0
 
 
 def test_a_flood_drops_readings_rather_than_growing(driver):
@@ -98,17 +117,19 @@ def test_a_flood_drops_readings_rather_than_growing(driver):
     for i in range(40):
         post(driver, 'tempf=%d' % (60 + i % 10))
 
-    assert driver.listener.queue.qsize() <= driver.listener.queue_size
-    assert driver.listener.dropped > 0
+    listener = sole_listener(driver)
+    assert listener.queue.qsize() <= listener.queue_size
+    assert listener.dropped > 0
 
 
 def test_the_listener_notices_when_its_thread_dies(driver):
     """A dead server thread must not look like a station that went quiet."""
-    driver.listener.server.shutdown()
-    while driver.listener.thread.is_alive():
+    listener = sole_listener(driver)
+    listener.server.shutdown()
+    while listener.thread.is_alive():
         pass
-    while not driver.listener.queue.empty():
-        driver.listener.queue.get_nowait()
+    while not listener.queue.empty():
+        listener.queue.get_nowait()
 
     with pytest.raises(weewx.WeeWxIOError):
-        driver.listener.get(timeout=2)
+        listener.get(timeout=2)

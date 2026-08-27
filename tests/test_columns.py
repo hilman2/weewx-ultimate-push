@@ -7,8 +7,8 @@
 
 import pytest
 
-from ecowitt import columns
-from ecowitt.mapping import Mapper
+from ultimatepush import columns
+from helpers import mapper_for
 
 SCHEMA = {'dateTime', 'usUnits', 'interval', 'outTemp', 'soilTemp1', 'soilTemp2'}
 
@@ -34,7 +34,7 @@ def test_counted_things_are_integers():
 
 def test_a_real_station_needs_a_manageable_number(payload):
     """The point of doing this from a payload: a dozen columns, not four hundred."""
-    mapper = Mapper()
+    mapper = mapper_for()
     packet, _ = mapper.to_packet(payload('hp2561ae_pro'))
     wanted = columns.missing(packet, mapper.wanted_groups(), known=SCHEMA)
 

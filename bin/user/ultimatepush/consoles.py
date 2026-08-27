@@ -6,8 +6,9 @@
 """Which consoles this driver accepts.
 
 A listener answers whatever reaches its port. Anyone who knows the address can point
-a console at it, and Ecowitt hardware announces itself with a PASSKEY derived from
-its own MAC address. Two consoles both number their channels from one, so a second
+a console at it, and every protocol here has the hardware announce itself: a PASSKEY
+derived from the MAC for Ecowitt and Ambient, an ID for Weather Underground, a serial
+number for WeatherFlow. Two consoles both number their channels from one, so a second
 one writing into the same fields would mix two sensors into a column, and nothing
 afterwards can separate them.
 
@@ -36,11 +37,14 @@ import os
 
 log = logging.getLogger(__name__)
 
-FILENAME = 'ecowitt-consoles.txt'
+FILENAME = 'ultimate-push-consoles.txt'
 # The key under which the list lives in the daily summary metadata table.
-METADATA_KEY = 'ecowitt_consoles'
+METADATA_KEY = 'ultimatepush_consoles'
 
-HEADER = """# Consoles this WeeWX driver answers to, one PASSKEY per line.
+HEADER = """# Consoles this WeeWX driver answers to, one identity per line.
+#
+# The identity is whatever the console sends to name itself: a PASSKEY for Ecowitt and
+# Ambient hardware, an ID for Weather Underground, a serial number for WeatherFlow.
 #
 # This file is the fallback. Normally the list lives in the database, in the same
 # metadata table WeeWX keeps lastUpdate in, so that it travels with the readings it
@@ -83,7 +87,7 @@ class Store:
         self.where = 'file'
 
     def read(self):
-        """Every PASSKEY on record, and where it was found."""
+        """Every identity on record, and where it was found."""
         stored = self._from_database()
         if stored is not None:
             self.where = 'database'
@@ -91,7 +95,7 @@ class Store:
         return _read_file(self.path)
 
     def add(self, passkey, note=''):
-        """Record a PASSKEY. Returns where it went, or None if it went nowhere."""
+        """Record an identity. Returns where it went, or None if it went nowhere."""
         known = self.read()
         if passkey in known:
             return self.where

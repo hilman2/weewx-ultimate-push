@@ -3,41 +3,47 @@
 #
 #    See the file LICENSE for your full rights.
 #
-"""Installer for the Ecowitt driver."""
+"""Installer for the UltimatePush driver."""
 
 from weecfg.extension import ExtensionInstaller
 
-VERSION = '0.3.1'
+VERSION = '0.4.0'
 
 
 def loader():
-    return EcowittInstaller()
+    return UltimatePushInstaller()
 
 
-class EcowittInstaller(ExtensionInstaller):
+class UltimatePushInstaller(ExtensionInstaller):
     def __init__(self):
-        super(EcowittInstaller, self).__init__(
+        super(UltimatePushInstaller, self).__init__(
             version=VERSION,
-            name='ecowitt',
-            description='Collect data from Ecowitt hardware that uploads to a '
-                        'custom server.',
+            name='ultimate-push',
+            description='Collect data from weather hardware that uploads to a '
+                        'custom server: Ecowitt, Weather Underground, Ambient '
+                        'Weather, WeatherFlow, Acurite and LaCrosse.',
             author="Manuel Hilgert",
             author_email="hilman2@gmail.com",
             config={
                 'Station': {
-                    'station_type': 'Ecowitt'},
-                # Ecowitt hardware sends rain as running counters, never as the
+                    'station_type': 'UltimatePush'},
+                # Every protocol here sends rain as running counters, never as the
                 # amount since the last upload. WeeWX wants 'rain', the amount in
                 # the packet, and StdDelta is what turns one into the other. Without
                 # this the station records no rain at all: every counter arrives and
                 # 'rain' stays empty.
+                #
+                # dayRain is the counter every one of them has. It resets at
+                # midnight, which StdDelta handles, and it is the only one that does
+                # not depend on which sensor the station happens to own.
                 'StdWXCalculate': {
                     'Delta': {
                         'rain': {
                             'input': 'dayRain'}}},
-                'Ecowitt': {
-                    'driver': 'user.ecowitt.driver',
+                'UltimatePush': {
+                    'driver': 'user.ultimatepush.driver',
                     'port': '8000',
+                    'protocols': 'auto',
                     'infer_unknown': 'series',
                     # 'compat' is deliberately absent. Fields that drivers place
                     # differently stay out until somebody says which placement is
@@ -45,18 +51,29 @@ class EcowittInstaller(ExtensionInstaller):
                     'field_map_extensions': {}}},
             files=[
                 ('bin/user', ['bin/user/listener.py']),
-                # Every module in the package. A test keeps this list complete,
+                # Every module in the package. A test keeps these lists complete,
                 # because a missing one shows up as an ImportError on somebody else's
                 # machine and nowhere earlier.
-                ('bin/user/ecowitt', ['bin/user/ecowitt/__init__.py',
-                                      'bin/user/ecowitt/__main__.py',
-                                      'bin/user/ecowitt/catalog.py',
-                                      'bin/user/ecowitt/columns.py',
-                                      'bin/user/ecowitt/consoles.py',
-                                      'bin/user/ecowitt/driver.py',
-                                      'bin/user/ecowitt/infer.py',
-                                      'bin/user/ecowitt/mapping.py',
-                                      'bin/user/ecowitt/protocol.py',
-                                      'bin/user/ecowitt/report.py']),
+                ('bin/user/ultimatepush', [
+                    'bin/user/ultimatepush/__init__.py',
+                    'bin/user/ultimatepush/__main__.py',
+                    'bin/user/ultimatepush/columns.py',
+                    'bin/user/ultimatepush/consoles.py',
+                    'bin/user/ultimatepush/driver.py',
+                    'bin/user/ultimatepush/infer.py',
+                    'bin/user/ultimatepush/mapping.py',
+                    'bin/user/ultimatepush/report.py',
+                    'bin/user/ultimatepush/server.py',
+                    'bin/user/ultimatepush/transport.py']),
+                ('bin/user/ultimatepush/catalogs', [
+                    'bin/user/ultimatepush/catalogs/__init__.py',
+                    'bin/user/ultimatepush/catalogs/ambient.py',
+                    'bin/user/ultimatepush/catalogs/ecowitt.py',
+                    'bin/user/ultimatepush/catalogs/wunderground.py']),
+                ('bin/user/ultimatepush/protocols', [
+                    'bin/user/ultimatepush/protocols/__init__.py',
+                    'bin/user/ultimatepush/protocols/ambient.py',
+                    'bin/user/ultimatepush/protocols/ecowitt.py',
+                    'bin/user/ultimatepush/protocols/wunderground.py']),
             ]
         )

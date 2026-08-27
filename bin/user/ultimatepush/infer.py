@@ -115,12 +115,16 @@ class Inferrer:
         channels (dict): Raw prefix -> (model, channel count), i.e. how far a family
             is known to go. A channel beyond that is still reported, but as a guess:
             either the table is out of date, or something is wrong.
+        prefix (str): What to put in front of a field that only a naming rule could
+            place, so that two protocols sending the same unrecognised name do not
+            land in one column.
     """
 
-    def __init__(self, fields, groups=None, channels=None):
+    def __init__(self, fields, groups=None, channels=None, prefix='push_'):
         self.fields = fields
         self.groups = groups or {}
         self.channels = channels or {}
+        self.prefix = prefix
         self.series = self._learn_series(fields)
 
     @staticmethod
@@ -185,7 +189,7 @@ class Inferrer:
     def _from_rules(self, raw):
         for pattern, group, unit in RULES:
             if pattern.search(raw):
-                return Guess(raw, 'ecowitt_' + raw, group, unit, False,
+                return Guess(raw, self.prefix + raw, group, unit, False,
                              "name matches %s" % pattern.pattern)
         return None
 

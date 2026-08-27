@@ -14,6 +14,8 @@ import pytest
 HERE = os.path.dirname(os.path.abspath(__file__))
 USER_DIR = os.path.join(os.path.dirname(HERE), 'bin', 'user')
 sys.path.insert(0, USER_DIR)
+# So that a test can import tests/helpers.py by name.
+sys.path.insert(0, HERE)
 
 # In a WeeWX installation these modules live under the 'user' package, and the driver
 # imports them by that name. Make the same name work here, so the tests exercise the
@@ -29,7 +31,9 @@ def payload():
     """Return a captured payload by name, e.g. payload('hp2561ae_pro')."""
 
     def _load(name):
-        with open(os.path.join(HERE, 'fixtures', name + '.txt'), encoding='utf-8') as fd:
+        """A captured payload, by name. 'hp2561ae_pro', or 'wunderground/metric'."""
+        path = os.path.join(HERE, 'fixtures', *(name.split('/'))) + '.txt'
+        with open(path, encoding='utf-8') as fd:
             return fd.read().strip()
 
     return _load

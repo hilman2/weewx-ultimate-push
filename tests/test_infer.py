@@ -7,7 +7,8 @@
 
 import pytest
 
-from ecowitt import catalog, infer
+from ultimatepush import infer
+from ultimatepush.catalogs import ecowitt as catalog
 
 CATALOG = {
     'tf_ch1': 'soilTemp1',
@@ -56,7 +57,7 @@ def test_a_rule_when_no_series_fits(inferrer):
     assert guess.certain is False
     assert guess.group == 'group_speed'
     assert guess.unit == 'mile_per_hour'
-    assert guess.field == 'ecowitt_windgust2mph'
+    assert guess.field == 'push_windgust2mph'
 
 
 def test_nothing_can_be_said(inferrer):

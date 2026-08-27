@@ -13,11 +13,13 @@ import os
 
 import pytest
 
+from helpers import FakeRequest
+
 FIXTURE_PASSKEY = '0000000000000000000000000000AAAA'
 
 weewx = pytest.importorskip('weewx', reason="WeeWX is not installed")
 
-from ecowitt.driver import EcowittDriver  # noqa: E402  (after the skip)
+from ultimatepush.driver import UltimatePushDriver  # noqa: E402  (after the skip)
 
 
 # A WN34 channel goes nowhere until somebody says where. These tests say.
@@ -26,7 +28,7 @@ PLACED = {'tf_ch1': 'extraTemp9', 'tf_ch2': 'extraTemp10'}
 
 @pytest.fixture
 def driver():
-    made = EcowittDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, field_map_extensions=PLACED)
+    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, field_map_extensions=PLACED)
     yield made
     made.closePort()
 
@@ -64,7 +66,7 @@ def test_new_fields_reach_the_unit_system(payload):
     """
     import weewx.units
 
-    made = EcowittDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, infer_unknown='all',
+    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, infer_unknown='all',
                          field_map_extensions=PLACED)
     try:
         upload(made, 'PASSKEY=%s&soilmoisture17=30&tempf=59.7' % FIXTURE_PASSKEY)
@@ -86,7 +88,7 @@ def test_an_empty_upload_yields_no_packet(driver):
 
 
 def test_the_hardware_name_is_configurable():
-    made = EcowittDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, model='HP2561AE Pro')
+    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, model='HP2561AE Pro')
     try:
         assert made.hardware_name == 'HP2561AE Pro'
     finally:
@@ -96,7 +98,7 @@ def test_the_hardware_name_is_configurable():
 def test_the_driver_leaves_a_report(tmp_path, payload):
     """Getting a raw upload should not mean reconfiguring the console."""
     path = str(tmp_path / 'report.txt')
-    made = EcowittDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=path)
+    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=path)
     try:
         upload(made, payload('hp2561ae_pro'))
         next(made.genLoopPackets())
@@ -112,7 +114,7 @@ def test_the_driver_leaves_a_report(tmp_path, payload):
 
 def test_the_report_is_written_once(tmp_path, payload):
     path = str(tmp_path / 'report.txt')
-    made = EcowittDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=path)
+    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=path)
     try:
         upload(made, payload('hp2561ae_pro'))
         next(made.genLoopPackets())
@@ -127,7 +129,7 @@ def test_the_report_is_written_once(tmp_path, payload):
 
 def test_reporting_can_be_switched_off(tmp_path, payload):
     path = str(tmp_path / 'report.txt')
-    made = EcowittDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file='')
+    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file='')
     try:
         upload(made, payload('hp2561ae_pro'))
         next(made.genLoopPackets())
@@ -139,7 +141,7 @@ def test_reporting_can_be_switched_off(tmp_path, payload):
 
 def test_a_station_with_nothing_unknown_leaves_no_report(tmp_path):
     path = str(tmp_path / 'report.txt')
-    made = EcowittDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=path)
+    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=path)
     try:
         upload(made, 'PASSKEY=%s&tempf=59.7&humidity=82' % FIXTURE_PASSKEY)
         next(made.genLoopPackets())
@@ -160,14 +162,14 @@ def test_a_late_upload_keeps_the_time_it_was_taken(payload):
     import calendar
     import time
 
-    made = EcowittDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY,
+    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY,
                          field_map_extensions=PLACED)
     try:
         body = payload('hp2561ae_pro')
         sent = calendar.timegm(time.strptime('2026-08-25 11:06:42',
                                              '%Y-%m-%d %H:%M:%S'))
-        _name, mapper = made._mapper_for(body, '127.0.0.1')
-        packet, _ = mapper.to_packet(body, now=sent + 20 * 60)
+        _p, _s, mapper, raw = made.reading_for(FakeRequest(body))
+        packet, _ = mapper.to_packet(raw, now=sent + 20 * 60)
         assert packet['dateTime'] == sent
     finally:
         made.closePort()
@@ -178,14 +180,14 @@ def test_the_clock_window_comes_from_the_configuration(payload):
     import calendar
     import time
 
-    made = EcowittDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY,
+    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY,
                          field_map_extensions=PLACED, max_behind=2 * 86400)
     try:
         body = payload('hp2561ae_pro')
         sent = calendar.timegm(time.strptime('2026-08-25 11:06:42',
                                              '%Y-%m-%d %H:%M:%S'))
-        _name, mapper = made._mapper_for(body, '127.0.0.1')
-        packet, _ = mapper.to_packet(body, now=sent + 86400)
+        _p, _s, mapper, raw = made.reading_for(FakeRequest(body))
+        packet, _ = mapper.to_packet(raw, now=sent + 86400)
         assert packet['dateTime'] == sent
     finally:
         made.closePort()
@@ -195,15 +197,15 @@ def test_a_console_whose_clock_is_wrong_falls_back_to_arrival(payload):
     import calendar
     import time
 
-    made = EcowittDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY,
+    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY,
                          field_map_extensions=PLACED)
     try:
         body = payload('hp2561ae_pro')
         sent = calendar.timegm(time.strptime('2026-08-25 11:06:42',
                                              '%Y-%m-%d %H:%M:%S'))
         arrived = sent + 365 * 86400
-        _name, mapper = made._mapper_for(body, '127.0.0.1')
-        packet, _ = mapper.to_packet(body, now=arrived)
+        _p, _s, mapper, raw = made.reading_for(FakeRequest(body))
+        packet, _ = mapper.to_packet(raw, now=arrived)
         assert packet['dateTime'] == int(arrived)
     finally:
         made.closePort()

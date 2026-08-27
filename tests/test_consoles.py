@@ -19,9 +19,10 @@ import pytest
 
 weewx = pytest.importorskip('weewx', reason="WeeWX is not installed")
 
-from ecowitt import consoles                        # noqa: E402
-from ecowitt.driver import EcowittDriver            # noqa: E402
-from ecowitt.protocol import station_id             # noqa: E402
+from ultimatepush import consoles                        # noqa: E402
+from ultimatepush.driver import UltimatePushDriver            # noqa: E402
+from ultimatepush.protocols import detect, registry             # noqa: E402
+from helpers import FakeRequest                                  # noqa: E402
 
 GARDEN = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 ROOF = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
@@ -46,7 +47,7 @@ def make_driver(tmp_path):
         options.setdefault('address', '127.0.0.1')
         options.setdefault('report_file', '')
         options.setdefault('console_file', str(tmp_path / 'consoles.txt'))
-        driver = EcowittDriver(**options)
+        driver = UltimatePushDriver(**options)
         made.append(driver)
         return driver
 
@@ -59,11 +60,40 @@ def make_driver(tmp_path):
 # ---------------------------------------------------------------- identification
 
 
+def named_by(text, path='/data/report/'):
+    """(protocol, identity) for a payload, the way the driver works it out."""
+    from ultimatepush import transport
+    raw = transport.parse(text)
+    protocol = detect(FakeRequest(text, path=path), raw, registry())
+    if protocol is None:
+        return None, ''
+    return protocol.name, protocol.station_of(raw)
+
+
 def test_what_identifies_a_console():
-    assert station_id('PASSKEY=ABC&tempf=1') == 'ABC'
-    assert station_id('ID=KX123&PASSWORD=y&tempf=1') == 'KX123'   # Wunderground
-    assert station_id('tempf=1') == ''
-    assert station_id('') == ''
+    """Which field names the station is the protocol's answer, not one answer.
+
+    Ecowitt and Ambient hardware sends a PASSKEY built from its MAC. Weather
+    Underground sends the ID it was registered under. Nothing here reads both and
+    hopes.
+    """
+    assert named_by('PASSKEY=ABC&stationtype=GW2000A&tempf=1') == ('ecowitt', 'ABC')
+    assert named_by('PASSKEY=ABC&stationtype=AMBWeatherV4.0.2&tempf=1') == (
+        'ambient', 'ABC')
+    assert named_by('ID=KX123&PASSWORD=y&tempf=1',
+                    '/weatherstation/updateweatherstation.php') == (
+        'wunderground', 'KX123')
+
+
+def test_a_payload_that_names_no_protocol_is_not_guessed_at():
+    """The same name means different things in different catalogs.
+
+    'UV' is an index in one dialect and microwatts per square centimetre in another.
+    So an upload that says nothing about itself is refused rather than read with
+    whichever catalog happened to be first.
+    """
+    assert named_by('tempf=1') == (None, '')
+    assert named_by('') == (None, '')
 
 
 # ---------------------------------------------------------------- learning one
@@ -176,8 +206,13 @@ def test_a_station_without_a_passkey_is_refused(make_driver):
 
 
 def test_hardware_that_identifies_itself_with_nothing_still_works(make_driver):
-    """Not every device sends a PASSKEY. One that does not is adopted as itself."""
-    driver = make_driver()
+    """Not every device sends a PASSKEY. One that does not is adopted as itself.
+
+    It takes saying which protocol to expect, because a payload with nothing in it
+    but readings could be read with any catalog, and they disagree. One named
+    protocol is not a guess.
+    """
+    driver = make_driver(protocols='ecowitt')
     post(driver, 'tempf=59.7')
 
     assert next(driver.genLoopPackets())['outTemp'] == 59.7

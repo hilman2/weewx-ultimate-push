@@ -7,7 +7,7 @@
 
 The catalog is data, not code, and it should stay traceable to where it came from.
 Rather than retyping five hundred field names, this reads them out of the source with
-the ast module and writes catalog.py.
+the ast module and writes catalogs/ecowitt.py.
 
 Usage:
 
@@ -201,7 +201,7 @@ def const_assign(class_node, name):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', help="Path to ecowittcustom.py")
-    parser.add_argument('--out', default='bin/user/ecowitt/catalog.py')
+    parser.add_argument('--out', default='bin/user/ultimatepush/catalogs/ecowitt.py')
     parser.add_argument('--schema', help="Path to WeeWX's wview_extended.py. Used to "
                                          "settle which target wins when upstream maps "
                                          "one reading to more than one field.")
