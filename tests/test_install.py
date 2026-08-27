@@ -83,18 +83,38 @@ def test_the_installer_sets_up_rain():
     assert delta['rain']['input'] == 'dayRain'
 
 
-def test_the_counter_it_uses_is_one_every_protocol_produces():
+def test_every_protocol_says_which_counter_has_to_be_differenced():
     """A counter no field map fills would leave rain empty just the same.
 
-    And one that only some of them fill would leave it empty for the others, which
-    is worse: it would work on the hardware it was tested with.
+    Not every protocol has the same one. WeatherFlow already sends the amount since
+    its last report and must not be differenced at all; an LW30x has no daily counter
+    and sends the gauge's lifetime total. Both say so, and the driver warns when the
+    configuration does not match.
     """
     import pytest
 
     pytest.importorskip('weecfg', reason="WeeWX is not installed")
     from ultimatepush import protocols
 
-    wanted = installer_config()['StdWXCalculate']['Delta']['rain']['input']
     for protocol in protocols.registry():
-        assert wanted in protocol.dialect({}).fields.values(), (
-            "%s sends no field that maps to '%s'" % (protocol.name, wanted))
+        counter = protocol.rain_counter
+        if counter is None:
+            assert 'rain' in protocol.dialect({}).fields.values(), (
+                "%s differences nothing and sends no 'rain' either" % protocol.name)
+            continue
+        assert counter in protocol.dialect({}).fields.values(), (
+            "%s says to difference '%s' and sends no field that maps to it"
+            % (protocol.name, counter))
+
+
+def test_the_installer_sets_up_the_counter_that_most_hardware_sends():
+    """The default has to be right for whatever a new install is most likely to be."""
+    import pytest
+
+    pytest.importorskip('weecfg', reason="WeeWX is not installed")
+    from ultimatepush import protocols
+
+    wanted = installer_config()['StdWXCalculate']['Delta']['rain']['input']
+    agree = [p.name for p in protocols.posting() if p.rain_counter == wanted]
+
+    assert len(agree) >= 4, "'%s' suits only %s" % (wanted, agree)

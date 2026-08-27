@@ -140,6 +140,12 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         log.info("Driver version is %s, listening with %s for %s",
                  DRIVER_VERSION, LISTENER_FROM,
                  ', '.join(p.label for p in self.enabled))
+        for protocol in self.enabled:
+            if protocol.datagram:
+                log.info("%s broadcasts on UDP %d and is answered by nobody, so "
+                         "anything on this network can reach it. Restrict it with "
+                         "'allowed_hosts' if that matters.",
+                         protocol.label, protocol.default_port)
 
         # One mapping, or one per console. Two consoles both number their channels
         # from one, so without this a WN34 on channel 1 of each would overwrite the
@@ -162,6 +168,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.configured_passkey = stn_dict.get('passkey')
         self.known = self._known_consoles(self.configured_passkey)
 
+        self._check_rain_delta(stn_dict.get('config_dict'))
+
         self.report_file = stn_dict.get('report_file', report.DEFAULT_PATH)
         self.reported = False
         self.unknown_consoles = set()
@@ -179,13 +187,19 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
     def _read_protocols(self, configured):
         """Which protocols to listen for.
 
-        'auto', the default, means all of them: detection is by what the payload
-        contains rather than by what the port is, so an unused protocol costs nothing
-        but a name comparison. Naming them explicitly is for the case where two of
-        them could both claim an upload and you know which one it is.
+        'auto', the default, is every protocol that arrives over HTTP. Detection is
+        by what an upload contains rather than by which port it came to, so an unused
+        one of those costs nothing but a name comparison.
+
+        A protocol that broadcasts is not in 'auto'. It needs a second socket on a
+        port of its own, and opening one for hardware nobody has is not a thing to do
+        quietly. Name it and the socket opens.
+
+        Naming them is also how you settle a payload that says nothing about itself:
+        with one protocol configured there is nothing left to guess.
         """
         if not configured or configured == 'auto':
-            return protocols.registry()
+            return protocols.posting()
         if isinstance(configured, str):
             wanted = [name.strip() for name in configured.split(',') if name.strip()]
         else:
@@ -210,6 +224,51 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 raise ValueError("metric_wind must be one of %s, not '%s'"
                                  % (', '.join(wunderground.METRIC_WIND_CHOICES), wind))
             wunderground.WeatherUnderground.metric_wind = wind
+
+    def _check_rain_delta(self, config_dict):
+        """Say so when the rain will not be recorded, before a season of it is lost.
+
+        None of this hardware sends the rain since the last upload. It sends running
+        counters, and StdDelta is what turns one into a reading. The installer points
+        it at dayRain, which is right for four of the six protocols and wrong for the
+        two that have no such counter.
+
+        Nothing here changes the configuration: rewriting somebody's StdWXCalculate
+        from a driver would be worse than the problem. It says which line to change,
+        once, at startup, which is where somebody is looking when they have just added
+        a protocol.
+        """
+        if not config_dict:
+            # Constructed without one, which is a test or a diagnostic run. There is
+            # nothing to check and saying so would be noise.
+            return
+        wanted = {p.rain_counter for p in self.enabled if p.rain_counter}
+        if not wanted:
+            return
+        configured = None
+        try:
+            configured = config_dict['StdWXCalculate']['Delta']['rain']['input']
+        except (KeyError, TypeError):
+            pass
+        if configured in wanted:
+            return
+        if configured is None:
+            log.warning(
+                "Nothing differences the rain counters, so this station will record "
+                "no rain. Add this to weewx.conf:\n"
+                "    [StdWXCalculate]\n        [[Delta]]\n            [[[rain]]]\n"
+                "                input = %s", sorted(wanted)[0])
+            return
+        log.warning(
+            "StdWXCalculate differences '%s' to get the rain, and %s sends %s "
+            "instead. Rain from %s will not be recorded until 'input' names a "
+            "counter it sends.",
+            configured,
+            ', '.join(p.label for p in self.enabled if p.rain_counter not in
+                      (None, configured)),
+            ' or '.join(sorted(wanted - {configured})),
+            ' and '.join(p.label for p in self.enabled
+                         if p.rain_counter not in (None, configured)))
 
     def _read_stations(self, configured):
         """Return {identity: Station} for an installation with several consoles."""
@@ -275,7 +334,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             udp = {key: value for key, value in options.items()
                    if key in ('address', 'max_body', 'allowed_hosts', 'log_raw',
                               'queue_size', 'reuse_address')}
-            udp['port'] = stn_dict.get('udp_port', protocol.default_port)
+            udp['port'] = int(stn_dict.get('udp_port', protocol.default_port))
             listeners.append(UDPListener(**udp))
 
         return listeners
@@ -333,7 +392,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             self._unclaimed(request)
             return None, None, None, None
 
-        raw = protocol.readings(request, raw)
+        # Which console this is, and whether it presents the right password, are
+        # asked of the upload as it arrived. A protocol that unpacks its payload may
+        # not carry the name through: WeatherFlow's observations are an array, and the
+        # hub's serial is on the message around it rather than in it.
         station = self._station_for(protocol, raw, request.client_address)
         if station is None:
             return None, None, None, None
@@ -342,6 +404,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                                                    request.client_address):
             return None, None, None, None
 
+        raw = protocol.readings(request, raw)
         dialect = protocol.dialect(raw)
         mapper = station.mapper_for(dialect)
         mapper.settle(protocol.settled_contested(raw))

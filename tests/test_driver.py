@@ -209,3 +209,82 @@ def test_a_console_whose_clock_is_wrong_falls_back_to_arrival(payload):
         assert packet['dateTime'] == int(arrived)
     finally:
         made.closePort()
+
+
+# ---------------------------------------------------------------- several protocols
+
+
+def test_one_port_serves_two_protocols(payload):
+    """An Ecowitt gateway and a Weather Underground client, on the same port, in the
+    same second. Each has to read the answer its own firmware expects, or it counts
+    the upload as failed and eventually stops uploading.
+    """
+    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY,
+                              report_file='', field_map_extensions=PLACED)
+    try:
+        port = made.listener.port
+        ecowitt = upload(made, 'PASSKEY=%s&stationtype=GW2000A_V3.1.5&tempf=59.7'
+                               '&baromrelin=29.92' % FIXTURE_PASSKEY)
+        assert ecowitt == (200, b'{"errcode":"0","errmsg":"ok"}')
+
+        connection = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
+        try:
+            connection.request(
+                'GET', '/weatherstation/updateweatherstation.php?ID=%s&PASSWORD=x'
+                       '&tempf=43.3&baromin=29.05&indoortempf=76.5' % FIXTURE_PASSKEY)
+            response = connection.getresponse()
+            assert (response.status, response.read()) == (200, b'success')
+            assert response.getheader('Content-Type') == 'text/plain'
+        finally:
+            connection.close()
+
+        packets = made.genLoopPackets()
+        first, second = next(packets), next(packets)
+    finally:
+        made.closePort()
+
+    assert first['outTemp'] == 59.7
+    assert first['barometer'] == 29.92
+    # baromin and indoortempf are in no Ecowitt catalog. Reading the second upload
+    # as Ecowitt would have dropped both.
+    assert second['outTemp'] == 43.3
+    assert second['barometer'] == 29.05
+    assert second['inTemp'] == 76.5
+
+
+def test_a_broadcast_and_a_post_reach_the_same_loop():
+    """A WeatherFlow hub on UDP and an Ecowitt gateway on HTTP are two sockets, and
+    genLoopPackets iterates one thing."""
+    import json
+    import socket
+
+    made = UltimatePushDriver(port=0, address='127.0.0.1', udp_port=0,
+                              protocols='ecowitt, weatherflow',
+                              passkey='HB-00013030', report_file='')
+    try:
+        assert len(made.listener.ports) == 2
+        datagram = json.dumps({
+            'serial_number': 'ST-1', 'type': 'obs_st', 'hub_sn': 'HB-00013030',
+            'obs': [[1588948614, 0.18, 0.22, 0.27, 144, 6, 1017.57, 22.37, 50.26,
+                     328, 0.03, 3, 0.5, 0, 0, 0, 2.41, 1]]})
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.sendto(datagram.encode(), ('127.0.0.1', made.listener.ports[1]))
+        finally:
+            sock.close()
+        packet = next(made.genLoopPackets())
+    finally:
+        made.closePort()
+
+    assert packet['usUnits'] == weewx.METRICWX
+    assert packet['outTemp'] == 22.37
+    # Already the amount since the last report, so it is 'rain' and not a counter.
+    assert packet['rain'] == 0.5
+
+
+def test_a_protocol_this_driver_does_not_know_is_refused_at_startup():
+    with pytest.raises(ValueError) as caught:
+        UltimatePushDriver(port=0, address='127.0.0.1', protocols='davis')
+
+    assert 'davis' in str(caught.value)
+    assert 'ecowitt' in str(caught.value)

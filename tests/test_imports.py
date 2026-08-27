@@ -23,12 +23,18 @@ WITHOUT_WEEWX = [
     'ultimatepush.mapping',
     'ultimatepush.transport',
     'ultimatepush.catalogs',
+    'ultimatepush.catalogs.acurite',
     'ultimatepush.catalogs.ambient',
     'ultimatepush.catalogs.ecowitt',
+    'ultimatepush.catalogs.lacrosse',
+    'ultimatepush.catalogs.weatherflow',
     'ultimatepush.catalogs.wunderground',
     'ultimatepush.protocols',
+    'ultimatepush.protocols.acurite',
     'ultimatepush.protocols.ambient',
     'ultimatepush.protocols.ecowitt',
+    'ultimatepush.protocols.lacrosse',
+    'ultimatepush.protocols.weatherflow',
     'ultimatepush.protocols.wunderground',
 ]
 # The listener is WeeWX's own file, bundled here for older installations. It uses

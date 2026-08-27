@@ -20,8 +20,12 @@ The rest are written out, because their protocol is finished and there is nothin
 to generate from:
 
     wunderground  from the specification, which was published once and then withdrawn
+    weatherflow   from WeatherFlow's UDP reference, which is current and public
+    acurite       from frames captured off a bridge, by way of the interceptor driver
+    lacrosse      likewise, off an LW301
 """
 
-from . import ambient, ecowitt, wunderground
+from . import acurite, ambient, ecowitt, lacrosse, weatherflow, wunderground
 
-__all__ = ['ambient', 'ecowitt', 'wunderground']
+__all__ = ['acurite', 'ambient', 'ecowitt', 'lacrosse', 'weatherflow',
+           'wunderground']

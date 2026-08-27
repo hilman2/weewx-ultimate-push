@@ -37,6 +37,12 @@ def sender(text, path='/data/report/'):
     ('wunderground/observer_metric', WU_PATH, 'wunderground'),
     ('wunderground/easyweather_hp2550', WU_PATH, 'wunderground'),
     ('wunderground/missing_values', WU_PATH, 'wunderground'),
+    ('acurite/5n1x31', WU_PATH, 'acurite'),
+    ('acurite/tower', WU_PATH, 'acurite'),
+    ('lacrosse/base', '/', 'lacrosse'),
+    ('lacrosse/thermo', '/', 'lacrosse'),
+    ('weatherflow/obs_st', '', 'weatherflow'),
+    ('weatherflow/rapid_wind', '', 'weatherflow'),
 ])
 def test_a_captured_upload_is_recognised(payload, fixture, path, expected):
     assert sender(payload(fixture), path) == expected
@@ -74,6 +80,18 @@ def test_credentials_settle_it_when_the_path_does_not():
     assert sender('ID=KX1&PASSWORD=s&tempf=1', '/somewhere/else') == 'wunderground'
 
 
+def test_an_acurite_bridge_outranks_wunderground_on_its_own_endpoint():
+    """The bridge posts there too, with dateutc, action and realtime in the query.
+
+    Read as Weather Underground, its 5-in-1 would arrive and every tower would be
+    dropped. 'mt' is the only thing that separates them, and it wins.
+    """
+    frame = ('dateutc=now&action=updateraw&realtime=1&id=24C86E&mt=tower'
+             '&sensor=00002719&humidity=15&tempf=83.8&baromin=29.92')
+
+    assert sender(frame, WU_PATH) == 'acurite'
+
+
 def test_nothing_claims_a_payload_that_says_nothing():
     assert sender('tempf=59.7') is None
     assert sender('') is None
@@ -89,6 +107,10 @@ def test_each_protocol_answers_the_way_its_hardware_expects():
     assert answers['ecowitt'] == ('{"errcode":"0","errmsg":"ok"}', 'application/json')
     assert answers['wunderground'] == ('success', 'text/plain')
     assert answers['ambient'] == ('success', 'text/plain')
+    assert answers['acurite'] == ('{ "success": 1, "checkversion": "224" }',
+                                  'application/json')
+    # A broadcast is not answered. There is nobody to answer to.
+    assert answers['weatherflow'] == ('', 'text/plain')
 
 
 def test_every_protocol_says_what_it_is_for():
@@ -96,6 +118,16 @@ def test_every_protocol_says_what_it_is_for():
     for protocol in protocols.registry():
         assert protocol.name and protocol.label and protocol.hardware
         assert protocol.identity, "%s names no station" % protocol.name
+
+
+def test_only_the_posting_protocols_are_switched_on_by_auto():
+    """A protocol that broadcasts needs a socket of its own on a port of its own.
+    Opening one for hardware nobody has is not a thing to do quietly."""
+    auto = protocols.posting()
+
+    assert all(not p.datagram for p in auto)
+    assert any(p.datagram for p in protocols.registry())
+    assert protocols.by_name('weatherflow') not in auto
 
 
 def test_every_protocol_can_be_asked_for_by_name():

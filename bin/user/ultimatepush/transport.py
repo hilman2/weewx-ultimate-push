@@ -23,6 +23,7 @@ WeeWX on it.
 """
 
 import hmac
+import json
 import logging
 import re
 import time
@@ -50,11 +51,24 @@ DEVICE_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 def parse(text):
     """Split a payload into raw name/value pairs.
 
-    Works for both protocols, because a urlencoded body and a query string are the same
-    thing. Returns a dict of strings, in the order they arrived.
+    One function for two shapes, because the driver has to know which protocol sent
+    an upload before it can ask that protocol anything, and it cannot know that
+    before it has looked inside.
+
+    A urlencoded body and a query string are the same thing, so the four posting
+    protocols share a line of code. A datagram is JSON, and a JSON object is already
+    name/value pairs; the arrays inside it are unpacked later, by the protocol that
+    knows what position means what.
     """
     if not text:
         return {}
+    text = text.strip()
+    if text.startswith('{'):
+        try:
+            decoded = json.loads(text)
+        except ValueError:
+            return {}
+        return decoded if isinstance(decoded, dict) else {}
     if text.startswith('?'):
         text = text[1:]
     return dict(urllib.parse.parse_qsl(text, keep_blank_values=False))

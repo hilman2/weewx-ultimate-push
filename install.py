@@ -67,13 +67,19 @@ class UltimatePushInstaller(ExtensionInstaller):
                     'bin/user/ultimatepush/transport.py']),
                 ('bin/user/ultimatepush/catalogs', [
                     'bin/user/ultimatepush/catalogs/__init__.py',
+                    'bin/user/ultimatepush/catalogs/acurite.py',
                     'bin/user/ultimatepush/catalogs/ambient.py',
                     'bin/user/ultimatepush/catalogs/ecowitt.py',
+                    'bin/user/ultimatepush/catalogs/lacrosse.py',
+                    'bin/user/ultimatepush/catalogs/weatherflow.py',
                     'bin/user/ultimatepush/catalogs/wunderground.py']),
                 ('bin/user/ultimatepush/protocols', [
                     'bin/user/ultimatepush/protocols/__init__.py',
+                    'bin/user/ultimatepush/protocols/acurite.py',
                     'bin/user/ultimatepush/protocols/ambient.py',
                     'bin/user/ultimatepush/protocols/ecowitt.py',
+                    'bin/user/ultimatepush/protocols/lacrosse.py',
+                    'bin/user/ultimatepush/protocols/weatherflow.py',
                     'bin/user/ultimatepush/protocols/wunderground.py']),
             ]
         )

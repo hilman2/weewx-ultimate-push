@@ -153,6 +153,13 @@ class Protocol:
     units = US
     shared_channels = ()
 
+    # Which running counter WeeWX has to difference to get 'rain', the amount in this
+    # packet. Almost every protocol here sends counters and none of them sends the
+    # amount, so without StdDelta pointed at the right one a station records no rain
+    # at all. None means the protocol already sends 'rain' and must not be
+    # differenced again.
+    rain_counter = 'dayRain'
+
     @classmethod
     def claims(cls, request, raw):
         """How sure this protocol is that the upload is its own.
@@ -212,12 +219,27 @@ def registry():
     reported against itself, and so that a tool that only wants the base class does
     not drag in six catalogs.
     """
-    from . import ambient, ecowitt, wunderground
+    from . import (acurite, ambient, ecowitt, lacrosse, weatherflow, wunderground)
     return [
+        # Order decides a tie, and a tie means two protocols were equally sure. The
+        # ones that recognise themselves precisely come first.
         ecowitt.Ecowitt,
         ambient.Ambient,
+        acurite.AcuriteBridge,
+        lacrosse.LW30x,
         wunderground.WeatherUnderground,
+        weatherflow.WeatherFlow,
     ]
+
+
+def posting():
+    """The protocols that arrive over HTTP.
+
+    These are what 'protocols = auto' listens for. A protocol that broadcasts needs a
+    second socket on a port of its own, and opening one for hardware nobody has is
+    not something to do by default, so it is named or it is off.
+    """
+    return [protocol for protocol in registry() if not protocol.datagram]
 
 
 def by_name(name):
