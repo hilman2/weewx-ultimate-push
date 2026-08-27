@@ -1,6 +1,7 @@
 # Sensor reference
 
-Every raw field this driver knows, grouped by the sensor that sends it.
+Every raw field the Ecowitt catalog knows, grouped by the sensor that sends it.
+The other five protocols have catalogs of their own; see [Protocols](Protocols).
 
 Generated from the catalog by `tools/build_reference.py`. Do not edit by hand.
 

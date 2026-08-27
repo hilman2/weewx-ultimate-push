@@ -62,3 +62,52 @@ def test_the_command_line_help_works():
     with pytest.raises(SystemExit) as caught:
         main(['--help'])
     assert caught.value.code == 0
+
+
+def test_the_command_line_reads_an_upload(tmp_path, capsys):
+    """--help proves it parses. This proves it runs.
+
+    The body of a command nothing calls is the easiest thing in a repository to
+    break: it has no caller to fail, and a rename slides straight past it.
+    """
+    import http.client
+    import socket
+    import threading
+
+    pytest.importorskip('weewx', reason="WeeWX is not installed")
+    from ultimatepush.__main__ import main
+
+    with socket.socket() as probe:
+        probe.bind(('127.0.0.1', 0))
+        port = probe.getsockname()[1]
+
+    result = {}
+
+    def run():
+        result['code'] = main(['--port', str(port), '--address', '127.0.0.1',
+                               '--timeout', '20', '--no-database'])
+
+    runner = threading.Thread(target=run)
+    runner.start()
+    try:
+        for _ in range(100):
+            try:
+                connection = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
+                connection.request('POST', '/', 'PASSKEY=ABC&stationtype=GW2000A'
+                                                '&tempf=59.7&baromrelin=29.92')
+                assert connection.getresponse().read() == \
+                    b'{"errcode":"0","errmsg":"ok"}'
+                connection.close()
+                break
+            except OSError:
+                continue
+        else:
+            raise AssertionError("the listener never came up")
+    finally:
+        runner.join(30)
+
+    assert result['code'] == 0
+    printed = capsys.readouterr().out
+    assert "Ecowitt, read with the 'ecowitt' catalog" in printed
+    assert 'outTemp' in printed
+    assert 'barometer' in printed

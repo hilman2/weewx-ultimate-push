@@ -1,16 +1,34 @@
 # Which console the driver listens to
 
 The driver opens a port and waits. Anything on the network can send to that port, and
-Ecowitt hardware does not prove who it is. So the driver answers to the consoles it
-knows about and refuses the rest.
+most of this hardware does not prove who it is. So the driver answers to the stations
+it knows about and refuses the rest.
 
 This page explains what happens, step by step.
 
+## What names a station
+
+Every protocol has something, and it is not the same thing:
+
+| Protocol | Field | What it is |
+|---|---|---|
+| Ecowitt, Ambient | `PASSKEY` | derived from the console's MAC address |
+| Weather Underground | `ID` | what you registered the station under |
+| WeatherFlow | `hub_sn` | the hub's serial number, e.g. `HB-00013030` |
+| Acurite | `id` | the bridge's MAC address |
+| LaCrosse | `mac` | likewise |
+
+Whichever it is goes in `passkey`, in the driver section or under `[[stations]]`. The
+option is named for the commonest case rather than renamed for each protocol.
+
+An AIR and a SKY on one WeatherFlow hub are one station with two sensors, so the hub
+is what is named and not the devices.
+
 ## Why this matters at all
 
-Every Ecowitt console numbers its sensor channels from one. A WN34 on channel 1 of
-your gateway is `tf_ch1`. A WN34 on channel 1 of a second gateway is also `tf_ch1`.
-Nothing in the upload says which gateway it came from.
+Every console numbers its sensor channels from one. A WN34 on channel 1 of your
+gateway is `tf_ch1`. A WN34 on channel 1 of a second gateway is also `tf_ch1`. Nothing
+in the upload says which gateway it came from.
 
 If both were accepted without being told apart, both would land in the same database
 column. One reading would overwrite the other every few seconds, and the column would
@@ -37,8 +55,8 @@ PASSKEY=3178AB6B42A759F51A5A4AD72E37F8DE&stationtype=EasyWeatherPro_V5.2.7&tempf
 The driver adopts it, writes that value to a file, and says so:
 
 ```
-INFO user.ecowitt.driver: Console '3178AB6B42A759F51A5A4AD72E37F8DE' at 192.168.1.42
-is now this driver's station, recorded in /etc/weewx/ecowitt-consoles.txt. Uploads
+INFO user.ultimatepush.driver: Console '3178AB6B42A759F51A5A4AD72E37F8DE' at 192.168.1.42
+is now this driver's station, recorded in /etc/weewx/ultimate-push-consoles.txt. Uploads
 from any other console are refused until it is named under [[stations]].
 ```
 
@@ -55,7 +73,7 @@ Maybe you bought one. Maybe a neighbour typed the wrong address. Maybe you were
 testing. The driver does not know it, so the upload is ignored, and it says once:
 
 ```
-WARNING user.ecowitt.driver: An upload from 192.168.1.51 carries PASSKEY
+WARNING user.ultimatepush.driver: An ecowitt upload from 192.168.1.51 names station
 '9A2B4C6D8E0F1A3B5C7D9E1F2A4B6C8D', which is not one of this driver's consoles.
 Ignoring it. If it is yours, add it under [[stations]] with its own field map: two
 consoles number their channels from one, and would otherwise write into the same
@@ -69,8 +87,8 @@ Your first console keeps recording, without a gap. Nothing is mixed.
 Now you decide where its sensors go. Both consoles get a name and a field map:
 
 ```ini
-[Ecowitt]
-    driver = user.ecowitt.driver
+[UltimatePush]
+    driver = user.ultimatepush.driver
     port = 8000
 
     [[stations]]
@@ -90,6 +108,24 @@ Now you decide where its sensors go. Both consoles get a name and a field map:
 Restart WeeWX. Both consoles record now, each into fields of its own, and every packet
 says which console it came from in a field called `station`.
 
+The two do not have to speak the same protocol. A Tempest and an Ecowitt gateway are
+two stations on one driver like any other pair, and each is named by whatever its own
+protocol uses:
+
+```ini
+    protocols = ecowitt, weatherflow
+
+    [[stations]]
+        [[[garden]]]
+            passkey = 3178AB6B42A759F51A5A4AD72E37F8DE
+        [[[roof]]]
+            passkey = HB-00013030
+```
+
+A station that changes protocol keeps its own field map. The driver holds one mapping
+per catalog it has seen from that station, so a console moved from Ecowitt to Weather
+Underground does not carry its Ecowitt inferences across.
+
 ### 6. WeeWX restarts
 
 The driver reads the file, or your `[[stations]]` section, and knows at once who it
@@ -103,7 +139,7 @@ both sensors anyway, just further apart in time.
 
 ## Where the file is
 
-Beside `weewx.conf`, called `ecowitt-consoles.txt`:
+Beside `weewx.conf`, called `ultimate-push-consoles.txt`:
 
 ```
 # Consoles this WeeWX driver answers to, one PASSKEY per line.
@@ -124,7 +160,7 @@ Beside `weewx.conf`, called `ecowitt-consoles.txt`:
 Put it somewhere else with `console_file`:
 
 ```ini
-[Ecowitt]
+[UltimatePush]
     console_file = /var/lib/weewx/my-consoles.txt
 ```
 
@@ -137,7 +173,7 @@ learned again after every restart, which works, but leaves the coin toss in plac
 Name the console in the configuration, and nothing is learned or stored:
 
 ```ini
-[Ecowitt]
+[UltimatePush]
     passkey = 3178AB6B42A759F51A5A4AD72E37F8DE
 ```
 
@@ -167,11 +203,11 @@ the driver accepts it as its station. Nothing more is possible at the protocol l
 It is the first value in any upload. The simplest way to see it:
 
 ```
-python -m user.ecowitt --port 8001
+python -m user.ultimatepush --port 8001
 ```
 
 Point the console at that port for one upload, read the value, change it back. Or look
-in `ecowitt-consoles.txt`, where the driver has already written it.
+in `ultimate-push-consoles.txt`, where the driver has already written it.
 
 Keep it out of anything public. It is what Ecowitt's own servers use to recognise your
 station.

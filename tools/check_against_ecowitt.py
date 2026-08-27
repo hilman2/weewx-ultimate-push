@@ -70,7 +70,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     sys.path.insert(0, 'bin/user')
-    from ecowitt import catalog
+    from ultimatepush.catalogs import ecowitt as catalog
 
     text = ''
     if args.offline:

@@ -3,7 +3,8 @@
 A reading only survives the archive interval if the table has a column for it.
 Without one it appears in reports as a current value and is gone five minutes later.
 
-WeeWX's standard schema has 113 columns. Ecowitt hardware can fill four times that.
+WeeWX's standard schema has 113 columns. A well equipped Ecowitt or Ambient station
+can fill four times that.
 
 ## What the standard schema covers
 
@@ -21,7 +22,7 @@ up, and about twenty-five families that do not exist there at all, among them
 ## Add only what arrives
 
 ```
-python -m user.ecowitt --port 8001 --config /etc/weewx/weewx.conf
+python -m user.ultimatepush --port 8001 --config /etc/weewx/weewx.conf
 ```
 
 One upload, and it prints the commands for exactly the columns your station needs:

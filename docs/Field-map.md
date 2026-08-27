@@ -1,13 +1,19 @@
 # Field map
 
-How a reading gets from the console to a column.
+How a reading gets from the station to a column.
 
 ```
-console  ──►  raw field   ──►  WeeWX field  ──►  database column
-              tf_ch1           extraTemp9        extraTemp9
+station  ──►  protocol   ──►  raw field  ──►  WeeWX field  ──►  database column
+              ecowitt        tf_ch1          extraTemp9        extraTemp9
 ```
 
-Three things decide the middle step, in this order.
+The protocol comes first, and it is not a formality: the same raw name means different
+things in different catalogs. `UV` is an index in one and microwatts per square
+centimetre in another. See [Protocols](Protocols) for how an upload is recognised, and
+check the log line that says which catalog was used before reading anything below as a
+bug.
+
+Three things then decide the middle step, in this order.
 
 ## 1. Your own mapping
 
@@ -15,7 +21,7 @@ Three things decide the middle step, in this order.
 reading goes.
 
 ```ini
-[Ecowitt]
+[UltimatePush]
     [[field_map_extensions]]
         tf_ch1 = soilTemp5
         soilmoisture1 = soilMoist1
@@ -27,12 +33,12 @@ know where your sensors are.
 
 ## 2. The catalog
 
-532 raw fields with a place to go. See [Sensors](Sensors) for the full list, or ask
-the driver:
+One per protocol. The Ecowitt one has 532 raw fields; see [Sensors](Sensors) for the
+full list, or ask the driver:
 
 ```
 python -c "import sys; sys.path.insert(0, '/etc/weewx/bin/user'); \
-from ecowitt import catalog; print(catalog.FIELDS['tf_ch1'])"
+from ultimatepush.catalogs import ecowitt; print(ecowitt.FIELDS['tf_ch1'])"
 ```
 
 ## 3. Inference
@@ -58,14 +64,14 @@ neither is assumed.
 The log names both candidates, once per field:
 
 ```
-WARNING user.ecowitt.mapping: 'tf_ch1' is not being written, because drivers
+WARNING user.ultimatepush.mapping: 'tf_ch1' is not being written, because drivers
 disagree about where it goes. The wrong choice mixes two sensors into one column,
 and afterwards they cannot be separated. Add one of these under
 [[field_map_extensions]]: 'tf_ch1 = extraTemp9' for this driver's placement, or
 'tf_ch1 = soilTemp1' if your history came from ecowittcustom.
 ```
 
-`python -m user.ecowitt` prints the whole block ready to paste.
+`python -m user.ultimatepush` prints the whole block ready to paste.
 
 On a station with two WN34 probes, a WH52 and a lightning sensor, six fields wait and
 twenty-nine arrive without a word. An outdoor temperature is an outdoor temperature
@@ -92,7 +98,7 @@ The WH51 and the WH52 share one pool of 16 channels, so `soilmoisture3` and
 for the same number, the driver says so once:
 
 ```
-WARNING user.ecowitt.mapping: Both 'soilmoisture3' and 'soil_ec_hum3' arrived, and
+WARNING user.ultimatepush.mapping: Both 'soilmoisture3' and 'soil_ec_hum3' arrived, and
 they map to the same field. One will overwrite the other. Give one of them a field
 of its own in field_map_extensions.
 ```
@@ -103,14 +109,29 @@ A field's unit group comes with its place in the catalog, and the driver registe
 with WeeWX at startup. Fields WeeWX already knows keep their own group; nothing here
 overrides those.
 
-Readings arrive in US units, because that is what the Ecowitt protocol carries: °F,
-inHg, inches, mph. WeeWX converts for display according to your report settings. The
-database stores whatever unit system the driver reports, which for this driver is US.
+Which unit system a packet is in comes from the protocol, not from the driver:
+
+| Protocol | Unit system | What that means |
+|---|---|---|
+| Ecowitt, Ambient, Acurite, Weather Underground | `weewx.US` | °F, inHg, inches, mph |
+| Weather Underground, metric dialect | `weewx.METRIC` | °C, mbar, cm, km/h |
+| WeatherFlow, LaCrosse | `weewx.METRICWX` | °C, mbar, mm, m/s |
+
+WeeWX converts for display according to your report settings, and the database stores
+whatever the packet said.
+
+A handful of readings arrive in a unit other than the one WeeWX keeps that column in,
+and those are converted on the way through. The Weather Underground specification gives
+some of its pollution figures in parts per billion where WeeWX keeps parts per million;
+a LaCrosse gateway sends metric everything and then sends its rain in inches. Nothing
+else is touched: a scaled number is a number nobody can check against the payload, so
+the list is kept short and each entry has its reason written next to it in the
+catalog.
 
 ## Checking a mapping
 
 ```
-python -m user.ecowitt --port 8001
+python -m user.ultimatepush --port 8001
 ```
 
 Prints every reading with the field it went to. See [Diagnostics](Diagnostics).

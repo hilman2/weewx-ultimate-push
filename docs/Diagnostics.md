@@ -5,26 +5,32 @@
 The driver writes out what it could not place, by itself:
 
 ```
-cat /var/tmp/weewx-ecowitt-report.txt
+cat /var/tmp/weewx-ultimate-push-report.txt
 ```
 
 That file appears the first time a station sends something the driver cannot handle.
-It holds the raw upload with the PASSKEY replaced, and what the driver made of it.
-See [Reporting a new sensor](New-sensors).
+It says which protocol it was, and holds the raw upload with everything that names the
+station replaced. See [Reporting a new sensor](New-sensors).
 
 ## Everything else
 
 One command answers the rest:
 
 ```
-python -m user.ecowitt --port 8001
+python -m user.ultimatepush --port 8001
 ```
 
-It listens for one upload, prints what it made of it, and changes nothing. WeeWX can
-keep running, as long as the port differs.
+It listens for one upload, works out which protocol sent it, prints what it made of
+it, and changes nothing. WeeWX can keep running, as long as the port differs. Every
+protocol that posts is listened for, and each is answered the way its own firmware
+expects, so a console will not decide the upload failed.
 
-Point the console at that port for one interval: **WS View Plus** → *Weather
-Services* → *Customized*, change the port, save. Change it back afterwards.
+Point the station at that port for one interval: for an Ecowitt console, **WS View
+Plus** → *Weather Services* → *Customized*, change the port, save. Change it back
+afterwards.
+
+A WeatherFlow hub cannot be pointed anywhere, so this command does not see it. Enable
+the protocol in the driver and read the log instead.
 
 ## Options
 
@@ -41,11 +47,19 @@ Services* → *Customized*, change the port, save. Change it back afterwards.
 
 ## What it prints
 
-**The upload, and every reading with the field it went to.**
+**Which protocol it was, and which catalog read it.**
 
 ```
 POST / from 192.168.1.42, 762 bytes
+  Ecowitt, read with the 'ecowitt' catalog
+```
 
+That line matters more than it looks. Half a station's fields going missing is usually
+this being something other than what you expected.
+
+**Every reading, with the field it went to.**
+
+```
 37 readings
   UV                         2.0
   barometer                  29.92
@@ -98,7 +112,7 @@ line you want:
 For a continuous view, or when the console cannot be pointed elsewhere:
 
 ```ini
-[Ecowitt]
+[UltimatePush]
     log_raw = true
 ```
 

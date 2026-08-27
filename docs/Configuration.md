@@ -6,14 +6,17 @@ Everything lives in one section of `weewx.conf`.
 
 ```ini
 [Station]
-    station_type = Ecowitt
+    station_type = UltimatePush
 
-[Ecowitt]
-    driver = user.ecowitt.driver
+[UltimatePush]
+    driver = user.ultimatepush.driver
 
     # Where to listen.
     address = 0.0.0.0
     port = 8000
+
+    # Which protocols to listen for. 'auto' is every one that posts.
+    protocols = auto
 
     # Accept this path only. Anything else gets a 404.
     path = /a8f3c1e0/report
@@ -39,7 +42,8 @@ Everything lives in one section of `weewx.conf`.
 ### The listener
 
 These are passed straight to `weewx.listener`. They behave the same for every driver
-that uses it.
+that uses it. With WeatherFlow enabled, `address`, `allowed_hosts`, `max_body`,
+`queue_size` and `log_raw` apply to the UDP socket as well; the rest are HTTP only.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -58,13 +62,17 @@ that uses it.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `driver` | | `user.ecowitt.driver` |
-| `model` | Ecowitt | What reports call the station. |
+| `driver` | | `user.ultimatepush.driver` |
+| `protocols` | `auto` | Which protocols to listen for. `auto` is every one that posts; name them to add WeatherFlow, or to settle an upload that identifies nothing. See [Protocols](Protocols). |
+| `model` | UltimatePush | What reports call the station. |
 | `infer_unknown` | `series` | What happens to fields the catalog does not cover. See [Unknown fields](Unknown-fields). |
 | `field_map_extensions` | empty | Raw field to WeeWX field. Wins over everything else. See [Field map](Field-map). |
-| `report_file` | `/var/tmp/weewx-ecowitt-report.txt` | Where to leave a report when a station sends something the driver cannot place. Empty switches it off. |
+| `report_file` | `/var/tmp/weewx-ultimate-push-report.txt` | Where to leave a report when a station sends something the driver cannot place. Empty switches it off. |
 | `max_behind` | `3600` | How many seconds behind the computer's clock a console's own timestamp may be and still be believed. See [The console's clock](#the-consoles-clock). |
 | `max_ahead` | `60` | The same, for a console whose clock runs fast. |
+| `password` | none | Weather Underground only. Refuse uploads that do not present this as `PASSWORD`. It is the one protocol here whose hardware can carry a secret. |
+| `metric_wind` | `kph` | Weather Underground metric dialect only. Whether its wind is kilometres per hour or metres per second, which cannot be read off a payload. `kph` or `mps`. See [Protocols](Protocols). |
+| `udp_port` | 50222 | WeatherFlow only. The port to listen for broadcasts on. There is no reason to change it. |
 
 ## The console's clock
 
@@ -81,7 +89,7 @@ between two clocks that are both roughly right. Outside the window the driver sa
 and falls back to the time the upload arrived:
 
 ```
-WARNING user.ecowitt.protocol: Device time 2015-01-01 00:00:00 is 4255 days behind
+WARNING user.ultimatepush.transport: Device time 2015-01-01 00:00:00 is 4255 days behind
 ours, past what max_behind allows. Using ours.
 ```
 
@@ -99,8 +107,8 @@ The console posts straight to WeeWX. Simplest, and fine where nothing else can r
 the port.
 
 ```ini
-[Ecowitt]
-    driver = user.ecowitt.driver
+[UltimatePush]
+    driver = user.ultimatepush.driver
     port = 8000
 ```
 
@@ -112,8 +120,8 @@ The web server keeps 443 and passes one path through. A path nobody can guess is
 only secret most consoles can carry.
 
 ```ini
-[Ecowitt]
-    driver = user.ecowitt.driver
+[UltimatePush]
+    driver = user.ultimatepush.driver
     address = localhost
     port = 8000
     path = /a8f3c1e0/report
@@ -152,7 +160,43 @@ WeeWX runs one driver per instance, so two stations means two instances, each wi
 its own configuration file, database and port. See the WeeWX wiki article *Run
 multiple instances of WeeWX on one computer*.
 
-## Configuring the console
+### A Tempest and an Ecowitt gateway together
+
+Two sockets, one loop. WeatherFlow is not in `auto`, because it needs a port of its
+own and opening one for hardware nobody has is not a thing to do quietly.
+
+```ini
+[UltimatePush]
+    driver = user.ultimatepush.driver
+    port = 8000
+    protocols = ecowitt, weatherflow
+
+    [[stations]]
+        [[[garden]]]
+            passkey = 34A1B2C3D4E5F60718293A4B5C6D7E8F
+        [[[roof]]]
+            passkey = HB-00013030
+```
+
+A hub is named by its serial number, which goes in `passkey` like any other identity.
+See [Several consoles](Several-consoles).
+
+### One protocol, named
+
+An upload with nothing in it that says which protocol it is gets refused rather than
+read with whichever catalog happened to be first. Naming one settles it:
+
+```ini
+[UltimatePush]
+    protocols = wunderground
+```
+
+Worth doing anyway when you know what you have: it removes a class of mistake, and
+costs nothing.
+
+## Configuring the station
+
+### Ecowitt
 
 In **WS View Plus**: *Weather Services*, then page through to *Customized*.
 
@@ -164,14 +208,19 @@ In **WS View Plus**: *Weather Services*, then page through to *Customized*.
 | Port | what you set as `port` |
 | Upload Interval | 60 seconds is plenty; 16 is the minimum |
 
-The Weather Underground protocol is also read, but it carries fewer fields. Nothing
-outside the WU field list reaches WeeWX that way, which on a current station means
-most of the sensors. Use Ecowitt unless something forces otherwise.
+The same console will also speak Weather Underground, and that is read too, but it
+carries fewer fields. Nothing outside the WU field list reaches WeeWX that way, which
+on a current station means most of the sensors. Use Ecowitt unless something forces
+otherwise.
+
+### Everything else
+
+See [Installation](Installation) for Ambient, WeatherFlow, Acurite and LaCrosse.
 
 ## Checking it works
 
 ```
-python -m user.ecowitt --port 8001
+python -m user.ultimatepush --port 8001
 ```
 
 Point the console at 8001 for one upload. See [Diagnostics](Diagnostics).

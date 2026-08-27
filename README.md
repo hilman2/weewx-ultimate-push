@@ -1,24 +1,42 @@
-# weewx-ecowitt
+# weewx-ultimate-push
 
-A WeeWX driver for Ecowitt hardware that uploads to a custom server. It listens for the
-uploads a gateway or console sends, and turns them into WeeWX records.
+A WeeWX driver for weather hardware that pushes its readings to a server instead of
+waiting to be asked. It listens for what a station sends, works out which protocol sent
+it, and turns it into WeeWX records.
 
-Works with anything that offers "Customized" upload in the WSView app, which is most of
-the range: GW1000, GW1100, GW1200, GW2000, GW3000, HP2551, HP2561, WS3800, WS3900,
-WS3910, WN1980 and their relatives. Both the Ecowitt protocol and the Weather
-Underground protocol are read.
+Six protocols, on one port where they will fit:
+
+| Protocol | Hardware | How it arrives |
+|---|---|---|
+| Ecowitt | GW1000/1100/1200/2000/3000, HP2551, HP2561, WS3800/3900/3910, WN1980, and the Froggit and Misol rebadges | POST, any path you choose |
+| Weather Underground | Fine Offset Observer, Ambient WS-1000, Sainlogic, Misol, any console set to protocol *Wunderground*, Meteobridge, most weather software | GET, `/weatherstation/updateweatherstation.php` |
+| Ambient Weather | WS-2902, WS-5000, WS-1965 and the rest of the range with *Custom* upload in awnet | POST or GET, any path |
+| WeatherFlow | Tempest, and the AIR and SKY before it | UDP broadcast on 50222 |
+| Acurite | smartHUB and Access, with a 5-in-1, towers, Pro sensors, the 899 gauge | POST, needs a DNS entry |
+| LaCrosse | LW301 and LW302 gateways | POST, needs a DNS entry |
+
+Each is answered the way its own firmware expects. An Ecowitt gateway gets its JSON, a
+Weather Underground client gets `success`, an Acurite bridge gets Chaney's own reply,
+all on the same port in the same second. Hardware that does not read the answer it
+wants counts the upload as failed, retries, and eventually stops.
 
 ## Why another one
 
-Because the field lists are the hard part, and they keep changing. Ecowitt ships new
-sensors faster than drivers get updated, and the usual outcome is that readings arrive
-and are thrown away. A current HP2561AE Pro sends 45 fields. `weewx-interceptor` maps
-25 of them and logs `unrecognized parameter` for the other 20, including the lightning
-sensor, both soil probes and the whole WH52.
+Because the field lists are the hard part, and they keep changing.
 
-The raw field names come from Werner Krenn's `ecowittcustom`, which knows more of them
-than anything else. Where they belong in WeeWX is decided here, from what the sensors
-actually are. On top of that:
+New sensors ship faster than drivers get updated, and the usual outcome is that the
+readings arrive and are thrown away. A current HP2561AE Pro sends 45 fields.
+`weewx-interceptor` maps 25 of them and logs `unrecognized parameter` for the other 20,
+including the lightning sensor, both soil probes and the whole WH52.
+
+The same thing happens between protocols, and there it is quieter. A Weather Underground
+station read with an Ecowitt catalog does not fail. `tempf` and `humidity` arrive, and
+`baromin`, `rainin`, `indoortempf`, `indoorhumidity` and `UV` are dropped, because those
+names are not in that catalog. The station records no pressure, no indoor readings and
+no UV, and nothing anywhere says so.
+
+So this driver keeps a catalog per protocol, decides which one an upload belongs to from
+what is in it, and says out loud what it could not place. On top of that:
 
 - **New fields are not silently dropped.** A field that continues a series the catalog
   already describes is taken, so a channel the hardware gains needs no release. A field
@@ -30,22 +48,29 @@ actually are. On top of that:
 
 ## Install
 
-    weectl extension install https://github.com/hilman2/weewx-ecowitt/releases/latest/download/weewx-ecowitt.zip
+    weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push.zip
     weectl station reconfigure
 
-Then point the hardware at it. In the WSView app: *Weather Services*, then *Customized*,
-protocol *Ecowitt*, server the address of the machine running WeeWX, path and port as
-configured below.
+Then point the hardware at it. For an Ecowitt console, in the WSView app: *Weather
+Services*, then *Customized*, protocol *Ecowitt*, server the address of the machine
+running WeeWX, path and port as configured below. Every other protocol is in
+[Installation](docs/Installation.md).
 
 ## Configure
 
 ```ini
-[Ecowitt]
-    driver = user.ecowitt.driver
+[UltimatePush]
+    driver = user.ultimatepush.driver
     port = 8000
 
-    # Accept this path only. Hardware can rarely send a token any other way, so a path
-    # nobody can guess is the practical way to keep strangers out.
+    # Which protocols to listen for. 'auto' is every one that posts, and costs
+    # nothing: an upload is recognised by what is in it, not by which port it came
+    # to. Name them to add WeatherFlow, which needs a second socket.
+    protocols = auto
+
+    # Accept this path only. Most hardware cannot send a token any other way, so a
+    # path nobody can guess is the practical way to keep strangers out. Leave it out
+    # if you have Weather Underground hardware: its path is fixed in the firmware.
     path = /change-me/report
 
     # What to do with a field the driver does not know yet.
@@ -59,6 +84,24 @@ configured below.
 `port`, `address`, `path`, `token`, `allowed_hosts`, `trust_proxy`, `max_body` and
 `log_raw` are passed to the listener. They are documented in the WeeWX customization
 guide, under *Porting to new hardware*.
+
+### Rain
+
+None of this hardware sends the rain since the last upload. It sends running counters,
+and `StdWXCalculate`'s `Delta` is what turns one into a reading. The installer sets it
+up for `dayRain`, which is what four of the six protocols send:
+
+```ini
+[StdWXCalculate]
+    [[Delta]]
+        [[[rain]]]
+            input = dayRain
+```
+
+WeatherFlow needs none of that: a hub already sends the millimetres since its last
+report. A LaCrosse LW30x has no daily counter and needs `input = totalRain`. The driver
+says so in the log at startup when the setting does not suit the protocols you enabled,
+because the alternative is finding out after a wet month.
 
 ### infer_unknown
 
@@ -74,8 +117,8 @@ would land on `extraTemp`, where a sensor you set up two years ago may already h
 history, and two series in one column cannot be told apart afterwards. So a channel from
 a family whose placement is a convention waits for you, with the line to paste:
 
-    INFO user.ecowitt.mapping: New channel 'temp9f' would go to 'extraTemp9'. Which
-        sensor that is, and whether that field is free, only you know. Add
+    INFO user.ultimatepush.mapping: New channel 'temp9f' would go to 'extraTemp9'.
+        Which sensor that is, and whether that field is free, only you know. Add
         'temp9f = extraTemp9' under [[field_map_extensions]] to accept it.
 
 Families with nowhere else to be, such as a laser rangefinder's depth or a lightning
@@ -84,7 +127,7 @@ unit nobody checked.
 
 Whatever the setting, the log says what turned up:
 
-    INFO user.ecowitt.mapping: New field 'leafwetness_ch5' -> 'leafWet5'
+    INFO user.ultimatepush.mapping: New field 'leafwetness_ch5' -> 'leafWet5'
         (group_percent), continues leafwetness_ch, e.g. leafWet1
 
 A field only reaches the database if the archive table has a column for it. Fields
@@ -95,55 +138,67 @@ outside the standard schema need `weectl database add-column` first.
 | | |
 |---|---|
 | [Installation](docs/Installation.md) | install, point the hardware at it, start |
+| [Protocols](docs/Protocols.md) | what each one sends, and how they are told apart |
 | [Configuration](docs/Configuration.md) | every option, with worked examples |
 | [Field map](docs/Field-map.md) | how a reading gets to a column |
-| [Hardware](docs/Hardware.md) | every device: arrays, consoles, sensors, older Fine Offset kit |
+| [Hardware](docs/Hardware.md) | every device, and what it takes to reach it |
 | [Sensors](docs/Sensors.md) | every field this driver knows, by sensor |
 | [Unknown fields](docs/Unknown-fields.md) | what happens to a field the catalog misses |
-| [Several consoles](docs/Several-consoles.md) | a second gateway, without the two overwriting each other |
+| [Several consoles](docs/Several-consoles.md) | a second station, without the two overwriting each other |
 | [Database columns](docs/Database-columns.md) | which columns a station needs |
 | [Diagnostics](docs/Diagnostics.md) | one command that answers most questions |
 | [Reporting a new sensor](docs/New-sensors.md) | exactly what to send |
 | [Troubleshooting](docs/Troubleshooting.md) | symptoms and what they mean |
 | [Keeping strangers out](docs/Security.md) | path, token, addresses, TLS |
-| [Development](docs/Development.md) | layout, tests, rebuilding the catalog |
+| [Development](docs/Development.md) | layout, tests, rebuilding a catalog |
 
 ## Where the fields come from
 
-The catalog is generated, not typed. `tools/import_catalog.py` reads the raw field
-names out of the `ecowittcustom` driver by [Werner
-Krenn](https://github.com/WernerKr/Ecowitt-or-DAVIS-stations-and-Season-skin) and writes
-`bin/user/ecowitt/catalog.py`. Run it again when Ecowitt ships something new and the
-addition is a reviewable diff rather than a merge nobody can check.
+Two of the catalogs are generated, because their hardware keeps gaining sensors and a
+generated catalog makes the next addition a diff somebody can check:
+
+- `tools/import_catalog.py` reads the Ecowitt names out of the `ecowittcustom` driver by
+  [Werner Krenn](https://github.com/WernerKr/Ecowitt-or-DAVIS-stations-and-Season-skin).
+- `tools/import_ambient.py` reads the Ambient names out of the `ambient_station`
+  integration in Home Assistant, which is maintained against real hardware.
+
+The rest are written out, because their protocols are finished. Weather Underground's
+was published once and then withdrawn, and the copy this one was derived from is in
+`tests/fixtures/wunderground/spec.txt`, where a test checks the catalog against it.
+WeatherFlow's UDP reference is current and public. The Acurite and LaCrosse names come
+from frames captured off real hardware.
 
 What a field *is* comes from the hardware and is not negotiable. Where it *goes* is
-decided in that tool, in three lists that are meant to be read:
+decided in the tools and the catalogs, in lists that are meant to be read:
 
-- `CHANNELS`, how far each sensor family reaches, from Ecowitt's compatibility table.
+- `CHANNELS`, how far each sensor family reaches, from the maker's compatibility table.
 - `REMAP`, families placed differently from upstream, with the reason next to them.
   The WN34 and the WH52 are there.
-- `OVERRIDES`, single fields, likewise with the reason. Currently one, the lightning
-  timestamp that upstream keeps in a counter.
+- `OVERRIDES`, single fields, likewise with the reason.
 
-The generator reports what it could not settle: fields written by more than one
-reading, readings upstream sends to more than one field, and raw names with no target
-at all. None of that is allowed to pass quietly.
+The generators report what they could not settle: fields written by more than one
+reading, readings upstream sends to more than one field, and raw names with no target at
+all. None of that is allowed to pass quietly.
 
 ## Tests
 
     pip install pytest
     python -m pytest tests -q
 
-The parser, the catalog and the inference need nothing but Python. That is deliberate:
-the tests run from captured payloads, so a change that would have dropped a field fails
-a test rather than turning up in somebody's database a month later. Captured payloads
-live in `tests/fixtures`, with the `PASSKEY` removed.
+The transport, the catalogs, the protocols and the inference need nothing but Python.
+That is deliberate: the tests run from captured payloads, so a change that would have
+dropped a field fails a test rather than turning up in somebody's database a month
+later. Captured payloads live in `tests/fixtures`, with whatever named the station
+removed.
 
 ## Credit and licence
 
 GPLv3, like everything it descends from.
 
-- The field catalog comes from `ecowittcustom` by Werner Krenn.
+- The Ecowitt catalog comes from `ecowittcustom` by Werner Krenn.
 - That driver descends from `weewx-interceptor` by Matthew Wall, which is where the
-  approach of listening for the upload comes from in the first place.
+  approach of listening for the upload comes from in the first place, and where the
+  Acurite, LaCrosse and Fine Offset names and captured frames come from.
+- The Ambient names come from the `ambient_station` integration in Home Assistant,
+  which is Apache-2.0.
 - WeeWX is by Tom Keffer and Matthew Wall.

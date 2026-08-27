@@ -16,14 +16,14 @@ jobs:
       - name: Check that the tag matches the version in the code
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          for file in install.py bin/user/ecowitt/__init__.py; do
+          for file in install.py bin/user/ultimatepush/__init__.py; do
             grep -q "VERSION = '${tag}'" "$file" \
               || { echo "$file does not say ${tag}"; exit 1; }
           done
 
       - name: Build the extension package
         run: |
-          name="weewx-ecowitt-${GITHUB_REF_NAME#v}"
+          name="weewx-ultimate-push-${GITHUB_REF_NAME#v}"
           mkdir -p "build/${name}"
           cp -r install.py bin LICENSE README.md CHANGELOG.md "build/${name}/"
           find "build/${name}" -name '__pycache__' -type d -prune -exec rm -rf {} +

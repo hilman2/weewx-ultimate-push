@@ -3,12 +3,16 @@
 ## Layout
 
 ```
-bin/user/ecowitt/
-    protocol.py    text in, named readings out. No sockets, no clock, no WeeWX.
-    catalog.py     generated. Raw field to WeeWX field, unit groups, channel counts.
-    infer.py       what to do with a field the catalog does not cover.
+bin/user/ultimatepush/
+    transport.py   text in, name and value pairs out. No sockets, no WeeWX.
+    protocols/     one module per protocol: how to recognise it, what it answers,
+                   what names its station, which catalog reads it.
+    catalogs/      one module per protocol, and nothing in any of them but data.
+    infer.py       what to do with a field a catalog does not cover.
     mapping.py     the three above, combined into a packet. Still no WeeWX.
     columns.py     which database columns a packet needs.
+    consoles.py    which stations this driver answers to.
+    server.py      an answer per protocol, and several listeners behind one iterator.
     driver.py      the WeeWX end: loop packets, unit groups, shutdown.
     __main__.py    the diagnostic command.
 bin/user/listener.py   WeeWX's own listener, bundled for WeeWX older than 5.6.
@@ -16,8 +20,59 @@ tools/                 catalog and reference generators.
 tests/                 pytest, with captured payloads in tests/fixtures.
 ```
 
-Everything below `driver.py` runs without WeeWX installed. That is what lets the
-tests work from a captured payload rather than from mocks.
+Everything except `driver.py`, `server.py` and `__main__.py` runs without WeeWX
+installed. That is what lets the tests work from a captured payload rather than from
+mocks, and it is worth keeping: a catalog is data, and data should be checkable
+without a weather station or a WeeWX.
+
+## Protocols and dialects
+
+Two words, kept apart on purpose.
+
+A **protocol** is an exchange: a path, an answer, a way of naming the station.
+
+A **dialect** is a catalog: what the names mean and what units they arrive in.
+
+Detection works on protocols, mapping works on dialects, and they are not the same
+question. Weather Underground has two dialects on one endpoint. The driver keeps one
+mapper per dialect it has actually seen, because inference learned from `tempf` and
+`soiltemp2f` has no business being applied to `outtemp` and `absbaro`.
+
+## Adding a protocol
+
+`bin/user/ultimatepush/protocols/` has six worked examples. A new one is a class and
+a catalog:
+
+```python
+class MyProtocol(Protocol):
+    name = 'mine'
+    label = 'My Weather Thing'
+    hardware = 'the boxes this is for'
+
+    answer = 'ok'                 # what its firmware waits for
+    content_type = 'text/plain'
+    identity = ('serial',)        # which field names the station
+    units = US
+    rain_counter = 'dayRain'      # what StdDelta has to difference, or None
+
+    fields = _catalog.FIELDS
+    groups = _catalog.GROUPS
+
+    @classmethod
+    def claims(cls, request, raw):
+        return 5 if 'something_only_mine_sends' in raw else 0
+```
+
+Then add it to `registry()`, add a captured payload to `tests/fixtures`, and write a
+test that says what should come out of it.
+
+`claims` returns how sure the protocol is, and the surest wins. Keep the numbers
+honest: 5 or 6 for something only this protocol sends, 2 or 3 for something it merely
+cannot rule out. A protocol that overstates itself takes uploads from one that would
+have read them properly.
+
+If the payload is not name and value pairs, override `readings`. WeatherFlow unpacks
+JSON arrays there; Acurite and LaCrosse rename theirs to keep two sensors apart.
 
 ## Tests
 
@@ -37,7 +92,7 @@ CI runs both, across Python 3.8 to 3.13, plus a vermin check against 3.7.
 
 ## The catalog
 
-`bin/user/ecowitt/catalog.py` is generated, not written:
+`bin/user/ultimatepush/catalogs/ecowitt.py` is generated, not written:
 
 ```
 python tools/import_catalog.py path/to/ecowittcustom.py \
@@ -98,18 +153,28 @@ compares the two when WeeWX has one, so the copy cannot drift. Do not edit it; w
 the core carries the listener, the driver picks that up on its own and the copy can
 go.
 
+That is also why `server.py` exists. The core listener sets one content type for the
+whole listener, and six protocols want different ones on the same port. So the answer
+carries its own content type, kept per thread, in a subclass here rather than in a
+change to a file that has to stay identical. `Fan` is there for the same reason: a
+driver iterates one thing, and a station with a WeatherFlow hub and an Ecowitt gateway
+needs two sockets.
+
 ## Adding a field
 
-1. Add the raw name to the catalog through the generator, not by hand.
+1. Add the raw name to the catalog. Through the generator where there is one, not by
+   hand.
 2. Give it a unit group if WeeWX does not know the field.
 3. If it belongs to a sensor family the driver does not know, add the family to
    `CHANNELS` with its channel count.
-4. Add a captured payload to `tests/fixtures` and a test that says what should come
+4. If another protocol already sends the same reading, send it to the same WeeWX
+   field. A test compares the catalogs and will say so if you do not.
+5. Add a captured payload to `tests/fixtures` and a test that says what should come
    out of it.
 
 ## Releasing
 
-Set the version in `install.py` and `bin/user/ecowitt/__init__.py`, update
+Set the version in `install.py` and `bin/user/ultimatepush/__init__.py`, update
 `CHANGELOG.md`, then tag:
 
 ```

@@ -10,7 +10,7 @@ known, `zz_ch3` follows from them: the hardware numbers its own channels, and th
 catalog supplies both ends of the series.
 
 ```
-INFO user.ecowitt.mapping: New field 'leafwetness_ch5' -> 'leafWet5' (group_percent),
+INFO user.ultimatepush.mapping: New field 'leafwetness_ch5' -> 'leafWet5' (group_percent),
 continues leafwetness_ch, e.g. leafWet1
 ```
 
@@ -19,7 +19,7 @@ reading. Those wait for you. See [Field map](Field-map).
 
 ## Guessed
 
-The name says what the reading is. Ecowitt is consistent about this:
+The name says what the reading is. Most of this hardware is consistent about it:
 
 | Pattern | Reading |
 |---|---|
@@ -43,16 +43,19 @@ The name says what the reading is. Ecowitt is consistent about this:
 Reported, not taken:
 
 ```
-INFO user.ecowitt.mapping: New field 'yearlyrainin' looks like group_rain
+INFO user.ultimatepush.mapping: New field 'yearlyrainin' looks like group_rain
 (name matches rain.*in$|rain.*piezo$), but it was only guessed. Left out.
 Add it to field_map_extensions to keep it.
 ```
 
-A guessed field would go to `ecowitt_` plus its raw name, which collides with nothing.
+A guessed field goes to the protocol's own prefix plus the raw name: `ecowitt_`,
+`wu_`, `ambient_`, `acurite_` and so on. Two protocols that send the same unrecognised
+name therefore land in different columns, which is the safe way round: a name nobody
+has identified is not known to mean the same thing in both.
 
 ## Past the published channel count
 
-Ecowitt publishes how many channels each sensor supports. A channel beyond that is
+Each maker publishes how many channels a sensor supports. A channel beyond that is
 real but not routine, so it is reported rather than derived:
 
 ```
@@ -65,7 +68,7 @@ worth a look before the reading lands in a column.
 ## Nothing can be said
 
 ```
-INFO user.ecowitt.mapping: No idea what 'wizzlefrob' is. Left out.
+INFO user.ultimatepush.mapping: No idea what 'wizzlefrob' is. Left out.
 ```
 
 Please report it. See [Reporting a new sensor](New-sensors).
@@ -73,7 +76,7 @@ Please report it. See [Reporting a new sensor](New-sensors).
 ## The setting
 
 ```ini
-[Ecowitt]
+[UltimatePush]
     infer_unknown = series
 ```
 
@@ -81,11 +84,11 @@ Please report it. See [Reporting a new sensor](New-sensors).
 |---|---|
 | `off` | Nothing is taken. Everything unknown is logged and dropped. |
 | `series` | Derived fields are taken, unless their placement is a convention. Guesses are logged. **Default.** |
-| `all` | Guesses are taken too, under `ecowitt_` plus the raw name. |
+| `all` | Guesses are taken too, under the protocol's prefix plus the raw name. |
 
 `all` gets you the reading sooner, at the risk of a unit nobody checked. It is the
 right setting while working out what a station sends, which is why
-`python -m user.ecowitt` uses it.
+`python -m user.ultimatepush` uses it.
 
 Whatever the setting, a field is reported once per run. Restart the driver to see the
 messages again.

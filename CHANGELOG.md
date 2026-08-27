@@ -1,5 +1,83 @@
 # Changelog
 
+## 0.5.0 (2026-08-28)
+
+Renamed from `weewx-ecowitt`. The driver reads six protocols now, and the old name
+described one of them.
+
+**This release does not upgrade in place.** The package is `user.ultimatepush`, the
+section is `[UltimatePush]`, and the extension is `ultimate-push`. To move:
+
+    weectl extension uninstall ecowitt
+    weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push.zip
+    weectl station reconfigure
+
+Copy `field_map_extensions`, `passkey`, `path` and any `[[stations]]` across by hand.
+The database is untouched and every column keeps its readings.
+
+Two field names moved, both of them wind averages that only some hardware sends:
+`windspdmph_avg10m` and `winddir_avg10m` now go to `windSpeed_avg10m` and
+`windDir_avg10m` in every catalog rather than to their own raw names in one of them.
+A station that has history in the old columns keeps it; add the old names to
+`field_map_extensions` to carry on writing there.
+
+### Protocols
+
+| Protocol | Hardware |
+|---|---|
+| Ecowitt | as before |
+| Weather Underground | Fine Offset Observer, Sainlogic, Meteobridge, any console set to *Wunderground* |
+| Ambient Weather | WS-2902, WS-5000, WS-1965 and the rest of the range |
+| WeatherFlow | Tempest, AIR, SKY, over UDP |
+| Acurite | smartHUB, Access |
+| LaCrosse | LW301, LW302 |
+
+They share one port. Which one sent an upload is decided from what is in it, and each
+is answered the way its own firmware expects: JSON for Ecowitt, `success` for Weather
+Underground, Chaney's own reply for Acurite. Hardware that does not read the answer it
+expects counts the upload as failed and eventually stops.
+
+Weather Underground was previously listed as supported and was not, in any useful
+sense. Both transports ended in the same parser, but the catalog had no Weather
+Underground field names in it, so `baromin`, `rainin`, `indoortempf`, `indoorhumidity`
+and `UV` were all dropped. A station on that protocol recorded no pressure, no indoor
+readings and no UV, and nothing said so.
+
+`protocols` selects them. The default `auto` is every one that posts. WeatherFlow needs
+naming, because it opens a second socket.
+
+### Three things that were silently wrong
+
+**`-9999` was read as a number.** Fine Offset firmwares send it for a sensor with
+nothing to report. It is a gap now.
+
+**`baromin` is not always sea-level pressure.** `WH2600GEN_V2.2.5` and `WH2650A_V1.2.1`
+send station pressure in it. Both say so in `softwaretype`, and the driver moves the
+field for them.
+
+**Rain needs a different counter per protocol.** WeatherFlow already sends the amount
+since its last report and must not be differenced again; a LaCrosse LW30x has no daily
+counter and needs `input = totalRain`. The driver warns at startup when the setting in
+`weewx.conf` does not suit the protocols enabled.
+
+### Also
+
+- `password` checks the `PASSWORD` Weather Underground hardware sends. It is the one
+  protocol here whose hardware can carry a secret.
+- `metric_wind` says whether the Weather Underground metric dialect sends kilometres
+  per hour or metres per second, which cannot be read off a payload.
+- A packet's unit system now comes from the protocol. It was `weewx.US` for everything.
+- A few readings are converted where they arrive in a unit other than the one WeeWX
+  keeps that column in: parts per billion to parts per million, inches to millimetres
+  in the LaCrosse rain gauge, microwatts per square centimetre to watts per square
+  metre.
+- Acurite and LaCrosse send one request per sensor. Everything that is not the main
+  station arrives named after the sensor that sent it, ready to place.
+- The Ambient catalog is generated from Home Assistant's `ambient_station`, the way the
+  Ecowitt one is generated from `ecowittcustom`.
+- The report file says which protocol the upload was.
+- New page: [Protocols](docs/Protocols.md).
+
 ## 0.3.1 (2026-08-25)
 
 Fix: no rain was recorded at all. Ecowitt hardware sends rain as running counters,
@@ -85,9 +163,9 @@ First version.
 - Fields whose placement the hardware does not settle are not written until they are
   named in `field_map_extensions`. Six of them on a station with two WN34 probes, a
   WH52 and a lightning sensor; the other twenty-nine readings arrive as usual.
-- `python -m user.ecowitt` reports which of the fields it would write to already hold
+- `python -m user.ultimatepush` reports which of the fields it would write to already hold
   readings, before anything is changed.
 - When a station sends something the driver cannot place, it writes the raw upload
-  and its findings to `/var/tmp/weewx-ecowitt-report.txt`, with the PASSKEY replaced.
+  and its findings to `/var/tmp/weewx-ultimate-push-report.txt`, with the PASSKEY replaced.
   Reporting a new sensor is then one `cat` and a paste.
 - Uses `weewx.listener` where available, and ships a copy for older WeeWX.

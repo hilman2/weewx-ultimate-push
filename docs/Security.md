@@ -1,16 +1,27 @@
 # Keeping strangers out
 
 The driver opens a port that accepts weather readings. Anyone who can reach it can
-post readings, and the console has no way to prove it is the console. Ecowitt
-hardware sends a `PASSKEY`, but that is a fixed value visible in every upload, so it
-is an identifier rather than a secret.
+post readings, and most of this hardware has no way to prove it is the station.
 
-Four settings narrow the exposure. Use as many as fit.
+One protocol is an exception. Weather Underground sends `PASSWORD` in every upload,
+which is a shared secret and can be checked:
+
+```ini
+[UltimatePush]
+    password = whatever-you-set-in-the-console
+```
+
+Uploads that do not present it are refused, and the comparison is constant time.
+
+Everything else sends an identifier rather than a secret. An Ecowitt or Ambient
+`PASSKEY` is derived from the MAC address and is visible in every upload; a
+WeatherFlow hub broadcasts to the whole network and is not asked for anything at all.
+So the port has to be narrowed instead. Use as many of these as fit.
 
 ## Bind to one address
 
 ```ini
-[Ecowitt]
+[UltimatePush]
     address = 192.168.1.10
 ```
 
@@ -61,16 +72,32 @@ Accepted as query parameter `token`, header `X-Auth-Token`, or a bearer token in
 Anything else gets a 403. Behind a proxy this sees the proxy unless `trust_proxy` is
 set, so set both together or neither.
 
+## What does not work for every protocol
+
+**A path.** Weather Underground hardware has its endpoint burned into the firmware and
+cannot be told to use another. An Acurite bridge and a LaCrosse gateway likewise. If
+you have any of those, `path` is not available to you and `allowed_hosts` is what is
+left.
+
+**Anything at all, for WeatherFlow.** A hub broadcasts on the local network and is
+answered by nobody. There is no path, no token and no password, because there is no
+request. `allowed_hosts` restricts which senders are accepted, and beyond that the
+network is the boundary.
+
 ## What none of this does
 
-**Encryption.** The Ecowitt protocol is plain HTTP, and consoles do not offer TLS. On
-a local network that is usually acceptable. Across the internet, put a reverse proxy
-with a certificate in front and let it terminate TLS. The path and the readings are
-then encrypted between the console and the proxy, and the proxy talks to the driver
-on localhost.
+**Encryption.** All of these protocols are plain HTTP, and none of the hardware offers
+TLS. On a local network that is usually acceptable. Across the internet, put a reverse
+proxy with a certificate in front and let it terminate TLS. The path and the readings
+are then encrypted between the station and the proxy, and the proxy talks to the
+driver on localhost.
 
 **Authentication of the sensor.** Nothing stops somebody who knows your path from
 posting a plausible temperature. The defence is that they have to know it.
+
+**Protecting a station from a second one.** That is a different problem, and it has
+its own answer: the driver answers only to consoles it knows about. See
+[Several consoles](Several-consoles).
 
 ## A limit worth keeping
 

@@ -8,8 +8,8 @@ The log should show this at startup:
 INFO weewx.listener: Listening for HTTP requests on *:8000
 ```
 
-If it does not, the driver is not running. Check `station_type = Ecowitt` and that
-the `[Ecowitt]` section has `driver = user.ecowitt.driver`.
+If it does not, the driver is not running. Check `station_type = UltimatePush` and that
+the `[UltimatePush]` section has `driver = user.ultimatepush.driver`.
 
 If it does, watch the port:
 
@@ -19,11 +19,16 @@ sudo tcpdump -i any -n port 8000
 
 Nothing there means the problem is between console and machine:
 
-- Address or port wrong in WS View Plus. Check the page again after leaving it; the
-  app sometimes reports a save that did not happen.
-- Protocol set to *Wunderground* instead of *Ecowitt*.
+- Address or port wrong in the app. Check the page again after leaving it; WS View
+  Plus sometimes reports a save that did not happen.
 - A firewall. `sudo ufw allow 8000/tcp` where ufw is in use.
 - The console on a different network segment from WeeWX.
+- For WeatherFlow: a broadcast does not cross a router, so the hub and WeeWX have to
+  be on the same segment. Check that the socket is even open, with
+  `ss -ulnp | grep 50222`. If it is not, `protocols` does not name `weatherflow`.
+- For Acurite or LaCrosse: the DNS entry is not reaching the bridge. Check with
+  `dig hubapi.myacurite.com @your-router`, not on the WeeWX machine, whose own
+  `hosts` file the bridge never sees.
 
 ## Address already in use
 
@@ -56,6 +61,46 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST -d 'tempf=59.7' http://localhos
 | 403 | `token` or `allowed_hosts` rejected it. |
 | 413 | The upload is larger than `max_body`. |
 
+An empty 200 means no protocol claimed the upload. See below.
+
+## Nothing recognised the upload
+
+```
+WARNING user.ultimatepush.driver: A request from 192.168.1.42 to /data/report/ matched
+none of the protocols this driver is listening for (ecowitt, ambient, acurite,
+lacrosse, wunderground). Nothing in it says which protocol it is, so reading it would
+mean guessing which catalog its field names belong to.
+```
+
+Something posted readings with nothing in them that names a protocol or a station. It
+happens with a proxy that strips the query, with a script somebody wrote, and with a
+console configured for a protocol this driver does not read.
+
+Turn on `log_raw = true` and restart to see exactly what arrived. If you know what it
+is, name it and the guessing stops:
+
+```ini
+[UltimatePush]
+    protocols = wunderground
+```
+
+With one protocol configured there is nothing left to guess, and an upload with only
+readings in it is read as that one.
+
+## It was read with the wrong catalog
+
+The log says which, on the first upload from each station:
+
+```
+INFO user.ultimatepush.driver: Reading wunderground uploads with the
+'wunderground/metric' catalog, 19 fields.
+```
+
+If that is not the protocol you expected, `protocols` will settle it. This is worth
+checking when a station sends fields you know it has and half of them go missing: a
+Weather Underground upload read as Ecowitt loses the pressure, the indoor readings and
+the UV without any error at all.
+
 ## A sensor is missing from reports
 
 In order:
@@ -63,16 +108,19 @@ In order:
 **1. Does it arrive?**
 
 ```
-python -m user.ecowitt --port 8001
+python -m user.ultimatepush --port 8001
 ```
 
-Not listed means the console is not sending it. Check that the sensor is registered
-in WS View Plus and shows a reading there.
+Not listed means the station is not sending it. Check that the sensor is registered in
+the console's own app and shows a reading there.
+
+The command also prints which protocol and which catalog the upload was read with. If
+that is wrong, everything after it is wrong too.
 
 **2. Is it waiting for a decision?**
 
 ```
-WARNING user.ecowitt.mapping: 'tf_ch1' is not being written, because drivers
+WARNING user.ultimatepush.mapping: 'tf_ch1' is not being written, because drivers
 disagree about where it goes.
 ```
 
@@ -81,7 +129,7 @@ Name it in `field_map_extensions`. See [Field map](Field-map).
 **3. Was it unknown?**
 
 ```
-INFO user.ecowitt.mapping: No idea what 'newfield_ch1' is. Left out.
+INFO user.ultimatepush.mapping: No idea what 'newfield_ch1' is. Left out.
 ```
 
 See [Reporting a new sensor](New-sensors).
@@ -98,20 +146,14 @@ appear however well it is stored.
 
 ## Rain stays empty
 
-Ecowitt hardware sends rain as running counters: `dailyrainin`, `hourlyrainin`,
-`eventrainin`. It never sends the amount that fell since the last upload, which is
-what WeeWX calls `rain` and what every rain total is built from.
+Almost all of this hardware sends rain as running counters: `dailyrainin`,
+`hourlyrainin`, `eventrainin` and their equivalents. It never sends the amount that
+fell since the last upload, which is what WeeWX calls `rain` and what every rain total
+is built from.
 
 `StdDelta` turns one into the other. The installer sets it up, so a fresh install
-needs nothing. Versions up to 0.3.0 did not, and there `rain` is empty in every
-packet and the daily total never moves. Reinstall the extension, or add this by hand:
-
-```ini
-[StdWXCalculate]
-    [[Delta]]
-        [[[rain]]]
-            input = dayRain
-```
+needs nothing. See **No rain is recorded** below for the two protocols the default
+does not suit.
 
 The counter resets at midnight. WeeWX notices and logs `'rain' counter reset
 detected`, then skips that one interval rather than recording a day's worth of rain
@@ -119,17 +161,27 @@ in it.
 
 ## Readings look wrong by a factor
 
-Almost always a unit. The Ecowitt protocol carries US units: °F, inHg, inches, mph.
-The driver reports the packet as US and WeeWX converts for display.
+Almost always a unit, and there are three places it can go wrong.
 
-A field the driver had to guess may have been given the wrong group. `infer_unknown =
-all` accepts guesses, and this is the risk it carries. Map the field explicitly
-instead, and report it so the catalog gets it right.
+**The protocol was read as the wrong one.** Check the catalog line in the log. `UV` is
+an index in one Weather Underground dialect and microwatts per square centimetre in
+the other, forty times apart.
+
+**The metric wind.** See below.
+
+**A guessed field.** One the driver had to guess may have been given the wrong group.
+`infer_unknown = all` accepts guesses, and this is the risk it carries. Map the field
+explicitly instead, and report it so the catalog gets it right.
+
+Which unit system a packet is in comes from the protocol, and the log says which
+catalog was used. Ecowitt, Ambient, Acurite and imperial Weather Underground are US:
+°F, inHg, inches, mph. WeatherFlow and LaCrosse are metric. WeeWX converts for
+display either way.
 
 ## Two sensors in one column
 
 ```
-WARNING user.ecowitt.mapping: Both 'soilmoisture3' and 'soil_ec_hum3' arrived, and
+WARNING user.ultimatepush.mapping: Both 'soilmoisture3' and 'soil_ec_hum3' arrived, and
 they map to the same field. One will overwrite the other.
 ```
 
@@ -170,8 +222,48 @@ Look for what came before it in the log. Two known shapes:
 Include:
 
 - What the log says, with a few lines before it
-- The output of `python -m user.ecowitt --port 8001`, with the `PASSKEY` replaced
+- The output of `python -m user.ultimatepush --port 8001`, with the `PASSKEY` replaced
 - Console model and firmware, from *About* in WS View Plus
 - WeeWX version, from `weectl --version`
 
-<https://github.com/hilman2/weewx-ecowitt/issues>
+<https://github.com/hilman2/weewx-ultimate-push/issues>
+
+
+## No rain is recorded
+
+None of this hardware sends the rain since the last upload. It sends running counters,
+and `StdWXCalculate` has to difference one. The driver says so at startup when the
+setting does not suit what you have:
+
+```
+WARNING user.ultimatepush.driver: StdWXCalculate differences 'dayRain' to get the
+rain, and LaCrosse LW30x sends totalRain instead. Rain from LaCrosse LW30x will not be
+recorded until 'input' names a counter it sends.
+```
+
+| Protocol | `input` |
+|---|---|
+| Ecowitt, Ambient, Weather Underground, Acurite | `dayRain` |
+| LaCrosse | `totalRain` |
+| WeatherFlow | none needed; it already sends `rain` |
+
+```ini
+[StdWXCalculate]
+    [[Delta]]
+        [[[rain]]]
+            input = dayRain
+```
+
+## The wind is out by a factor of 3.6
+
+A Fine Offset console under *Weather logger* or *HP1001* firmware sends metric, and
+nothing in the payload says whether its wind is kilometres per hour or metres per
+second. The default is kilometres per hour. If your readings are consistently 3.6
+times too small:
+
+```ini
+[UltimatePush]
+    metric_wind = mps
+```
+
+Consistently 3.6 times too large means the opposite, and the default is right for you.

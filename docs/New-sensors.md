@@ -4,23 +4,25 @@ The driver notices when a station sends something it cannot place, and writes ou
 everything needed to report it. So this is the whole procedure:
 
 ```
-cat /var/tmp/weewx-ecowitt-report.txt
+cat /var/tmp/weewx-ultimate-push-report.txt
 ```
 
-Paste that into an issue: <https://github.com/hilman2/weewx-ecowitt/issues/new>
+Paste that into an issue: <https://github.com/hilman2/weewx-ultimate-push/issues/new>
 
 Nothing to configure, nothing to restart, and the console is not touched.
 
 ## What is in the file
 
 ```
-weewx-ecowitt 0.1.0, 2026-08-25 14:07:12
+weewx-ultimate-push 0.5.0, 2026-08-28 14:07:12
+
+Protocol: ecowitt
 
 This station sent 8 field(s) the driver could not place on its own. Paste
 this whole file into an issue at
-https://github.com/hilman2/weewx-ecowitt/issues/new
+https://github.com/hilman2/weewx-ultimate-push/issues/new
 
-The PASSKEY has been replaced already. Everything else is weather data.
+Everything that names the station has been replaced already. The rest is weather.
 
 ---- what the station sent ----
 
@@ -45,8 +47,8 @@ elsewhere: see [Troubleshooting](Troubleshooting).
 The path can be changed, or the whole thing switched off:
 
 ```ini
-[Ecowitt]
-    report_file = /var/tmp/weewx-ecowitt-report.txt
+[UltimatePush]
+    report_file = /var/tmp/weewx-ultimate-push-report.txt
 ```
 
 An empty value writes nothing. The file is rewritten at most once per driver start,
@@ -57,7 +59,7 @@ so it does not grow and does not churn.
 To look at a station before it is wired up, or to capture more than one upload:
 
 ```
-python -m user.ecowitt --port 8001
+python -m user.ultimatepush --port 8001
 ```
 
 Point the console at that port for one upload. See [Diagnostics](Diagnostics).
@@ -84,7 +86,7 @@ is added to the catalog and arrives with the next version.
 Map it yourself:
 
 ```ini
-[Ecowitt]
+[UltimatePush]
     [[field_map_extensions]]
         newfield_ch1 = extraTemp7
 ```

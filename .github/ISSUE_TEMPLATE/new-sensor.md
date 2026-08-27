@@ -8,13 +8,13 @@ labels: sensor
 <!--
 The driver writes out everything needed. One command, nothing to configure:
 
-    cat /var/tmp/weewx-ecowitt-report.txt
+    cat /var/tmp/weewx-ultimate-push-report.txt
 
 The PASSKEY is already replaced in it. Paste the whole file below.
 -->
 
 ```
-paste /var/tmp/weewx-ecowitt-report.txt here
+paste /var/tmp/weewx-ultimate-push-report.txt here
 ```
 
 ## If this is a kind of sensor nobody has seen before

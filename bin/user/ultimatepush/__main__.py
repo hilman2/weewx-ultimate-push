@@ -54,16 +54,29 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING, format='%(message)s')
-    print("weewx-ecowitt %s. Listening on %s:%s. Point the console here."
-          % (VERSION, args.address or '*', args.port))
+    known = protocols.posting()
+    print("weewx-ultimate-push %s. Listening on %s:%s for %s. Point the station here."
+          % (VERSION, args.address or '*', args.port,
+             ', '.join(p.name for p in known)))
 
-    mapper = Mapper(infer_unknown=args.infer_unknown)
+    def answer(request):
+        """The reply the sender is waiting for, worked out from what it sent."""
+        try:
+            protocol = protocols.detect(request, transport.parse(request.text), known)
+        except Exception:
+            return '', 'text/plain'
+        if protocol is None:
+            return '', 'text/plain'
+        return protocol.answer, protocol.content_type
+
+    mappers = {}
     packet = {}
     guesses = []
     seen = 0
+    last = None
 
-    listener = HTTPListener(port=args.port, address=args.address, path=args.path,
-                            response=ECOWITT_RESPONSE, content_type='application/json')
+    listener = server.http_listener(HTTPListener, answer, port=args.port,
+                                    address=args.address, path=args.path)
     try:
         while seen < args.samples:
             request = listener.get(timeout=args.timeout)
@@ -71,15 +84,35 @@ def main(argv=None):
                 print("Nothing arrived in %d seconds." % args.timeout, file=sys.stderr)
                 return 1
             print("\n%s" % request)
-            one, fresh = mapper.to_packet(request.text)
+            raw = transport.parse(request.text)
+            protocol = protocols.detect(request, raw, known)
+            if protocol is None:
+                print("  Nothing in it says which protocol this is, so there is no "
+                      "catalog to\n  read it with. Not counted.")
+                continue
+            dialect = protocol.dialect(raw)
+            print("  %s, read with the '%s' catalog"
+                  % (protocol.label, dialect.name))
+            mapper = mappers.get(dialect.name)
+            if mapper is None:
+                mapper = mappers[dialect.name] = Mapper(
+                    dialect, infer_unknown=args.infer_unknown)
+            mapper.settle(protocol.settled_contested(raw))
+            one, fresh = mapper.to_packet(protocol.readings(request, raw))
             packet.update(one)
             guesses.extend(fresh)
+            last = mapper
             seen += 1
     finally:
         listener.close()
 
-    _report(packet, guesses, mapper, args.config)
-    _decisions(mapper)
+    if last is None:
+        print("Nothing that arrived could be read.", file=sys.stderr)
+        return 1
+
+    _report(packet, guesses, last, args.config)
+    for mapper in mappers.values():
+        _decisions(mapper)
     if not args.no_database:
         _check_history(packet, args.config)
     return 0
