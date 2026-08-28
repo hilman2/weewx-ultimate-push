@@ -18,9 +18,12 @@ import pytest
 # payload on a machine with no WeeWX on it.
 WITHOUT_WEEWX = [
     'ultimatepush',
+    'ultimatepush.activity',
     'ultimatepush.columns',
     'ultimatepush.infer',
     'ultimatepush.mapping',
+    'ultimatepush.overrides',
+    'ultimatepush.page',
     'ultimatepush.transport',
     'ultimatepush.catalogs',
     'ultimatepush.catalogs.acurite',
@@ -39,7 +42,7 @@ WITHOUT_WEEWX = [
 ]
 # The listener is WeeWX's own file, bundled here for older installations. It uses
 # weeutil, as the core copy does, so it needs WeeWX like the driver does.
-WITH_WEEWX = ['ultimatepush.driver', 'ultimatepush.server',
+WITH_WEEWX = ['ultimatepush.driver', 'ultimatepush.server', 'ultimatepush.admin',
               'ultimatepush.__main__', 'user.listener']
 
 

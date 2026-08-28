@@ -13,6 +13,10 @@ bin/user/ultimatepush/
     columns.py     which database columns a packet needs.
     consoles.py    which stations this driver answers to.
     server.py      an answer per protocol, and several listeners behind one iterator.
+    activity.py    what each station has been doing lately. Bounded, in memory.
+    overrides.py   the settings the web interface may change, in a file of its own.
+    admin.py       the web interface: routing and the JSON API.
+    page.py        the web interface, as one self-contained page.
     driver.py      the WeeWX end: loop packets, unit groups, shutdown.
     __main__.py    the diagnostic command.
 bin/user/listener.py   WeeWX's own listener, bundled for WeeWX older than 5.6.
@@ -20,8 +24,8 @@ tools/                 catalog and reference generators.
 tests/                 pytest, with captured payloads in tests/fixtures.
 ```
 
-Everything except `driver.py`, `server.py` and `__main__.py` runs without WeeWX
-installed. That is what lets the tests work from a captured payload rather than from
+Everything except `driver.py`, `server.py`, `admin.py` and `__main__.py` runs without
+WeeWX installed. That is what lets the tests work from a captured payload rather than from
 mocks, and it is worth keeping: a catalog is data, and data should be checkable
 without a weather station or a WeeWX.
 

@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 TURN = 0.2
 
 
-def http_listener(base, answer, **options):
+def http_listener(base, answer, queue=True, **options):
     """Return an HTTP listener whose answer decides its own content type.
 
     Args:
@@ -44,6 +44,10 @@ def http_listener(base, answer, **options):
             the bundled copy. Passed in rather than imported so that this module does
             not have to know which one the driver found.
         answer (callable): Given a Request, returns (body, content_type).
+        queue (bool): Whether a request should also be handed to whoever is iterating.
+            False for the web interface, where the answer is the whole point and a
+            request nobody drains would fill the queue and start dropping the oldest
+            with a warning each time.
     """
 
     class Server(base):
@@ -51,9 +55,16 @@ def http_listener(base, answer, **options):
 
         def __init__(self, **kwargs):
             self._answer = answer
+            self._queue = queue
             self._per_request = threading.local()
             self._default_content_type = 'text/plain'
             super().__init__(**kwargs)
+
+        def put(self, request):
+            # The base class calls this after the answer has gone out. A listener
+            # that exists to answer has nothing to hand on.
+            if self._queue:
+                super().put(request)
 
         def get_response(self, request):
             body, content_type = self._answer(request)

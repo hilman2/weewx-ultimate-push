@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.6.0 (2026-08-28)
+
+A web interface, on a port of its own, off unless you switch it on.
+
+```ini
+[UltimatePush]
+    [[web]]
+        enable = true
+        port = 8080
+        token = paste-a-long-random-string-here
+```
+
+It shows what each station sends, keeps the last twenty raw uploads with everything
+that names the station replaced, lists the columns that are missing with the commands
+that make them, and lets you place a field.
+
+The reason it exists is the last of those. Placing a field is a decision only the
+person who installed the sensor can make, it cannot be undone once two sensors have
+shared a column, and the one thing worth knowing first is whether that column already
+holds somebody else's readings. A log line cannot say that. The page says it per
+field, next to the value that just arrived.
+
+### Settings go in a file of the driver's own
+
+Not `weewx.conf`. WeeWX is running from that file, so a change written there does
+nothing until a restart, and a driver cannot restart the engine it is part of. Under a
+package installation it belongs to root and the driver runs as the weewx user.
+
+So what the interface changes goes in `ultimate-push-web.conf`, beside the console
+list, in the same format, and is read on the next upload. Nothing restarts. Everything
+that does need a restart is shown as a block to paste.
+
+**A field named in `weewx.conf` is never touched.** The interface shows it, says it is
+set there, and declines. Two files with an answer each would mean one of them is
+quietly ignored.
+
+### On the security of it
+
+It is a second port that can change the field map, so:
+
+- Off by default, and it refuses to start without a token of at least 16 characters.
+- The token is checked by the listener before anything else runs, in constant time,
+  and a wrong one gets a 403.
+- It is a second port rather than a secret path on the data port, because a token on
+  that port would lock out hardware that cannot send one.
+- It is plain HTTP and the token travels in clear. On a network you do not trust, bind
+  it to `localhost` and use an SSH tunnel, or put TLS in front.
+
+### Also
+
+- The driver keeps a bounded record of recent uploads whether or not the interface is
+  on, so a question about what arrived is answerable afterwards.
+- New page: [Web interface](docs/Web-interface.md).
+
 ## 0.5.0 (2026-08-28)
 
 Renamed from `weewx-ecowitt`. The driver reads six protocols now, and the old name

@@ -1,5 +1,13 @@
 # Diagnostics
 
+## The web interface
+
+If it is switched on, most of this page is a browser tab instead: what each station
+sends, the last twenty raw uploads, which columns are missing, and which of them already
+hold readings. See [Web interface](Web-interface).
+
+The rest of this page is what to do without it, or before WeeWX is running at all.
+
 ## When a sensor is missing
 
 The driver writes out what it could not place, by itself:

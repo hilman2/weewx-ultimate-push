@@ -73,6 +73,30 @@ that uses it. With WeatherFlow enabled, `address`, `allowed_hosts`, `max_body`,
 | `password` | none | Weather Underground only. Refuse uploads that do not present this as `PASSWORD`. It is the one protocol here whose hardware can carry a secret. |
 | `metric_wind` | `kph` | Weather Underground metric dialect only. Whether its wind is kilometres per hour or metres per second, which cannot be read off a payload. `kph` or `mps`. See [Protocols](Protocols). |
 | `udp_port` | 50222 | WeatherFlow only. The port to listen for broadcasts on. There is no reason to change it. |
+| `override_file` | beside the console list | Where the settings the web interface writes are kept. |
+
+### The web interface
+
+A subsection, off unless switched on. See [Web interface](Web-interface).
+
+```ini
+[UltimatePush]
+    [[web]]
+        enable = true
+        port = 8080
+        token = paste-a-long-random-string-here
+        # address = localhost
+        # allowed_hosts =
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `enable` | `false` | Whether to open the port at all. |
+| `port` | 8080 | Which port. |
+| `address` | every interface | `localhost` makes it unreachable from the network. |
+| `token` | none | Required, at least 16 characters. The driver refuses to start without one. |
+| `allowed_hosts` | anywhere | Comma-separated addresses to accept from. |
+| `trust_proxy` | `false` | Take the client address from `X-Forwarded-For`. |
 
 ## The console's clock
 

@@ -84,6 +84,16 @@ answered by nobody. There is no path, no token and no password, because there is
 request. `allowed_hosts` restricts which senders are accepted, and beyond that the
 network is the boundary.
 
+## The web interface is a second door
+
+If you switch it on, there is a second port that can change the field map. It is off by
+default, refuses to start without a token of at least 16 characters, and the token is
+checked by the listener before anything else runs.
+
+It is still plain HTTP, so the token travels in clear and ends up in the browser
+history. Bind it to `localhost` and use an SSH tunnel, or put TLS in front, unless the
+network is one you trust. See [Web interface](Web-interface).
+
 ## What none of this does
 
 **Encryption.** All of these protocols are plain HTTP, and none of the hardware offers

@@ -34,12 +34,14 @@ Configuration:
 """
 
 import logging
+import time
 
 import weewx
 import weewx.drivers
 import weewx.units
 
-from . import VERSION, consoles, protocols, report, server, transport
+from . import (VERSION, activity, admin, columns, consoles, overrides,
+               protocols, report, server, transport)
 from .mapping import Mapper
 
 try:
@@ -68,7 +70,7 @@ NOT_FOR_LISTENER = frozenset([
     'driver', 'field_map_extensions', 'infer_unknown', 'model', 'report_file',
     'stations', 'passkey', 'password', 'console_file', 'weewx_root', 'sqlite_root',
     'data_binding', 'config_dict', 'protocols', 'metric_wind', 'max_behind',
-    'max_ahead', 'udp_port',
+    'max_ahead', 'udp_port', 'web',
 ])
 
 
@@ -150,11 +152,35 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # One mapping, or one per console. Two consoles both number their channels
         # from one, so without this a WN34 on channel 1 of each would overwrite the
         # other, and afterwards neither could be recovered.
+        self.conf_extensions = dict(stn_dict.get('field_map_extensions', {}))
         self.stations = self._read_stations(stn_dict.get('stations'))
+        # Stations the web interface recorded. Kept apart from the ones weewx.conf
+        # names, so that a field set in weewx.conf can always be seen to be the one
+        # in force.
+        self.web_stations = {}
         self.default_station = None if self.stations else Station(
-            None, None, dict(stn_dict.get('field_map_extensions', {})),
+            None, None, dict(self.conf_extensions),
             self.infer_unknown, self.max_behind, self.max_ahead)
         self.password = stn_dict.get('password')
+
+        # What the web interface shows, and where what it changes is kept. Both are
+        # built whether or not the interface is switched on: the activity log costs a
+        # few kilobytes and is what makes a question about last Tuesday answerable,
+        # and the settings file is read either way so that turning the interface off
+        # does not quietly drop what it wrote.
+        self.activity = activity.Log()
+        self.overrides = overrides.Store(
+            overrides.path_for(stn_dict.get('weewx_root'),
+                               stn_dict.get('override_file'),
+                               stn_dict.get('sqlite_root')),
+            reserved=self._reserved_fields(stn_dict))
+        self.overrides.read()
+        # Set from the web server's thread, read by the loop. A bool is atomic enough
+        # for this: the worst a race costs is that a change lands one upload later
+        # than it might have.
+        self.reload_wanted = False
+        self.config_path = _config_path(stn_dict.get('config_dict'))
+        self.occupied = None
 
         # Which consoles to answer to. Anyone who can reach the port can point a
         # console at it, and a second one writing the same channels would mix two
@@ -167,6 +193,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                                     stn_dict.get('data_binding', 'wx_binding'))
         self.configured_passkey = stn_dict.get('passkey')
         self.known = self._known_consoles(self.configured_passkey)
+        self._apply_overrides()
 
         self._check_rain_delta(stn_dict.get('config_dict'))
 
@@ -270,6 +297,58 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             ' and '.join(p.label for p in self.enabled
                          if p.rain_counter not in (None, configured)))
 
+    def _reserved_fields(self, stn_dict):
+        """Raw fields weewx.conf already places, so that nothing else may.
+
+        Keyed by station identity, with None for the driver section's own map, which
+        applies to every station. The web interface refuses to touch these: two files
+        with an answer each would mean one of them is quietly ignored, and which one
+        would depend on the order they happened to be read in.
+        """
+        reserved = {None: set(stn_dict.get('field_map_extensions', {}))}
+        for options in (stn_dict.get('stations') or {}).values():
+            ident = str(options.get('passkey') or options.get('id') or '').strip()
+            if ident:
+                reserved[ident] = set(options.get('field_map_extensions', {}))
+        return reserved
+
+    def _apply_overrides(self):
+        """Build the stations the web interface has recorded, and answer to them.
+
+        Called at startup and again whenever the interface changes something. A
+        station that weewx.conf already names is left alone: that file is the one in
+        force, and this one does not get to disagree with it.
+        """
+        built = {}
+        for ident, options in self.overrides.stations().items():
+            if ident in self.stations:
+                # weewx.conf names it. Nothing here may change that.
+                continue
+            extensions = dict(self.conf_extensions)
+            extensions.update(options.get('field_map_extensions', {}))
+            built[ident] = Station(
+                options.get('name') or None, ident, extensions,
+                options.get('infer_unknown', self.infer_unknown),
+                self.max_behind, self.max_ahead)
+        self.web_stations = built
+        for ident in built:
+            self.known.add(ident)
+
+    def _reload(self):
+        """Take up what the web interface wrote, without a restart.
+
+        Rebuilding a station drops its mappers, which drops the inference it had
+        learned. That is the point: a field map that changed has to be read again
+        from the start, or a reading would keep going where it went before.
+        """
+        self.reload_wanted = False
+        self.overrides.read()
+        self._apply_overrides()
+        for station in self.web_stations.values():
+            for mapper in station.mappers.values():
+                self._register_units(mapper.wanted_groups())
+        log.info("Took up the settings from %s.", self.overrides.path)
+
     def _read_stations(self, configured):
         """Return {identity: Station} for an installation with several consoles."""
         if not configured:
@@ -300,6 +379,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         the next console to upload is adopted.
         """
         known = set(self.stations)
+        known.update(self.overrides.stations())
         if passkey:
             known.add(str(passkey).strip())
         if known:
@@ -337,7 +417,51 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             udp['port'] = int(stn_dict.get('udp_port', protocol.default_port))
             listeners.append(UDPListener(**udp))
 
+        web = self._web_listener(stn_dict.get('web'))
+        if web is not None:
+            listeners.append(web)
+
         return listeners
+
+    def _web_listener(self, configured):
+        """The web interface, when it has been switched on and given a token.
+
+        On a port of its own, because the token has to be checked at the listener and
+        checking it on the data port would lock out hardware that cannot send one.
+
+        Off unless asked for, and refused without a token, because the alternative is
+        an interface that can change the field map sitting open on the network for
+        anybody who guesses the port.
+        """
+        if not configured:
+            return None
+        from weeutil.weeutil import to_bool, to_int
+        if not to_bool(configured.get('enable', False)):
+            return None
+        token = str(configured.get('token', '')).strip()
+        if len(token) < 16:
+            raise ValueError(
+                "The web interface needs 'token' set to at least 16 characters. It "
+                "is the only thing between the field map and whoever else is on the "
+                "network. Make one with: "
+                "python -c \"import secrets; print(secrets.token_urlsafe(24))\"")
+        options = {
+            'port': to_int(configured.get('port', 8080)),
+            'address': configured.get('address', ''),
+            'token': token,
+            'allowed_hosts': configured.get('allowed_hosts'),
+            'trust_proxy': configured.get('trust_proxy', False),
+            'queue_size': 1,
+        }
+        site = admin.Site(self)
+        listener = server.http_listener(HTTPListener, site.answer, queue=False,
+                                        **options)
+        where = options['address'] or '*'
+        log.info("The web interface is on http://%s:%d/?token=... . It is plain "
+                 "HTTP, so the token travels in clear; bind it to localhost and use "
+                 "a tunnel, or put TLS in front, if the network it is on is not one "
+                 "you trust.", where, listener.port)
+        return listener
 
     # ---- answering ----------------------------------------------------------
 
@@ -379,6 +503,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         question worth being able to ask without building a packet, and because it is
         the whole of what a second protocol changes.
         """
+        if self.reload_wanted:
+            self._reload()
+
         try:
             raw = transport.parse(request.text)
         except Exception as e:
@@ -390,6 +517,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             protocol = self._assumed()
         if protocol is None:
             self._unclaimed(request)
+            self._record_refused(request, None, '',
+                                 "no protocol recognised this")
             return None, None, None, None
 
         # Which console this is, and whether it presents the right password, are
@@ -398,10 +527,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # hub's serial is on the message around it rather than in it.
         station = self._station_for(protocol, raw, request.client_address)
         if station is None:
+            self._record_refused(request, protocol, protocol.station_of(raw),
+                                 "not one of this driver's consoles")
             return None, None, None, None
 
         if protocol.secret and not self._secret_ok(protocol, raw,
                                                    request.client_address):
+            self._record_refused(request, protocol, protocol.station_of(raw),
+                                 "wrong %s" % protocol.secret)
             return None, None, None, None
 
         raw = protocol.readings(request, raw)
@@ -430,13 +563,207 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             self._register_units(dialect.groups)
         self._maybe_report(request.text, guesses, protocol)
 
-        if len(packet) <= 1:
+        enough = len(packet) > 1
+        self._record(request, protocol, dialect, raw, packet if enough else None,
+                     station, mapper)
+
+        if not enough:
             # Nothing but the timestamp. Usually a probe or a health check.
             return None
         packet['usUnits'] = dialect.units
         if station.name:
             packet['station'] = station.name
         return packet
+
+    # ---- what the web interface reads ---------------------------------------
+
+    def _record(self, request, protocol, dialect, raw, packet, station, mapper):
+        """Keep the upload, so that a question about it can be answered later.
+
+        Bounded and in memory only. See activity.py.
+        """
+        ident = protocol.station_of(raw)
+        self.activity.arrived(ident, activity.Upload(
+            at=time.time(), client=request.client_address,
+            path=request.path or '', method=request.method or '',
+            text=request.text or '', ident=ident, protocol=protocol.name,
+            dialect=dialect.name,
+            packet={k: v for k, v in (packet or {}).items() if k != 'dateTime'}))
+        if station.name:
+            self.activity.named(ident, station.name)
+        # Only the readings. PASSKEY, dateutc and the rest name the device
+        # rather than measure anything, and a page that offered to place them
+        # would be offering a mistake.
+        readings = [name for name in raw if name not in dialect.metadata]
+        self.activity.mapping(ident, readings, mapper.fields, mapper.seen,
+                              mapper.undecided)
+
+    def _record_refused(self, request, protocol, ident, note):
+        self.activity.refused(activity.Upload(
+            at=time.time(), client=request.client_address,
+            path=request.path or '', method=request.method or '',
+            text=request.text or '', ident=ident,
+            protocol=protocol.name if protocol else None, note=note))
+
+    def web_overview(self):
+        """Everything the front page draws."""
+        stations = self.activity.snapshot()
+        for row in stations:
+            seen = set(row.get('raw_seen', ()))
+            row['field_count'] = len(seen)
+            row['undecided_count'] = len(seen & set(row.get('undecided', {})))
+            row.pop('fields', None)
+            row.pop('guesses', None)
+            row.pop('undecided', None)
+            row.pop('raw_seen', None)
+        return {
+            'ok': True,
+            'version': DRIVER_VERSION,
+            'uptime': admin.uptime(self.activity.started),
+            'ports': [port for port in self.listener.ports if port],
+            'protocols': [p.name for p in self.enabled],
+            'settings_file': self.overrides.path,
+            'settings_error': self.overrides.error,
+            'stations': sorted(stations, key=lambda r: r['ident']),
+            'waiting': self.activity.unknown_stations(transport.redact),
+        }
+
+    def web_station(self, ident):
+        """One station, every raw field it has sent, and where each one stands.
+
+        This is the page the whole interface exists for. A row says what arrived,
+        where it goes, whether there is a column for it, and whether that column
+        already holds somebody else's readings. The last of those is the one thing a
+        log line cannot tell you and the one thing that makes the decision
+        irreversible if it is wrong.
+        """
+        found = self.activity.one(ident)
+        if found is None:
+            return None
+        station = self._station_for_ident(ident)
+        recent = self.activity.recent(ident, transport.redact, limit=1)
+        last = (recent[0].get('packet') or {}) if recent else {}
+        reserved = (self.overrides.reserved.get(ident, set())
+                    | self.overrides.reserved.get(None, set()))
+        groups = {}
+        for mapper in (station.mappers.values() if station else []):
+            groups.update(mapper.wanted_groups())
+        schema = admin.schema_fields()
+        occupied = self.occupied or {}
+
+        # Only what this station has actually sent. The catalog is five hundred
+        # names long and the answer to 'where does my reading go' is not helped by
+        # four hundred and fifty rows about sensors nobody owns.
+        seen = set(found['raw_seen'])
+        rows = []
+        for raw in sorted(seen):
+            field = found['fields'].get(raw, '')
+            guess = found['guesses'].get(raw)
+            why = ''
+            if raw in found['undecided']:
+                field = ''
+                why = ("drivers disagree: this one says %s, %s says %s"
+                       % (found['fields'].get(raw, '?'),
+                          _contested_with(station), found['undecided'][raw]))
+            elif guess:
+                field, why = guess[0], guess[2]
+            rows.append({
+                'raw': raw,
+                'field': field,
+                'value': last.get(field),
+                'group': groups.get(field, ''),
+                'column': bool(field) and field in schema,
+                'history': (occupied.get(field) or (0,))[0],
+                'reserved': raw in reserved,
+                'why': why,
+            })
+        found['ok'] = True
+        found['fields'] = rows
+        found['undecided'] = sorted(seen & set(found['undecided']))
+        found['guesses'] = sorted(seen & set(found['guesses']))
+        return found
+
+    def _station_for_ident(self, ident):
+        return (self.stations.get(ident) or self.web_stations.get(ident)
+                or self.default_station)
+
+    def web_accept(self, ident, name=None, infer_unknown=None):
+        """Let a station in, and give it a name."""
+        ident = str(ident or '').strip()
+        if not ident:
+            return False, "A station with no identity cannot be told from another."
+        if ident in self.stations:
+            return False, "weewx.conf already names this one. Change it there."
+        ok, message = self.overrides.set_station(ident, name, infer_unknown)
+        if not ok:
+            return False, message
+        self.known.add(ident)
+        self.store.add(ident, "let in through the web interface")
+        self.reload_wanted = True
+        log.info("Station '%s' was let in through the web interface.", ident)
+        return True, "Recorded in %s." % message
+
+    def web_set_field(self, ident, raw, field):
+        """Place one raw field for one station."""
+        ident = str(ident or '').strip()
+        if ident in self.stations:
+            return False, ("weewx.conf names this station, so its field map lives "
+                           "there. Change it there, or take the station out of "
+                           "[[stations]] first.")
+        ok, message = self.overrides.set_field(ident, raw, field)
+        if not ok:
+            return False, message
+        self.reload_wanted = True
+        return True, message
+
+    def web_forget(self, ident):
+        ok, message = self.overrides.forget_station(ident)
+        if ok:
+            self.reload_wanted = True
+        return ok, message
+
+    def web_columns(self, ident, refresh=False):
+        """Which columns this station needs, and what is in them already.
+
+        The history check is one pass over the archive table, so it happens when
+        somebody asks rather than on every page load.
+        """
+        found = self.activity.one(ident)
+        if found is None:
+            return {'ok': False, 'error': "No station by that name."}
+        recent = self.activity.recent(ident, transport.redact, limit=1)
+        packet = (recent[0].get('packet') or {}) if recent else {}
+        station = self._station_for_ident(ident)
+        groups = {}
+        for mapper in (station.mappers.values() if station else []):
+            groups.update(mapper.wanted_groups())
+
+        try:
+            wanted = columns.missing(packet, groups)
+        except Exception as e:
+            return {'ok': False, 'error': "Cannot work out the columns: %s" % e}
+
+        if refresh and self.config_path:
+            try:
+                self.occupied = columns.occupied(self.config_path)
+            except Exception as e:
+                log.warning("The web interface could not read the archive table: %s",
+                            e)
+                self.occupied = {}
+        used = self.occupied
+
+        return {
+            'ok': True,
+            'missing': [{'field': f, 'type': t} for f, t in wanted],
+            'commands': columns.commands(wanted, self.config_path or 'weewx.conf'),
+            'occupied_checked': used is not None,
+            'occupied': [] if not used else sorted(
+                ({'field': f, 'count': c,
+                  'last': (time.strftime('%Y-%m-%d', time.localtime(seen))
+                           if seen else '?')}
+                 for f, (c, seen) in used.items() if f in packet),
+                key=lambda r: r['field']),
+        }
 
     def _station_for(self, protocol, raw, client):
         """Which console this upload belongs to, or None to leave it alone."""
@@ -449,9 +776,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             self._refuse(ident, client, protocol)
             return None
 
-        if self.default_station is not None:
-            return self.default_station
-        return self.stations[ident]
+        # weewx.conf first, then what the web interface recorded, then the one
+        # station an installation with neither has. That order is the whole of the
+        # rule that a file somebody edited outranks a button somebody pressed.
+        if ident in self.stations:
+            return self.stations[ident]
+        if ident in self.web_stations:
+            return self.web_stations[ident]
+        return self.default_station
 
     def _secret_ok(self, protocol, raw, client):
         """Whether an upload presents the password the driver was configured with.
@@ -581,6 +913,21 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             weewx.units.obs_group_dict.setdefault(field, group)
 
 
+def _contested_with(station):
+    """Who disagrees about a placement, for the sentence that asks."""
+    for mapper in (station.mappers.values() if station else []):
+        if mapper.dialect.contested_with:
+            return mapper.dialect.contested_with
+    return 'another driver'
+
+
+def _config_path(config_dict):
+    """Where weewx.conf is, for the add-column commands and the history check."""
+    if not config_dict:
+        return None
+    return getattr(config_dict, 'filename', None) or config_dict.get('config_path')
+
+
 class UltimatePushConfEditor(weewx.drivers.AbstractConfEditor):
 
     @property
@@ -617,8 +964,23 @@ class UltimatePushConfEditor(weewx.drivers.AbstractConfEditor):
     # mixes two sensors into one column. Those are not written until you name them
     # below. The log prints both candidate lines the first time each one arrives.
 
-    # Your own mapping, which wins over the built-in one.
+    # Your own mapping, which wins over the built-in one, and over anything the
+    # web interface sets.
     [[field_map_extensions]]
+
+    # A small web interface, on a port of its own. Off unless switched on, and it
+    # will not start without a token of at least 16 characters. Make one with:
+    #   python -c "import secrets; print(secrets.token_urlsafe(24))"
+    #
+    # It is plain HTTP, so the token travels in clear. On a network you do not
+    # trust, set address = localhost and reach it through an SSH tunnel, or put a
+    # reverse proxy with TLS in front of it.
+    [[web]]
+        enable = false
+        port = 8080
+        # address = localhost
+        # token =
+        # allowed_hosts =
 
     # The driver to use:
     driver = user.ultimatepush.driver

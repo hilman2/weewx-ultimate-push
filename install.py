@@ -7,7 +7,7 @@
 
 from weecfg.extension import ExtensionInstaller
 
-VERSION = '0.5.0'
+VERSION = '0.6.0'
 
 
 def loader():
@@ -57,11 +57,15 @@ class UltimatePushInstaller(ExtensionInstaller):
                 ('bin/user/ultimatepush', [
                     'bin/user/ultimatepush/__init__.py',
                     'bin/user/ultimatepush/__main__.py',
+                    'bin/user/ultimatepush/activity.py',
+                    'bin/user/ultimatepush/admin.py',
                     'bin/user/ultimatepush/columns.py',
                     'bin/user/ultimatepush/consoles.py',
                     'bin/user/ultimatepush/driver.py',
                     'bin/user/ultimatepush/infer.py',
                     'bin/user/ultimatepush/mapping.py',
+                    'bin/user/ultimatepush/overrides.py',
+                    'bin/user/ultimatepush/page.py',
                     'bin/user/ultimatepush/report.py',
                     'bin/user/ultimatepush/server.py',
                     'bin/user/ultimatepush/transport.py']),

@@ -9,6 +9,7 @@ waiting to be asked.
 - **[Protocols](Protocols)** — what each one sends, and how they are told apart
 - **[Configuration](Configuration)** — every option, with worked examples
 - **[Diagnostics](Diagnostics)** — one command that answers most questions
+- **[Web interface](Web-interface)** — see what a station sends, and place a field without a restart
 
 ## How readings are placed
 

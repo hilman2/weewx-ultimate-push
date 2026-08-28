@@ -133,12 +133,36 @@ Whatever the setting, the log says what turned up:
 A field only reaches the database if the archive table has a column for it. Fields
 outside the standard schema need `weectl database add-column` first.
 
+## The web interface
+
+Optional, off by default, on a port of its own. It shows what each station sends, keeps
+the last twenty raw uploads, and lets you place a field without editing a file or
+restarting anything.
+
+```ini
+[UltimatePush]
+    [[web]]
+        enable = true
+        port = 8080
+        token = paste-a-long-random-string-here
+```
+
+The reason it exists: placing a field is irreversible if you get it wrong, and the one
+thing you want to know first, whether that column already holds another sensor’s
+readings, is the one thing a log line cannot tell you. The page shows it, per field,
+next to the value that just arrived.
+
+It is plain HTTP and the token travels in clear, so bind it to localhost and tunnel, or
+put TLS in front, unless the network is one you trust. See
+[Web interface](docs/Web-interface.md).
+
 ## Documentation
 
 | | |
 |---|---|
 | [Installation](docs/Installation.md) | install, point the hardware at it, start |
 | [Protocols](docs/Protocols.md) | what each one sends, and how they are told apart |
+| [Web interface](docs/Web-interface.md) | see what a station sends, and place a field without a restart |
 | [Configuration](docs/Configuration.md) | every option, with worked examples |
 | [Field map](docs/Field-map.md) | how a reading gets to a column |
 | [Hardware](docs/Hardware.md) | every device, and what it takes to reach it |
