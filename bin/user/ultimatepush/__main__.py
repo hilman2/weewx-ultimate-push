@@ -216,7 +216,8 @@ def _report(packet, guesses, mapper, config):
           % len(wanted))
     for command in columns.commands(wanted, config):
         print("  " + command)
-    print("\nBack up the database first. Adding a column rewrites the table.")
+    print("\nAdding a column changes the table definition and not its rows. "
+          "Taking one away again means rebuilding the table, so back up first.")
 
 
 def _check_history(packet, config):

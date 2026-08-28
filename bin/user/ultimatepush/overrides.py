@@ -156,22 +156,27 @@ class Store:
     def set_field(self, ident, raw, field):
         """Place one raw field. An empty `field` removes the placement again.
 
-        Refused when `weewx.conf` already names that field, because then there would
-        be two answers and only one of them would take effect.
+        A placement written here outranks the driver's own `[[field_map_extensions]]`
+        in `weewx.conf`, which is how the interface can be the place the decision is
+        made rather than a read-only view of a file. What it cannot outrank is a
+        station declared under `[[stations]]`: that station's field map is part of
+        its declaration, and the driver refuses that one step higher up.
         """
+        from .mapping import NOWHERE
+
         raw = str(raw).strip()
         if not raw:
             return False, "No field named."
-        if raw in self.reserved.get(ident, set()) or raw in self.reserved.get(None, set()):
-            return False, ("'%s' is set in weewx.conf. Change it there, or remove it "
-                           "from weewx.conf first. Two files with an answer each "
-                           "would mean one of them is quietly ignored." % raw)
         stations = self.settings.setdefault('stations', {})
         station = stations.setdefault(str(ident).strip(), {})
         extensions = station.setdefault('field_map_extensions', {})
         field = str(field or '').strip()
         if not field:
             extensions.pop(raw, None)
+        elif field == NOWHERE:
+            # Written nowhere, on purpose, which is not the same as not written here:
+            # taking the entry out would hand the reading back to the catalog.
+            extensions[raw] = NOWHERE
         else:
             if not _as_field(field):
                 return False, ("A WeeWX field name may hold letters, digits and "

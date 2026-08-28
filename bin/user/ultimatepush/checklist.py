@@ -202,7 +202,8 @@ def _columns(driver, found):
     return _step(
         'columns', '%d reading(s) have nowhere to live' % len(missing), False,
         "They appear in reports as current conditions and are gone at the next "
-        "archive interval. Adding a column rewrites the table, so back up the "
+        "archive interval. Adding a column changes the table definition and not "
+        "its rows, so it is quick, and there is still no undo without a "
         "database first. The Database columns tab has the commands.",
         fields=[m['field'] for m in missing])
 

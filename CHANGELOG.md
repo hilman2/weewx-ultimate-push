@@ -1,5 +1,77 @@
 # Changelog
 
+## 0.12.0 (2026-08-28)
+
+The field map is set in the browser now. No terminal, no editor.
+
+### One view, not one per station
+
+The Fields tab showed the station you had clicked. That is the wrong axis. The question
+somebody has is not "what does this station send", it is "who fills `outTemp`", and
+with two stations that answer was spread over two pages, neither of which could show
+the collision that matters.
+
+There is now one view with every station in it, one foldable block each, and a line
+saying which reading of which station holds each column.
+
+### One WeeWX field, one reading
+
+Picking a field another station already fills says who has it and changes nothing:
+
+    outTemp is already filled by 'tempf' from station garden. One column takes one
+    reading: two of them take turns every few seconds, and afterwards nothing can
+    tell them apart.
+
+Say yes and the reading that had it is placed nowhere, which is a placement of its own
+and not the same as having none: taking the entry away would hand the reading straight
+back to the catalog and back into the column it was just moved out of. `nowhere` is in
+the box, so it can also be chosen on its own.
+
+### The box goes past the end of the schema
+
+The schema stops at `extraTemp8`, `soilMoist4`, `leafWet2`. Hardware passes that on a
+normal afternoon, and the way people dealt with it was to write `extraTemp9` into a
+configuration file by hand, because the box had no answer for it.
+
+Numbered families now run to 16. Each option says what it costs: `new column`, or the
+station and reading that hold it.
+
+### The column is a button
+
+A row with no column had a command to copy into a terminal. It now has a button that
+runs the same `ALTER TABLE` that `weectl database add-column` runs.
+
+Which is worth being exact about, because this changelog was not. Adding a column does
+not rewrite the table: 300 000 records, 7.6 ms, file the same size afterwards. What
+cannot be undone is taking one away, so the button asks first and there is no button
+for that.
+
+The daily summary for a new column is not created, and `weectl` does not create one
+either. Aggregates still work, computed from the archive table instead, which is
+slower and right.
+
+### A row says what it is
+
+`column ready` was worked out from the schema rather than from the database, so a
+database made by an older WeeWX was told it had columns it did not have. It is now read
+from the archive table.
+
+A row filled by another station said `column ready`, which was true about the column
+and wrong about the row. It now says which station fills it.
+
+The unit group was only filled in for fields outside WeeWX's own schema, so ordinary
+rows fell into "everything else" and the sorting the box exists for did nothing.
+
+### A placement made in weewx.conf can be changed here
+
+It could not be, on the grounds that one setting should have one owner. That is a good
+rule and it made the one placement people most want to fix the one thing the interface
+would not touch. The row says where the placement came from; a choice here beats
+`[[field_map_extensions]]`.
+
+A station declared under `[[stations]]` is unchanged: its field map is part of that
+declaration and stays there.
+
 ## 0.11.1 (2026-08-28)
 
 The web interface drew its frame and then stopped. It looked like the server hanging;

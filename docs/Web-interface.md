@@ -121,23 +121,35 @@ that turns up next year puts its step back at the top.
 protocol, which catalog its uploads are read with, how many fields it sends and when
 it was last heard from. Underneath, the stations being refused.
 
-**Fields.** The table above. The box in each row offers the WeeWX fields that measure
-the same thing first, then everything else, then a field of your own. One that has no
-column shows the `weectl database add-column` command that makes it, in the row. What
-you pick takes effect on the next upload.
+**Fields.** Every station at once, one block each, foldable. Not one page per
+station: the question is not "what does this station send", it is "who fills
+`outTemp`", and with two stations that answer used to be spread over two pages,
+neither of which could show the collision that matters.
 
-With more than one station there is also a line saying whether this one is the station
-or an extra sensor, and a button to change it. See [Stations](Stations).
+The box in each row offers the WeeWX fields that measure the same thing first, then
+everything else, then `nowhere`, then a field of your own. Numbered families run to
+16, past where the schema stops, so `extraTemp12` is offered even though no database
+has a column for it. Options say what they cost: `new column`, or the station and
+reading that already hold them.
+
+One WeeWX field takes one reading. Picking one that is taken says who has it and
+changes nothing until you say yes, and then the reading that had it is placed
+`nowhere` rather than left to take turns in the column.
+
+A field with no column has a button that makes it, in the row. What you pick takes
+effect on the next upload.
+
+Each block carries the station's role, and a button to change it. See
+[Stations](Stations).
 
 **Raw uploads.** The last twenty per station, newest first, with a copy button.
 Everything that names the station is replaced, so they are safe to paste into an
 issue. This replaces turning on `log_raw` and waiting with a grep running.
 
 **Database columns.** Which readings have nowhere to live, with the `weectl database
-add-column` commands. It does not run them: adding a column rewrites the table, and
-that is a moment to have a backup rather than a button. There is also a check of what
-the archive table already holds, which is one pass over it, so it happens when you ask
-rather than on every page load.
+add-column` commands for anyone who would rather run them, and the same check the
+Fields tab uses. There is also a check of what the archive table already holds, which
+is one pass over it, so it happens when you ask rather than on every page load.
 
 ## Where the settings go
 
@@ -154,14 +166,16 @@ list, in the same format. It is read on the next upload. Nothing restarts.
 Everything that does need a restart, the port, `protocols`, `path`, the interface
 shows as a block to copy rather than writing it.
 
-### One owner per setting
+### Which file wins
 
-**A field named in `weewx.conf` is never touched by the interface.** It shows it, says
-it is set there, and declines to change it.
+A placement written here beats `[[field_map_extensions]]` in `weewx.conf`. The row says
+where the one it is showing came from, so the change is made knowingly. The interface
+is meant to replace the terminal and the editor; if the one placement somebody most
+wants to fix were the one it refused to touch, it would not have replaced anything.
 
-That rule is not politeness. Two files with an answer each would mean one of them is
-quietly ignored, and which one would depend on the order they happened to be read in.
-One owner per setting, and no setting that stops meaning what the file says it means.
+**A station declared under `[[stations]]` is different.** Its field map is part of that
+declaration, and the interface shows it and declines to change it. Half a station's
+configuration living somewhere else is how a configuration becomes unreadable.
 
 The same goes for a station named under `[[stations]]` in `weewx.conf`: its field map
 lives there, and the interface will not write one for it.

@@ -29,6 +29,12 @@ ALL = 'all'          # take whatever can be named, including from rules
 MODES = (OFF, SERIES, ALL)
 
 
+# What a field map says when a reading is to be written nowhere at all. Needed
+# because an empty placement and no placement are different answers: no placement
+# means the catalog decides, and this means somebody decided against the catalog.
+NOWHERE = '-'
+
+
 class Mapper:
     """Turns the raw readings of one dialect into a WeeWX packet.
 
@@ -128,6 +134,11 @@ class Mapper:
                 field = self._unmapped(name, fresh)
                 if field is None:
                     continue
+            if field == NOWHERE:
+                # Placed nowhere on purpose. Somebody looked at two stations both
+                # filling one column and said which of them should have it; this is
+                # the other one. Dropping it here is the whole of that decision.
+                continue
             factor = self.scale.get(name)
             if factor is not None and value is not None:
                 value = value * factor

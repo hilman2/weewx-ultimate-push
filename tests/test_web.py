@@ -328,9 +328,13 @@ def test_a_placement_survives_in_a_file_of_the_drivers_own(station, payload, tmp
     assert store.extensions_for(PASSKEY) == {'tf_ch1': 'soilTemp5'}
 
 
-def test_weewx_conf_wins_and_says_so(tmp_path, payload):
-    """One owner per setting. Two files with an answer each would mean one of them is
-    quietly ignored, and which one would depend on the order they were read in."""
+def test_the_interface_can_change_a_placement_weewx_conf_made(tmp_path, payload):
+    """The interface is meant to replace the terminal and the editor, so a placement
+    made in the driver's own [[field_map_extensions]] has to be changeable here.
+    Otherwise the one thing somebody most wants to fix is the one thing they cannot.
+
+    The row says where the placement came from, so the change is made knowingly.
+    """
     made = UltimatePushDriver(
         port=0, address='127.0.0.1', passkey=PASSKEY, report_file='',
         console_file=str(tmp_path / 'consoles.txt'),
@@ -338,13 +342,33 @@ def test_weewx_conf_wins_and_says_so(tmp_path, payload):
         field_map_extensions={'tf_ch2': 'extraTemp10'},
         web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': TOKEN})
     try:
-        ok, message = made.web_set_field(PASSKEY, 'tf_ch2', 'soilTemp9')
+        answer = made.web_set_field(PASSKEY, 'tf_ch2', 'extraTemp12')
+        assert answer['ok'], answer['message']
+        station = made.web_stations.get(PASSKEY) or made.default_station
+
+        assert station.extensions['tf_ch2'] == 'extraTemp12'
     finally:
         made.closePort()
 
-    assert ok is False
-    assert 'weewx.conf' in message
-    assert not os.path.exists(str(tmp_path / 'web.conf'))
+
+def test_a_station_named_in_weewx_conf_still_keeps_its_field_map(tmp_path):
+    """A station declared under [[stations]] is a different matter. Its field map is
+    part of that declaration, and half of it living somewhere else is how a
+    configuration becomes impossible to read."""
+    made = UltimatePushDriver(
+        port=0, address='127.0.0.1', report_file='',
+        console_file=str(tmp_path / 'consoles.txt'),
+        override_file=str(tmp_path / 'web.conf'),
+        stations={'garden': {'passkey': PASSKEY,
+                             'field_map_extensions': {'tf_ch2': 'extraTemp10'}}},
+        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': TOKEN})
+    try:
+        answer = made.web_set_field(PASSKEY, 'tf_ch2', 'extraTemp12')
+    finally:
+        made.closePort()
+
+    assert answer['ok'] is False
+    assert 'weewx.conf' in answer['message']
 
 
 def test_a_refused_station_can_be_let_in(station):

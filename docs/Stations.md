@@ -74,10 +74,14 @@ Be clear about the limit. The standard schema has `extraTemp1` to `extraTemp8` a
 second full weather station therefore contributes its temperature and its humidity, and
 anything else it sends needs a field and a column of its own.
 
-That is what the Fields tab is for. Pick any WeeWX field for any reading; the box offers
-the ones that measure the same thing first, then everything else, then a field of your
-own. A field with no column shows the `weectl database add-column` command that makes
-it.
+That is what the Fields tab is for. It shows every station at once, so that the
+question "who fills `outTemp`" has one place to be answered. Pick any WeeWX field for
+any reading; the box offers the ones that measure the same thing first, then everything
+else, then `nowhere`, then a field of your own. Numbered families run to 16, past where
+the schema stops, and a field with no column has a button in the row that makes one.
+
+One WeeWX field takes one reading. Picking one that another station has says so and
+waits for an answer.
 
 A field you place by hand outranks the role. Placing it is the decision.
 
@@ -93,7 +97,8 @@ Setting a role settles it. Nothing else in WeeWX would have said anything.
 ## Writing it by hand
 
 Everything the interface does can be written into `weewx.conf`, and a station written
-there is the one in force: the interface shows it and declines to change it.
+under `[[stations]]` is the one in force: the interface shows it and declines to change
+it, field map included.
 
 ```ini
 [UltimatePush]

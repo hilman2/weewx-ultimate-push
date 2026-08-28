@@ -122,6 +122,12 @@ select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .knock td { padding: 2px 8px 2px 0; border: 0; }
 .knock td:nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; }
 .knock td:nth-child(3) { color: var(--dim); width: 42%; }
+.block { margin-bottom: 22px; }
+.fold { cursor: pointer; display: flex; gap: 8px; align-items: baseline;
+  padding: 7px 0; border-bottom: 1px solid var(--line); user-select: none; }
+.fold:hover .caret { color: var(--accent); }
+.caret { color: var(--dim); width: 12px; }
+.fold .dim { font-size: 12px; }
 .waiting { color: var(--dim); font-size: 13px; }
 .waiting b { color: var(--warn); }
 #flash { position: fixed; right: 16px; bottom: 16px; background: var(--panel);
@@ -169,6 +175,7 @@ var BASE = location.pathname.replace(/[^/]*\\.[^/]*$/, '');
 if (BASE.charAt(BASE.length - 1) !== '/') BASE += '/';
 
 var chosen = null, tab = 'fields', state = null, detail = null;
+var fieldsView = null, folded = {};
 var setup = null, picked = null, watching = null, candidates = null;
 
 function api(route, body) {
@@ -448,111 +455,148 @@ function show(which) {
   draw();
 }
 
-function chooser(f) {
+function hasColumn(name) {
+  return !candidates || !candidates.present || candidates.present.indexOf(name) >= 0;
+}
+
+function holderOf(name) {
+  return fieldsView && fieldsView.holders ? fieldsView.holders[name] : null;
+}
+
+function heldElsewhere(name, s, f) {
+  /* Somebody else's, where somebody else is another station or another reading of
+     this one. A column takes one answer. */
+  var who = holderOf(name);
+  if (!who) return null;
+  if (who.ident === s.ident && who.raw === f.raw) return null;
+  return who;
+}
+
+function noteFor(name, s, f) {
+  var who = heldElsewhere(name, s, f);
+  if (who) return ' \\u2014 ' + (who.name || who.ident) + '/' + who.raw;
+  if (!hasColumn(name)) return ' \\u2014 new column';
+  return '';
+}
+
+function chooser(f, s) {
   /* Where this reading could go. The ones that measure the same thing first: a wind
      speed offered as a home for a temperature is worse than no suggestion, because
-     somebody will pick it. */
+     somebody will pick it.
+
+     Numbered families run past the end of the schema, so extraTemp12 is here even
+     though no database has a column for it. That is said in the option, and the
+     column is one button away. */
   var fits = (candidates.groups[f.group] || []).slice();
   var others = [];
   Object.keys(candidates.groups).forEach(function (g) {
     if (g !== f.group) others = others.concat(candidates.groups[g]);
   });
-  others = others.concat(candidates.ungrouped).sort();
+  others = others.concat(candidates.ungrouped);
 
   function option(name) {
-    var who = candidates.used[name];
-    var mine = who && who.length === 1 && detail && who[0] ===
-               (detail.name || detail.ident);
-    var note = who && !mine ? ' \u2014 ' + who.join(', ') : '';
     return '<option value="' + esc(name) + '"' +
-      (name === f.field ? ' selected' : '') + '>' + esc(name) + esc(note) + '</option>';
+      (name === f.field ? ' selected' : '') + '>' + esc(name) +
+      esc(noteFor(name, s, f)) + '</option>';
   }
 
   var here = f.field && fits.indexOf(f.field) < 0 && others.indexOf(f.field) < 0
     ? '<option value="' + esc(f.field) + '" selected>' + esc(f.field) +
-      ' \u2014 not in the schema</option>'
+      esc(noteFor(f.field, s, f)) + '</option>'
     : '';
+  var settled = f.field || f.nowhere;
 
-  return '<select data-raw="' + esc(f.raw) + '">' +
-    '<option value=""' + (f.field ? '' : ' selected') + '>\u2014 not written</option>' +
+  return '<select data-raw="' + esc(f.raw) + '" data-ident="' + esc(s.ident) + '">' +
+    '<option value=""' + (settled ? '' : ' selected') +
+    '>\\u2014 wherever the catalog puts it \\u2014</option>' +
+    '<option value="-"' + (f.nowhere ? ' selected' : '') +
+    '>\\u2014 nowhere \\u2014</option>' +
     here +
     (fits.length ? '<optgroup label="Measures the same thing">' +
       fits.map(option).join('') + '</optgroup>' : '') +
     '<optgroup label="Everything else">' + others.map(option).join('') + '</optgroup>' +
-    '<option value="__new__">\u2014 a field of my own \u2014</option>' +
+    '<option value="__new__">\\u2014 a field of my own \\u2014</option>' +
     '</select>';
 }
 
-function roleBox() {
-  /* Only worth asking about once there is a second station. With one, there is
-     nothing to decide and the question would be noise. */
-  if (!state || state.stations.length < 2 || !detail) return '';
-  var role = detail.role || 'main';
-  return '<div class="note" style="border-left-color:var(--line)">' +
-    '<b>' + esc(detail.name || detail.ident) + '</b> is ' +
-    (role === 'main'
-      ? 'the station: its readings go where they belong.'
-      : 'an extra sensor on channel ' + (detail.channel || '?') + ': its temperature '
-        + 'and humidity are moved there, and what has nowhere to go is dropped rather '
-        + 'than written over the main station\u2019s.') +
-    '<div class="add"><button class="act" data-role="' +
-    (role === 'main' ? 'extra' : 'main') + '">Make it ' +
-    (role === 'main' ? 'an extra sensor' : 'the station') + '</button></div></div>';
+function fieldRow(s, f) {
+  var where = chooser(f, s) +
+    (f.reserved ? '<div class="newcol dim">placed in weewx.conf; a choice here ' +
+      'takes precedence</div>' : '');
+  var status;
+  if (f.nowhere) {
+    status = '<span class="dim">nowhere, on purpose</span>';
+  } else if (!f.field) {
+    status = '<span class="dim">not written</span>';
+  } else if (heldElsewhere(f.field, s, f)) {
+    var who = heldElsewhere(f.field, s, f);
+    status = '<span class="dim">' + esc(who.name || who.ident) +
+      ' fills this column</span>';
+  } else if (f.column) {
+    status = f.history
+      ? '<span class="warn">column holds ' + f.history + ' earlier values</span>'
+      : '<span class="ok">column ready</span>';
+  } else {
+    status = '<span class="bad">no column</span>' + (candidates.can_add
+      ? '<div class="newcol"><button class="act" data-addcol="' + esc(f.field) +
+        '">Create the column</button></div>'
+      : '<div class="newcol dim">needs <code>weectl database add-column ' +
+        esc(f.field) + '</code></div>');
+  }
+  return '<tr><td class="mono">' + esc(f.raw) + '</td>' +
+    '<td class="mono">' + (f.value === null || f.value === undefined
+      ? '<span class="dim">no reading</span>' : esc(f.value)) + '</td>' +
+    '<td>' + where + '</td>' +
+    '<td class="dim">' + esc(f.group || '') + '</td>' +
+    '<td>' + status + '</td>' +
+    '<td class="dim">' + esc(f.why || '') + '</td></tr>';
+}
+
+function stationFields(s, several) {
+  var open = !folded[s.ident];
+  var role = s.role === 'extra'
+    ? 'extra sensor on channel ' + (s.channel || '?')
+    : 'the station';
+  var head = '<div class="fold" data-fold="' + esc(s.ident) + '">' +
+    '<span class="caret">' + (open ? '\\u25be' : '\\u25b8') + '</span>' +
+    '<b>' + esc(s.name || s.ident) + '</b>' +
+    '<span class="dim">' + esc(s.protocol || '?') + ' \\u00b7 ' + role +
+    ' \\u00b7 ' + s.rows.length + ' fields</span></div>';
+  if (!open) return '<div class="block">' + head + '</div>';
+
+  var swap = '';
+  if (several && !s.declared) {
+    swap = '<div class="add"><button class="act" data-role="' +
+      (s.role === 'main' ? 'extra' : 'main') + '" data-ident="' + esc(s.ident) +
+      '">Make it ' + (s.role === 'main' ? 'an extra sensor' : 'the station') +
+      '</button></div>';
+  }
+  return '<div class="block">' + head + swap +
+    '<table><thead><tr><th>Raw field</th><th>Last value</th><th>WeeWX field</th>' +
+    '<th>Group</th><th>Column</th><th>How</th></tr></thead><tbody>' +
+    s.rows.map(function (f) { return fieldRow(s, f); }).join('') +
+    '</tbody></table></div>';
 }
 
 function drawFields(box) {
-  Promise.all([api('station?ident=' + encodeURIComponent(chosen)),
-               loadCandidates()]).then(function (both) {
+  /* Every station at once. The question is not "what does this station send", it is
+     "who fills outTemp", and with two stations that answer used to be spread over
+     two pages, neither of which could show the collision that matters. */
+  Promise.all([api('fields'), loadCandidates()]).then(function (both) {
     var d = both[0];
     if (!d.ok) { box.innerHTML = '<p class="bad">' + esc(d.error) + '</p>'; return; }
-    detail = d;
-    var rows = d.fields.map(function (f) {
-      var where = f.reserved
-        ? '<span class="dim">set in weewx.conf</span>'
-        : chooser(f);
-      var status = f.field
-        ? (f.column
-            ? (f.history
-                ? '<span class="warn">column holds ' + f.history + ' earlier values</span>'
-                : '<span class="ok">column ready</span>')
-            : '<span class="bad">no column</span><div class="newcol dim">needs ' +
-              '<code>weectl database add-column ' + esc(f.field) + '</code></div>')
-        : '<span class="dim">not written</span>';
-      return '<tr><td class="mono">' + esc(f.raw) + '</td>' +
-        '<td class="mono">' + (f.value === null ? '<span class="dim">no reading</span>'
-                                                : esc(f.value)) + '</td>' +
-        '<td>' + where + '</td>' +
-        '<td class="dim">' + esc(f.group || '') + '</td>' +
-        '<td>' + status + '</td>' +
-        '<td class="dim">' + esc(f.why || '') + '</td></tr>';
+    fieldsView = d;
+    if (!d.stations.length) {
+      box.innerHTML = '<p class="dim">Nothing has uploaded yet.</p>';
+      return;
+    }
+    var several = d.stations.length > 1;
+    box.innerHTML = d.stations.map(function (s) {
+      return stationFields(s, several);
     }).join('');
-    box.innerHTML = roleBox() +
-      (d.undecided.length ? '<div class="note"><b>' + d.undecided.length +
-        ' field(s) are not being written</b> because where they go is your call and not ' +
-        'the hardware\\u2019s. Two sensors in one column cannot be separated afterwards, ' +
-        'so nothing is guessed. Fill in a field below and it takes effect on the next ' +
-        'upload.</div>' : '') +
-      '<table><thead><tr><th>Raw field</th><th>Last value</th><th>WeeWX field</th>' +
-      '<th>Group</th><th>Column</th><th>How</th></tr></thead><tbody>' + rows +
-      '</tbody></table>';
   });
 }
 
-function drawRaw(box) {
-  api('raw?ident=' + encodeURIComponent(chosen)).then(function (d) {
-    if (!d.uploads.length) { box.innerHTML = '<p class="dim">Nothing kept yet.</p>'; return; }
-    box.innerHTML = '<p class="dim">The last ' + d.uploads.length +
-      ' uploads, newest first. Whatever names the station has been replaced, so these ' +
-      'are safe to paste into an issue.</p>' +
-      d.uploads.map(function (u, i) {
-        return '<div class="upload"><div class="head"><span>' + esc(u.method) + ' ' +
-          esc(u.path) + ' from ' + esc(u.client) + ' \\u00b7 ' + ago(u.at) +
-          (u.protocol ? ' \\u00b7 ' + esc(u.protocol) : '') + '</span>' +
-          '<button class="act" data-copy="' + i + '">Copy</button></div>' +
-          '<pre id="raw' + i + '">' + esc(u.text) + '</pre></div>';
-      }).join('');
-  });
-}
 
 function drawColumns(box) {
   api('columns?ident=' + encodeURIComponent(chosen)).then(function (d) {
@@ -563,7 +607,9 @@ function drawColumns(box) {
     } else {
       html += '<p>' + d.missing.length + ' reading(s) have nowhere to live. They show ' +
         'up in reports as current conditions and are gone at the next archive interval. ' +
-        'Back up the database first: adding a column rewrites the table.</p>' +
+        'Adding a column changes the table definition and not its rows, so it is ' +
+        'quick on any size of database. Taking one away again is not, so it is ' +
+        'worth a backup and a moment on the name.</p>' +
         '<div class="row" style="margin-bottom:8px">' +
         '<button class="act" id="copycmds">Copy the commands</button></div>' +
         '<pre id="cmds">' + esc(d.commands.join('\\n')) + '</pre>';
@@ -597,8 +643,28 @@ document.addEventListener('click', function (e) {
     drawSetup(document.getElementById('body'));
     return;
   }
+  if (t.dataset.fold !== undefined) {
+    folded[t.dataset.fold] = !folded[t.dataset.fold];
+    draw();
+    return;
+  }
+  if (t.dataset.addcol !== undefined) {
+    var wanted = t.dataset.addcol;
+    if (!window.confirm('Add the column ' + wanted + ' to the database?\\n\\n' +
+        'This is the same change weectl database add-column makes. A column ' +
+        'cannot be taken away again without rebuilding the table, so it is worth ' +
+        'being sure of the name.')) return;
+    t.disabled = true;
+    api('add-column', { field: wanted }).then(function (r) {
+      flash(r.message, !r.ok);
+      candidates = null;
+      if (r.ok) { draw(); loadSetup(); } else { t.disabled = false; }
+    });
+    return;
+  }
   if (t.dataset.role) {
-    api('role', { ident: chosen, role: t.dataset.role }).then(function (r) {
+    api('role', { ident: t.dataset.ident || chosen, role: t.dataset.role })
+      .then(function (r) {
       flash(r.ok ? 'Changed. It takes effect on the next upload.' : r.message, !r.ok);
       candidates = null;
       if (r.ok) { loadState(); loadSetup(); draw(); }
@@ -661,21 +727,37 @@ document.addEventListener('click', function (e) {
   if (card) choose(card.dataset.ident);
 });
 
+function placeField(ident, raw, field, force) {
+  api('field', { ident: ident, raw: raw, field: field, force: !!force })
+    .then(function (r) {
+      if (!r.ok && r.conflict) {
+        /* One column takes one reading. Say who has it and let the person decide,
+           rather than quietly letting two sensors take turns in it. */
+        if (window.confirm(r.message + '\\n\\nMove it to this one?')) {
+          placeField(ident, raw, field, true);
+        } else {
+          draw();
+        }
+        return;
+      }
+      flash(r.ok ? "'" + raw + "' takes effect on the next upload." : r.message, !r.ok);
+      /* The choice changes who owns what, so the suggestions are asked for again. */
+      candidates = null;
+      if (r.ok) { draw(); loadSetup(); }
+    });
+}
+
 document.addEventListener('change', function (e) {
   var raw = e.target.dataset.raw;
   if (!raw) return;
   var field = e.target.value;
   if (field === '__new__') {
     field = (window.prompt('A field of your own. Letters, digits and underscores.\\n' +
-      'It will need a column: the command appears once it is set.', '') || '').trim();
+      'If the database has no column for it, a button to make one appears in the ' +
+      'row.', '') || '').trim();
     if (!field) { draw(); return; }
   }
-  api('field', { ident: chosen, raw: raw, field: field }).then(function (r) {
-    flash(r.ok ? "'" + raw + "' takes effect on the next upload." : r.message, !r.ok);
-    /* The choice changes who owns what, so the suggestions are asked for again. */
-    candidates = null;
-    if (r.ok) { draw(); loadSetup(); }
-  });
+  placeField(e.target.dataset.ident || chosen, raw, field, false);
 });
 
 loadState().then(function () { return loadSetup(); }).then(function () {

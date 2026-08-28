@@ -258,6 +258,8 @@ class Site:
             return _json(self.driver.web_setup())
         if route == 'candidates':
             return _json(self.driver.web_candidates())
+        if route == 'fields':
+            return _json(self.driver.web_fields())
         if route == 'station':
             found = self.driver.web_station(query.get('ident', ''))
             if found is None:
@@ -291,9 +293,12 @@ class Site:
                 body.get('ident', ''), body.get('name'), body.get('infer_unknown'))
             return _json({'ok': ok, 'message': message})
         if route == 'field':
-            ok, message = self.driver.web_set_field(
-                body.get('ident', ''), body.get('raw', ''), body.get('field', ''))
-            return _json({'ok': ok, 'message': message})
+            return _json(self.driver.web_set_field(
+                body.get('ident', ''), body.get('raw', ''), body.get('field', ''),
+                force=bool(body.get('force'))))
+        if route == 'add-column':
+            return _json(self.driver.web_add_column(body.get('field', ''),
+                                                    body.get('type')))
         if route == 'role':
             ok, message = self.driver.web_role(body.get('ident', ''),
                                                body.get('role', ''))

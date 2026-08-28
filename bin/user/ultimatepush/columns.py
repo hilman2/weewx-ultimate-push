@@ -23,6 +23,13 @@ COUNTED = frozenset([
     'group_count', 'group_time', 'group_boolean', 'group_data',
 ])
 
+# How far a numbered family is offered past what the schema ships. The schema stops
+# at eight extra temperatures because that was enough when it was written; a gateway
+# with three WN34 probes, two indoor sensors and a soil array runs out in an
+# afternoon. The ones past the end have no column yet, which the interface says, and
+# it offers to make one. That is the whole point of offering them.
+UPTO = 16
+
 
 def schema_fields():
     """The fields WeeWX's standard schema already has. Needs WeeWX importable."""
@@ -30,28 +37,69 @@ def schema_fields():
     return {name for name, _type in table}
 
 
-def by_group():
-    """The standard schema's fields, grouped by what they measure.
+def families(names, least=2):
+    """The numbered families in a set of field names, as {base: highest}.
 
-    For the box that asks where a reading should go. Offering a wind speed as a place
-    to put a temperature is noise, and worse than noise: somebody will pick it.
+    extraTemp1 to extraTemp8 is a family. appTemp1, co2 and pm2_5 are not, which is
+    what `least` is for. A family is a series hardware can have more of than the
+    schema does.
+    """
+    import re
+    found = {}
+    for name in names:
+        match = re.match(r'^(.*?[A-Za-z_])([0-9]+)$', name)
+        if match:
+            found.setdefault(match.group(1), set()).add(int(match.group(2)))
+    return {base: max(numbers) for base, numbers in found.items()
+            if len(numbers) >= least and numbers == set(range(1, max(numbers) + 1))}
+
+
+def by_group(upto=UPTO):
+    """Fields grouped by what they measure, for the box that asks where a reading
+    should go.
+
+    Offering a wind speed as a place to put a temperature is noise, and worse than
+    noise: somebody will pick it. So the answer is grouped, and the group that suits
+    the reading is offered first.
+
+    Numbered families run past the end of the schema, as far as `upto`. The schema
+    has eight extra temperatures; hardware that sends a ninth is ordinary. Without
+    this the box simply has no answer for it, and the way people deal with that today
+    is to write extraTemp9 into a configuration file by hand.
 
     Returns (groups, ungrouped). WeeWX knows no group for a few of its own columns,
-    batteryStatus1 and forecast among them, and those are still perfectly good places
-    to put something.
+    forecast among them, and those are still perfectly good places to put something.
     """
     import weewx.units
+    known = {name for name in schema_fields()
+             if name not in ('dateTime', 'usUnits', 'interval')}
+    everything = set(known)
+    for base, highest in families(known).items():
+        group = weewx.units.obs_group_dict.get(base + '1')
+        for number in range(highest + 1, max(upto, highest) + 1):
+            name = '%s%d' % (base, number)
+            everything.add(name)
+            if group:
+                weewx.units.obs_group_dict.setdefault(name, group)
+
     groups = {}
     ungrouped = []
-    for name in sorted(schema_fields()):
-        if name in ('dateTime', 'usUnits', 'interval'):
-            continue
+    for name in sorted(everything, key=in_family_order):
         group = weewx.units.obs_group_dict.get(name)
         if group:
             groups.setdefault(group, []).append(name)
         else:
             ungrouped.append(name)
     return groups, ungrouped
+
+
+def in_family_order(name):
+    """Sort extraTemp9 after extraTemp8 rather than after extraTemp10."""
+    import re
+    match = re.match(r'^(.*?[A-Za-z_])([0-9]+)$', name)
+    if match:
+        return (match.group(1), int(match.group(2)))
+    return (name, 0)
 
 
 def missing(packet, groups, known=None):
@@ -82,6 +130,52 @@ def commands(wanted, config='/etc/weewx/weewx.conf'):
             for field, sql in wanted]
 
 
+def existing(config_path, binding='wx_binding'):
+    """The columns the archive table actually has.
+
+    Not the same thing as the schema. The schema says what a fresh database would be
+    given; this says what is in front of us. A database made by an older WeeWX, or
+    with a schema of somebody's own, has just as much right to exist, and telling
+    somebody a column is ready when it is not is worse than saying nothing.
+    """
+    with _manager(config_path, binding) as manager:
+        return set(manager.sqlkeys)
+
+
+def add(config_path, field, sql_type='REAL', binding='wx_binding'):
+    """Add one column to the archive table, and say what happened.
+
+    One ALTER TABLE, which is what weectl database add-column does and no more. On
+    SQLite that changes the table definition and not its rows, so it costs the same
+    on a database of ten records and one of ten million.
+
+    There is deliberately no way here to take a column away. Dropping one in SQLite
+    means rebuilding the table around it, and a mistake there is not a mistake
+    anybody recovers from without a backup.
+    """
+    field = str(field or '').strip()
+    if not field:
+        return False, "No column named."
+    if sql_type not in ('REAL', 'INTEGER'):
+        return False, "A column is REAL or INTEGER, not '%s'." % sql_type
+    try:
+        with _manager(config_path, binding) as manager:
+            if field in manager.sqlkeys:
+                return True, "The database already has a column '%s'." % field
+            manager.add_column(field, sql_type)
+    except Exception as e:                          # pylint: disable=broad-except
+        return False, "The database would not take it: %s" % e
+    return True, "Added the column '%s' as %s." % (field, sql_type)
+
+
+def _manager(config_path, binding):
+    import weecfg
+    import weewx.manager
+
+    _, config_dict = weecfg.read_config(config_path)
+    return weewx.manager.open_manager_with_config(config_dict, binding)
+
+
 def occupied(config_path, binding='wx_binding'):
     """Return {field: (count, last timestamp)} for archive columns that hold data.
 
@@ -91,11 +185,7 @@ def occupied(config_path, binding='wx_binding'):
 
     One pass over the table, so it takes a moment on a large database.
     """
-    import weecfg
-    import weewx.manager
-
-    _, config_dict = weecfg.read_config(config_path)
-    with weewx.manager.open_manager_with_config(config_dict, binding) as manager:
+    with _manager(config_path, binding) as manager:
         fields = [f for f in manager.sqlkeys if f not in ('dateTime', 'usUnits', 'interval')]
         counts = ', '.join('COUNT(%s), MAX(CASE WHEN %s IS NOT NULL THEN dateTime END)'
                            % (f, f) for f in fields)

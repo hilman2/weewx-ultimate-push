@@ -41,7 +41,7 @@ import weewx.drivers
 import weewx.units
 
 from . import (VERSION, activity, admin, checklist, columns, consoles,
-               overrides, protocols, report, roles, server, transport)
+               mapping, overrides, protocols, report, roles, server, transport)
 from .mapping import Mapper
 
 try:
@@ -125,8 +125,13 @@ class Station:
         self.path = None
         self.mappers = {}
 
-    def mapper_for(self, dialect):
-        """The mapper for this dialect, made the first time it is needed."""
+    def mapper_for(self, dialect, announce=True):
+        """The mapper for this dialect, made the first time it is needed.
+
+        `announce` is off when a rebuilt station is being given back the catalogs the
+        one before it had. That is bookkeeping, not news, and somebody clicking
+        through a field map would otherwise get a line of log per click.
+        """
         mapper = self.mappers.get(dialect.name)
         if mapper is None:
             # The role moves this station's readings out of the main station's way.
@@ -138,11 +143,22 @@ class Station:
                             infer_unknown=self.infer_unknown,
                             max_behind=self.max_behind, max_ahead=self.max_ahead)
             self.mappers[dialect.name] = mapper
-            log.info("Reading %s uploads%s with the '%s' catalog, %d fields.",
-                     dialect.name.split('/')[0],
-                     " from '%s'" % self.name if self.name else '',
-                     dialect.name, len(dialect.fields))
+            if announce:
+                log.info("Reading %s uploads%s with the '%s' catalog, %d fields.",
+                         dialect.name.split('/')[0],
+                         " from '%s'" % self.name if self.name else '',
+                         dialect.name, len(dialect.fields))
         return mapper
+
+
+class _NoStation:
+    """Stands in for a station that did not exist before, so that taking its
+    catalogs over needs no special case."""
+
+    mappers = {}
+
+
+_NO_STATION = _NoStation()
 
 
 class UltimatePushDriver(weewx.drivers.AbstractDevice):
@@ -208,6 +224,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.paths_proven = False
         self.config_path = _config_path(stn_dict.get('config_dict'))
         self.occupied = None
+        # The columns the archive table actually has. Not the schema: a database
+        # made by an older WeeWX has fewer, and saying 'column ready' about one
+        # that is not there sends somebody looking for a fault in the wrong place.
+        self.present = None
         # Read once, for the setup checklist. A station left at the defaults has its
         # sunrise computed for the north pole, and nothing else says so.
         self.station_section = _station_section(stn_dict.get('config_dict'))
@@ -399,6 +419,12 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 self.max_behind, self.max_ahead,
                 role=options.get('role', roles.MAIN),
                 channel=int(channel) if channel else None)
+            # Give the rebuilt station the catalogs the old one had. A mapper is
+            # otherwise made on the next upload, and until then nothing could say
+            # where a reading now goes, so the page would show the change it had
+            # just been asked to make as not having happened.
+            for was in self.web_stations.get(ident, _NO_STATION).mappers.values():
+                built[ident].mapper_for(was.dialect, announce=False)
         self.web_stations = built
         self.station_paths = paths
         for ident in built:
@@ -919,16 +945,29 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         groups = {}
         for mapper in (station.mappers.values() if station else []):
             groups.update(mapper.wanted_groups())
-        schema = admin.schema_fields()
-        occupied = self.occupied or {}
-
-        # Only what this station has actually sent. The catalog is five hundred
-        # names long and the answer to 'where does my reading go' is not helped by
-        # four hundred and fifty rows about sensors nobody owns.
+        rows = self._field_rows(found, station, last, groups, reserved)
         seen = set(found['raw_seen'])
+        found['ok'] = True
+        found['role'] = getattr(station, 'role', 'main')
+        found['channel'] = getattr(station, 'channel', None)
+        found['fields'] = rows
+        found['undecided'] = sorted(seen & set(found['undecided']))
+        found['guesses'] = sorted(seen & set(found['guesses']))
+        return found
+
+    def _field_rows(self, found, station, last, groups, reserved):
+        """One row per raw field this station has sent, and where each one stands.
+
+        Only what it has actually sent. The catalog is five hundred names long, and
+        the answer to "where does my reading go" is not helped by four hundred and
+        fifty rows about sensors nobody owns.
+        """
+        present = self.columns_present()
+        occupied = self.occupied or {}
+        placed = self._placements(station)
         rows = []
-        for raw in sorted(seen):
-            field = found['fields'].get(raw, '')
+        for raw in sorted(found['raw_seen']):
+            field = placed.get(raw, found['fields'].get(raw, ''))
             guess = found['guesses'].get(raw)
             why = ''
             if raw in found['undecided']:
@@ -938,22 +977,147 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                           _contested_with(station), found['undecided'][raw]))
             elif guess:
                 field, why = guess[0], guess[2]
+            nowhere = field == mapping.NOWHERE
             rows.append({
                 'raw': raw,
-                'field': field,
+                'field': '' if nowhere else field,
+                'nowhere': nowhere,
                 'value': last.get(field),
-                'group': groups.get(field, ''),
-                'column': bool(field) and field in schema,
+                'group': (groups.get(field)
+                          or weewx.units.obs_group_dict.get(field, '')),
+                'column': bool(field) and not nowhere and field in present,
                 'history': (occupied.get(field) or (0,))[0],
                 'reserved': raw in reserved,
                 'why': why,
             })
-        found['ok'] = True
-        found['role'] = getattr(station, 'role', 'main')
-        found['channel'] = getattr(station, 'channel', None)
-        found['fields'] = rows
-        found['undecided'] = sorted(seen & set(found['undecided']))
-        found['guesses'] = sorted(seen & set(found['guesses']))
+        return rows
+
+    def columns_present(self, refresh=False):
+        """The columns the archive table has, or the schema when it cannot be read.
+
+        Read once and kept, because it changes only when somebody adds one, and this
+        is asked on every page load.
+        """
+        if self.present is None or refresh:
+            self.present = None
+            if self.config_path:
+                try:
+                    self.present = columns.existing(self.config_path)
+                except Exception as e:              # pylint: disable=broad-except
+                    log.debug("Cannot read the archive table's columns: %s", e)
+        if self.present is not None:
+            return self.present
+        return admin.schema_fields()
+
+    def web_fields(self):
+        """Every raw field of every station, and where each one goes.
+
+        One view rather than one per station. The question somebody has is not "what
+        does this station send", it is "who fills outTemp", and with two stations
+        that answer is spread over two pages, neither of which can show the collision
+        that matters.
+        """
+        stations = []
+        for row in sorted(self.activity.snapshot(), key=lambda r: r['ident']):
+            ident = row['ident']
+            station = self._station_for_ident(ident)
+            recent = self.activity.recent(ident, transport.redact, limit=1)
+            last = (recent[0].get('packet') or {}) if recent else {}
+            reserved = (self.overrides.reserved.get(ident, set())
+                        | self.overrides.reserved.get(None, set()))
+            groups = {}
+            for mapper in (station.mappers.values() if station else []):
+                groups.update(mapper.wanted_groups())
+            stations.append({
+                'ident': ident,
+                'name': row.get('name') or '',
+                'protocol': row.get('protocol') or '',
+                'role': getattr(station, 'role', roles.MAIN),
+                'channel': getattr(station, 'channel', None),
+                'declared': ident in self.stations,
+                'rows': self._field_rows(row, station, last, groups, reserved),
+            })
+        return {
+            'ok': True,
+            'stations': stations,
+            'holders': self._holders(),
+            'settings_file': self.overrides.path,
+        }
+
+    def _placements(self, station):
+        """Raw field -> WeeWX field, as the station is set up now.
+
+        Not as its last upload turned out. The activity log holds what was written,
+        and between somebody changing a placement and the next upload arriving those
+        are two different answers. The interface promises the next upload everywhere
+        else, so it has to show the next upload here.
+        """
+        placed = {}
+        for mapper in (station.mappers.values() if station else []):
+            for raw, field in mapper.fields.items():
+                # A field two drivers place differently is not written until somebody
+                # says which. Until then it holds nothing, and saying otherwise would
+                # have the interface offering to take a column away from a reading
+                # that never had it.
+                placed[raw] = '' if raw in mapper.undecided else field
+        return placed
+
+    def _holders(self):
+        """Which raw field of which station fills each WeeWX field.
+
+        A column takes one answer. Two stations writing one column take turns every
+        few seconds, and afterwards nothing can tell the two apart, so the interface
+        has to be able to say who has it before somebody picks it again.
+        """
+        holders = {}
+        for row in self.activity.snapshot():
+            ident = row['ident']
+            placed = self._placements(self._station_for_ident(ident))
+            for raw in row.get('raw_seen', ()):
+                field = placed.get(raw, row['fields'].get(raw))
+                if not field or field == mapping.NOWHERE:
+                    continue
+                holders.setdefault(field, {'ident': ident,
+                                           'name': row.get('name') or ident,
+                                           'raw': raw})
+        return holders
+
+    def web_add_column(self, field, sql_type=None):
+        """Add one archive column, so that nobody has to leave for a terminal.
+
+        The same ALTER TABLE that weectl database add-column runs. What it does not
+        do, and neither does weectl, is give the column a daily summary: those tables
+        are built from the declared schema when the database is made. Aggregates
+        still work, computed from the archive table itself, which is slower and right.
+        """
+        field = str(field or '').strip()
+        if not field:
+            return {'ok': False, 'message': "No column named."}
+        if not self.config_path:
+            return {'ok': False, 'message': (
+                "This driver was started without a configuration file, so it cannot "
+                "find the database. The command still works: weectl database "
+                "add-column %s" % field)}
+        if sql_type is None:
+            sql_type = self._column_type(field)
+        ok, message = columns.add(self.config_path, field, sql_type)
+        if ok:
+            self.columns_present(refresh=True)
+        return {'ok': ok, 'message': message}
+
+    def _column_type(self, field):
+        """REAL for anything measured, INTEGER for anything counted."""
+        groups = {}
+        for station in self._every_station():
+            for mapper in station.mappers.values():
+                groups.update(mapper.wanted_groups())
+        group = groups.get(field) or weewx.units.obs_group_dict.get(field)
+        return 'INTEGER' if group in columns.COUNTED else 'REAL'
+
+    def _every_station(self):
+        found = list(self.web_stations.values()) + list(self.stations.values())
+        if not found and self.default_station is not None:
+            found = [self.default_station]
         return found
 
     def web_candidates(self):
@@ -966,6 +1130,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             groups, ungrouped = columns.by_group()
         except Exception as e:
             return {'ok': False, 'error': "Cannot read the schema: %s" % e}
+        present = self.columns_present()
 
         # What each station is already writing, so that the box can say so rather
         # than letting two stations quietly land in one column.
@@ -982,6 +1147,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             'ok': True,
             'groups': groups,
             'ungrouped': ungrouped,
+            'present': sorted(present),
+            'can_add': bool(self.config_path),
             'used': {field: sorted(set(who)) for field, who in used.items()},
             'history': {field: count for field, (count, _last) in occupied.items()},
         }
@@ -1055,18 +1222,49 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         log.info("Station '%s' was let in through the web interface.", ident)
         return True, "Recorded in %s." % message
 
-    def web_set_field(self, ident, raw, field):
-        """Place one raw field for one station."""
+    def web_set_field(self, ident, raw, field, force=False):
+        """Place one raw field for one station.
+
+        A WeeWX field takes one answer. If another station, or another reading of
+        this one, already fills it, this says so and changes nothing: two sensors in
+        one column take turns every few seconds and cannot be told apart afterwards.
+        `force` is somebody having read that and said yes, and then the reading that
+        held the field is placed nowhere instead of being left to fight over it.
+        """
         ident = str(ident or '').strip()
+        raw = str(raw or '').strip()
+        field = str(field or '').strip()
         if ident in self.stations:
-            return False, ("weewx.conf names this station, so its field map lives "
-                           "there. Change it there, or take the station out of "
-                           "[[stations]] first.")
+            return {'ok': False, 'message': (
+                "weewx.conf names this station under [[stations]], so its field map "
+                "is part of that declaration and lives there. Change it there, or "
+                "take the station out of [[stations]] first.")}
+
+        wanted = field and field != mapping.NOWHERE
+        held = self._holders().get(field) if wanted else None
+        if held and (held['ident'], held['raw']) != (ident, raw):
+            if not force:
+                return {'ok': False, 'conflict': True, 'holder': held, 'message': (
+                    "%s is already filled by '%s' from station %s. One column takes "
+                    "one reading: two of them take turns every few seconds, and "
+                    "afterwards nothing can tell them apart."
+                    % (field, held['raw'], held['name']))}
+            if held['ident'] in self.stations:
+                return {'ok': False, 'message': (
+                    "%s is filled by '%s' from station %s, which weewx.conf declares "
+                    "under [[stations]]. Change it there first."
+                    % (field, held['raw'], held['name']))}
+            ok, message = self.overrides.set_field(held['ident'], held['raw'],
+                                                   mapping.NOWHERE)
+            if not ok:
+                return {'ok': False, 'message': message}
+
         ok, message = self.overrides.set_field(ident, raw, field)
         if not ok:
-            return False, message
+            return {'ok': False, 'message': message}
         self.reload_wanted = True
-        return True, message
+        self._reload()
+        return {'ok': True, 'message': message}
 
     def web_role(self, ident, role):
         """Say whether a station is the station, or an extra sensor.

@@ -134,7 +134,8 @@ Whatever the setting, the log says what turned up:
         (group_percent), continues leafwetness_ch, e.g. leafWet1
 
 A field only reaches the database if the archive table has a column for it. Fields
-outside the standard schema need `weectl database add-column` first.
+outside the standard schema need one adding, which is a button in the web interface or
+`weectl database add-column` from a terminal.
 
 ## The web interface
 
