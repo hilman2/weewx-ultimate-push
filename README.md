@@ -147,9 +147,15 @@ http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
 ```
 
 Open it and it shows what is still in the way of a station that records properly. If
-nothing is uploading yet, it asks which hardware you have and shows exactly what to type
-into its app: the address of this machine, the port, the path, the protocol name. Then
+nothing is uploading yet, name the station and pick your make: for hardware whose upload
+path is yours to choose it makes one and shows exactly what to type into its app. Then
 it waits and notices the first upload by itself.
+
+A second station is where the interface earns its keep. Both send `outTemp`, and there
+is one `outTemp`. It says which columns they would share, and one click makes the second
+one an extra sensor: its temperature and humidity move to `extraTempN`, and what has
+nowhere to go is dropped rather than written over the first station's. See
+[Stations](docs/Stations.md).
 
 After that it shows what each station sends, keeps the last twenty raw uploads, and lets
 you place a field without editing a file or restarting anything.
@@ -176,7 +182,7 @@ put TLS in front. `enable = false` closes the port. See
 | [Hardware](docs/Hardware.md) | every device, and what it takes to reach it |
 | [Sensors](docs/Sensors.md) | every field this driver knows, by sensor |
 | [Unknown fields](docs/Unknown-fields.md) | what happens to a field the catalog misses |
-| [Several consoles](docs/Several-consoles.md) | a second station, without the two overwriting each other |
+| [Stations](docs/Stations.md) | setting one up, and which station may fill which field |
 | [Database columns](docs/Database-columns.md) | which columns a station needs |
 | [Diagnostics](docs/Diagnostics.md) | one command that answers most questions |
 | [Reporting a new sensor](docs/New-sensors.md) | exactly what to send |

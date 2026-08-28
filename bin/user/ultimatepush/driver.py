@@ -113,6 +113,9 @@ class Station:
         # 'main' and nothing here does anything to it.
         self.role = role
         self.channel = channel
+        # An upload path of this station's own, where it has one. Set from
+        # weewx.conf or made by the web interface.
+        self.path = None
         self.mappers = {}
 
     def mapper_for(self, dialect):
@@ -218,6 +221,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.known = self._known_consoles(self.configured_passkey)
         self._apply_overrides()
 
+        self._check_one_main()
         self._check_rain_delta(stn_dict.get('config_dict'))
 
         self.report_file = stn_dict.get('report_file', report.DEFAULT_PATH)
@@ -278,6 +282,26 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 raise ValueError("metric_wind must be one of %s, not '%s'"
                                  % (', '.join(wunderground.METRIC_WIND_CHOICES), wind))
             wunderground.WeatherUnderground.metric_wind = wind
+
+    def _check_one_main(self):
+        """Say so when two stations both claim the standard fields.
+
+        One station is the station. Two of them take turns writing outTemp every few
+        seconds, and afterwards the column holds a mixture nothing can separate. The
+        driver drops the second one's readings rather than let that happen, but a
+        configuration that asks for it is worth saying out loud at startup.
+        """
+        everyone = dict(self.stations)
+        everyone.update(self.web_stations)
+        main = sorted(name for name, station in
+                      ((s.name or i, s) for i, s in everyone.items())
+                      if station.role == roles.MAIN)
+        if len(main) > 1:
+            log.warning(
+                "%d stations are set up as the main one: %s. One is the station and "
+                "the rest are extra sensors, or they write into each other's columns. "
+                "Give all but one 'role = extra' and a 'channel', or set it in the "
+                "web interface.", len(main), ', '.join(main))
 
     def _check_rain_delta(self, config_dict):
         """Say so when the rain will not be recorded, before a season of it is lost.
@@ -347,7 +371,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         force, and this one does not get to disagree with it.
         """
         built = {}
-        paths = {}
+        # From both files. A path written by hand works exactly like one the
+        # interface made, which is the point: nothing here is only reachable by
+        # clicking.
+        paths = {station.path.rstrip('/'): ident
+                 for ident, station in self.stations.items() if station.path}
         for ident, options in self.overrides.stations().items():
             if ident in self.stations:
                 # weewx.conf names it. Nothing here may change that.
@@ -397,11 +425,19 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                     "two the console sends first in every upload: a PASSKEY for "
                     "Ecowitt and Ambient hardware, an ID for Weather Underground."
                     % name)
-            stations[str(ident).strip()] = Station(
+            channel = options.get('channel')
+            station = Station(
                 name, str(ident).strip(),
                 dict(options.get('field_map_extensions', {})),
                 options.get('infer_unknown', self.infer_unknown),
-                self.max_behind, self.max_ahead)
+                self.max_behind, self.max_ahead,
+                role=options.get('role', roles.MAIN),
+                channel=int(channel) if channel else None)
+            if station.role not in roles.ROLES:
+                raise ValueError("Station '%s' has role '%s'. It is one of %s."
+                                 % (name, station.role, ', '.join(roles.ROLES)))
+            station.path = str(options.get('path', '')).strip() or None
+            stations[str(ident).strip()] = station
         log.info("Listening for %d consoles: %s",
                  len(stations), ', '.join(sorted(s.name for s in stations.values())))
         return stations
@@ -599,7 +635,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         by_path = self.station_paths.get((request.path or '/').rstrip('/'))
         if by_path is not None:
             self.paths_proven = True
-            station = self.web_stations.get(by_path) or self.default_station
+            station = (self.stations.get(by_path) or self.web_stations.get(by_path)
+                       or self.default_station)
         else:
             # Which console this is, and whether it presents the right password, are
             # asked of the upload as it arrived. A protocol that unpacks its payload

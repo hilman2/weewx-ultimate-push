@@ -283,3 +283,60 @@ def test_a_channel_is_never_handed_out_twice(driver):
     channels = [driver.web_stations[i].channel for i in made[1:]]
     assert len(set(channels)) == len(channels)
     assert None not in channels
+
+
+# ---------------------------------------------------------------- by hand
+
+
+def test_a_station_written_by_hand_can_do_everything_the_interface_can(tmp_path,
+                                                                       payload):
+    """Nothing here is only reachable by clicking. A role, a channel and a path work
+    the same written into weewx.conf."""
+    made = UltimatePushDriver(
+        port=0, address='127.0.0.1', report_file='',
+        console_file=str(tmp_path / 'c.txt'), override_file=str(tmp_path / 'w.conf'),
+        stations={
+            'garden': {'passkey': 'AAAA', 'path': '/one/report'},
+            'roof': {'passkey': 'BBBB', 'path': '/two/report',
+                     'role': 'extra', 'channel': '4'},
+        })
+    try:
+        send(made, '/one/report', 'PASSKEY=AAAA&stationtype=GW2000A&tempf=59.7'
+                                  '&humidity=91&baromrelin=29.92')
+        second = send(made, '/two/report',
+                      'PASSKEY=BBBB&stationtype=GW2000A&tempf=61.0&humidity=80'
+                      '&baromrelin=29.99')
+    finally:
+        made.closePort()
+
+    assert second['station'] == 'roof'
+    assert second['extraTemp4'] == 61.0
+    assert second['extraHumid4'] == 80.0
+    assert 'barometer' not in second
+
+
+def test_a_role_that_is_not_a_role_is_refused_at_startup(tmp_path):
+    with pytest.raises(ValueError) as caught:
+        UltimatePushDriver(port=0, address='127.0.0.1', report_file='',
+                           console_file=str(tmp_path / 'c.txt'),
+                           stations={'garden': {'passkey': 'AAAA',
+                                                'role': 'chief'}})
+
+    assert 'chief' in str(caught.value)
+
+
+def test_two_main_stations_are_said_out_loud(tmp_path, caplog):
+    """The driver drops the second one's readings rather than mix the columns, but a
+    configuration that asks for that is worth saying at startup."""
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        made = UltimatePushDriver(
+            port=0, address='127.0.0.1', report_file='',
+            console_file=str(tmp_path / 'c.txt'),
+            stations={'garden': {'passkey': 'AAAA'},
+                      'roof': {'passkey': 'BBBB'}})
+        made.closePort()
+
+    assert 'set up as the main one' in caplog.text
+    assert 'garden' in caplog.text and 'roof' in caplog.text

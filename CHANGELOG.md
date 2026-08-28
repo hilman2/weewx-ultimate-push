@@ -1,5 +1,67 @@
 # Changelog
 
+## 0.10.0 (2026-08-28)
+
+Stations are set up in the web interface, and the driver decides nothing about which
+of them may fill which field without saying so.
+
+### Setting one up
+
+Name it, pick what it is, and for hardware whose upload path is yours to choose the
+driver makes one and shows the settings to type in:
+
+    Protocol Type          Ecowitt
+    Server IP / Hostname   192.168.1.50
+    Path                   /E0rbpxexKCsb/report
+    Port                   8000
+
+From the first upload it knows which station that is. The path is the identity and the
+secret at once, which is better than a PASSKEY: that is in every upload in the clear
+and anybody who has seen one can repeat it.
+
+WeatherFlow broadcasts and the two bridges have their path in firmware, so they cannot
+be set up this way and the interface says so instead of offering something that would
+not work. Those are adopted, as before.
+
+Every path is accepted until a station has actually been heard on one of its own, so
+that setting a station up and not yet having typed it into the console does not bounce
+the uploads you already have.
+
+### Which station may fill which field
+
+A station has a role. `main` is the station and its readings go where they belong.
+`extra` has its temperature and humidity moved to `extraTempN` and `extraHumidN`, and
+everything else it sends is dropped rather than written over the main station's, which
+is said once in the log rather than once per field.
+
+With one station none of this does anything, and nothing about that case changed.
+
+The interface says when two stations would fill the same column, which nothing in WeeWX
+would otherwise have mentioned: they would simply take turns, every few seconds, and
+afterwards the column holds a mixture nothing can separate.
+
+Roles, channels and paths can all be written into `weewx.conf` as well. Nothing here is
+only reachable by clicking, and a station written by hand is the one in force.
+
+### The field table
+
+The box in each row offers the WeeWX fields that measure the same thing first, then
+everything else, then a field of your own. Offering a wind speed as a home for a
+temperature is worse than no suggestion, because somebody will pick it. A field with no
+column shows the command that makes it, in the row.
+
+### Needed a change to the listener
+
+`path` now takes a list, or a callable for the case where the set is not known when the
+socket is opened. A station added while WeeWX is running has to work from the next
+upload, not the next restart. Pushed to the core listener under review as
+[PR #1125](https://github.com/weewx/weewx/pull/1125); the bundled copy is byte for byte
+the same file.
+
+It also fixes something that was simply not possible before: a secret `path` and
+Weather Underground hardware could not both exist, because that hardware's endpoint is
+burned into its firmware and a set `path` turned it into a 404.
+
 ## 0.9.0 (2026-08-28)
 
 The interface now opens on what is still in the way, and tells you what to type.

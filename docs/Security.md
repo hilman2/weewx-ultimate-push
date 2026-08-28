@@ -108,7 +108,7 @@ posting a plausible temperature. The defence is that they have to know it.
 
 **Protecting a station from a second one.** That is a different problem, and it has
 its own answer: the driver answers only to consoles it knows about. See
-[Several consoles](Several-consoles).
+[Stations](Stations).
 
 ## A limit worth keeping
 

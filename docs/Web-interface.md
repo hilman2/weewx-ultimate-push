@@ -103,16 +103,17 @@ Five things can be in the way:
 
 | | |
 |---|---|
-| Your hardware is not pointing here | Pick your make, and it shows exactly what to type: the address of this machine, the port, the path, the protocol name. It waits and notices the first upload by itself. |
+| Your hardware is not pointing here | Name the station and pick your make. For hardware whose path is yours to choose it makes one and shows exactly what to type. It waits and notices the first upload by itself. |
 | Something is being turned away | A console this driver does not know. One click lets it in. |
 | A field is waiting for you | The placements only you can make. |
+| Two stations want one column | Which columns, and who wants them. A role settles it. |
 | A reading has no column | With the `weectl` commands. |
 | The station does not know where it is | `[Station]` in `weewx.conf`, which this driver cannot write, so it shows the block to paste. |
 
 Once everything is answered it stops asking and stays as a health page. A second console
 that turns up next year puts its step back at the top.
 
-## The four things it shows
+## The five things it shows
 
 **Setup.** The checklist above.
 
@@ -120,8 +121,13 @@ that turns up next year puts its step back at the top.
 protocol, which catalog its uploads are read with, how many fields it sends and when
 it was last heard from. Underneath, the stations being refused.
 
-**Fields.** The table above. Editing the WeeWX field in a row writes it and it takes
-effect on the next upload.
+**Fields.** The table above. The box in each row offers the WeeWX fields that measure
+the same thing first, then everything else, then a field of your own. One that has no
+column shows the `weectl database add-column` command that makes it, in the row. What
+you pick takes effect on the next upload.
+
+With more than one station there is also a line saying whether this one is the station
+or an extra sensor, and a button to change it. See [Stations](Stations).
 
 **Raw uploads.** The last twenty per station, newest first, with a copy button.
 Everything that names the station is replaced, so they are safe to paste into an

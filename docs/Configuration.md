@@ -205,7 +205,7 @@ own and opening one for hardware nobody has is not a thing to do quietly.
 ```
 
 A hub is named by its serial number, which goes in `passkey` like any other identity.
-See [Several consoles](Several-consoles).
+See [Stations](Stations).
 
 ### One protocol, named
 

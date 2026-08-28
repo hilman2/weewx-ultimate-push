@@ -17,7 +17,7 @@ waiting to be asked.
 - **[Hardware](Hardware)** — every device, and what it takes to reach it
 - **[Sensors](Sensors)** — every field this driver knows, by sensor
 - **[Unknown fields](Unknown-fields)** — what happens to a field the catalog misses
-- **[Several consoles](Several-consoles)** — a second station, without the two overwriting each other
+- **[Stations](Stations)** — setting one up, and which station may fill which field
 - **[Database columns](Database-columns)** — which columns a station needs, and how to add them
 
 ## When something is missing
