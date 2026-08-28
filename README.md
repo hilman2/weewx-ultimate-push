@@ -146,8 +146,13 @@ INFO user.ultimatepush.driver: The web interface is at
 http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
 ```
 
-It shows what each station sends, keeps the last twenty raw uploads, and lets you place
-a field without editing a file or restarting anything.
+Open it and it shows what is still in the way of a station that records properly. If
+nothing is uploading yet, it asks which hardware you have and shows exactly what to type
+into its app: the address of this machine, the port, the path, the protocol name. Then
+it waits and notices the first upload by itself.
+
+After that it shows what each station sends, keeps the last twenty raw uploads, and lets
+you place a field without editing a file or restarting anything.
 
 The reason it exists: placing a field is irreversible if you get it wrong, and the one
 thing you want to know first, whether that column already holds another sensor’s

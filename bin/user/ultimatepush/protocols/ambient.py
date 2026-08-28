@@ -40,6 +40,18 @@ class Ambient(Protocol):
     # which is also Ecowitt's, so it cannot separate the two and is not claimed.
     paths = ()
 
+    settings = (
+        ('Protocol', 'Ambient'),
+        ('Server IP / Hostname', '%(address)s'),
+        ('Path', '%(path)s'),
+        ('Port', '%(port)s'),
+        ('Upload Interval', '60'),
+    )
+    notes = (
+        "In the awnet app: your device, then Device Settings. The fields are under "
+        "something called Customized Upload.",
+    )
+
     # Ambient consoles are not fussy about the answer, and this is the one the
     # interceptor driver has been giving them for years.
     answer = 'success'

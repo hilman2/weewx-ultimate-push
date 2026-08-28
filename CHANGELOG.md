@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.9.0 (2026-08-28)
+
+The interface now opens on what is still in the way, and tells you what to type.
+
+Before this it showed an empty list of stations until something uploaded, and said
+nothing about how to make something upload. That is the commonest place to be stuck
+and it was the one thing the page could not help with.
+
+Now it asks which hardware you have and shows the settings for it, with this machine's
+address and the port already filled in:
+
+    Protocol Type          Ecowitt
+    Server IP / Hostname   192.168.1.50
+    Path                   /
+    Port                   8000
+    Upload Interval        60
+
+Then it waits, and notices the first upload by itself. After that it works through the
+placements only you can make, the columns that are missing, and whether the station
+knows where it is. Hardware that cannot be pointed anywhere, an Acurite bridge or a
+LaCrosse gateway, says so and gives the DNS entry instead.
+
+**It is a checklist, not a wizard.** A wizard keeps a step number, and a step number is
+wrong as soon as somebody closes the tab, points a second console at the port, or comes
+back next month. This works out what is true every time it is asked. So it is right on
+the first visit and the hundredth, it survives a restart, and once everything is
+answered it keeps working as a health page rather than becoming a thing to dismiss. A
+console that turns up next year puts its step back at the top.
+
+Also in this release: a station that is still being turned away is now a question about
+now rather than about the log. Letting one in used to leave the step outstanding until
+twenty more refusals had pushed the old ones out of the ring.
+
 ## 0.8.0 (2026-08-28)
 
 Two commands to a working station, and the driver says where its web interface is.

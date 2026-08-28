@@ -59,6 +59,16 @@ class WeatherFlow(Protocol):
     datagram = True
     default_port = PORT
 
+    settings = ()
+    notes = (
+        "Nothing to set on the hub. It broadcasts whether or not anybody listens.",
+        "The hub and this machine have to be on the same network segment. A "
+        "broadcast does not cross a router.",
+        "This driver has to be told to open the socket, because it is a second one. "
+        "In weewx.conf, then restart:",
+        "    [UltimatePush]\n        protocols = ecowitt, weatherflow",
+    )
+
     # The hub, not the device. A station can have an AIR and a SKY on one hub, and
     # they are one station with two sensors rather than two stations.
     identity = ('hub_sn',)

@@ -70,6 +70,21 @@ class WeatherUnderground(Protocol):
     answer = ANSWER
     content_type = 'text/plain'
 
+    settings = (
+        ('Server', '%(address)s'),
+        ('Port', '%(port)s'),
+        ('ID', 'anything you like'),
+        ('PASSWORD', 'anything you like'),
+    )
+    notes = (
+        "Wherever your console or software sets its Weather Underground upload.",
+        "The path cannot be changed. It is burned into the firmware, and this driver "
+        "answers on it.",
+        "Set 'password' in the driver section to the same PASSWORD and uploads "
+        "without it are refused. This is the one protocol here whose hardware can "
+        "carry a secret.",
+    )
+
     identity = ('ID',)
     secret = 'PASSWORD'
 

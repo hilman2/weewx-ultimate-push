@@ -9,7 +9,7 @@ import secrets
 
 from weecfg.extension import ExtensionInstaller
 
-VERSION = '0.8.0'
+VERSION = '0.9.0'
 
 
 def loader():
@@ -76,6 +76,7 @@ class UltimatePushInstaller(ExtensionInstaller):
                     'bin/user/ultimatepush/__main__.py',
                     'bin/user/ultimatepush/activity.py',
                     'bin/user/ultimatepush/admin.py',
+                    'bin/user/ultimatepush/checklist.py',
                     'bin/user/ultimatepush/columns.py',
                     'bin/user/ultimatepush/consoles.py',
                     'bin/user/ultimatepush/driver.py',

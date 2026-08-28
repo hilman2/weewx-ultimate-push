@@ -93,7 +93,28 @@ else's readings.
 The page shows that. Per raw field: what arrived, its last value, where it would go,
 whether a column exists, and how many earlier values that column already holds.
 
+## What you see first
+
+Until a station is recording properly, the page opens on a checklist of what is still
+in the way. It is not a wizard: it has no step number, it works out what is true every
+time you look, and it is right whether this is your first visit or your hundredth.
+
+Five things can be in the way:
+
+| | |
+|---|---|
+| Your hardware is not pointing here | Pick your make, and it shows exactly what to type: the address of this machine, the port, the path, the protocol name. It waits and notices the first upload by itself. |
+| Something is being turned away | A console this driver does not know. One click lets it in. |
+| A field is waiting for you | The placements only you can make. |
+| A reading has no column | With the `weectl` commands. |
+| The station does not know where it is | `[Station]` in `weewx.conf`, which this driver cannot write, so it shows the block to paste. |
+
+Once everything is answered it stops asking and stays as a health page. A second console
+that turns up next year puts its step back at the top.
+
 ## The four things it shows
+
+**Setup.** The checklist above.
 
 **Stations.** Everything that has uploaded since the driver started, with its
 protocol, which catalog its uploads are read with, how many fields it sends and when
@@ -199,6 +220,13 @@ wrong token would be answered and forgotten and there would be nothing to count.
 **A page on another site cannot drive it.** The API takes JSON with a token header,
 which a browser will not send cross-origin without a preflight, and the listener
 answers no `OPTIONS`. Worth having, and not something to lean on.
+
+### One secret, not two
+
+The token is the secret. If you put a reverse proxy in front, there is no reason to
+give it a secret path as well: both are strings in the same address, both end up in
+the same browser history, and two of the same thing is not twice the protection. Use a
+plain path and let the token do the work. It is the one the doorman counts against.
 
 ### On a network you do not trust
 

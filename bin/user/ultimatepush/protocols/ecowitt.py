@@ -32,6 +32,20 @@ class Ecowitt(Protocol):
     # The path is whatever the user typed into WSView, so this protocol claims none.
     paths = ()
 
+    settings = (
+        ('Protocol Type', 'Ecowitt'),
+        ('Server IP / Hostname', '%(address)s'),
+        ('Path', '%(path)s'),
+        ('Port', '%(port)s'),
+        ('Upload Interval', '60'),
+    )
+    notes = (
+        "In the WSView Plus app: Device List, your console, then Weather Services. "
+        "Page through to Customized and switch it on.",
+        "Sixteen seconds is the shortest interval it allows. Sixty is plenty.",
+        "Save it. The console uploads on its own from then on.",
+    )
+
     answer = '{"errcode":"0","errmsg":"ok"}'
     content_type = 'application/json'
 

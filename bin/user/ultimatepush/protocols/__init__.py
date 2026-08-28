@@ -116,6 +116,21 @@ class Protocol:
     # Hardware for which this is the protocol, for the log line at startup.
     hardware = ''
 
+    # How somebody points that hardware at this driver.
+    #
+    # Two parts, kept apart on purpose. `settings` is what goes into the fields of an
+    # app, as (label, value) pairs, and the page lays it out as a table to copy from.
+    # `notes` is everything that is a sentence rather than a field.
+    #
+    # Splitting them here rather than guessing in the page is the difference between
+    # a table of five things to type and a table with 'In the WSView Plus app' in it
+    # as though it were one.
+    #
+    # '%(address)s', '%(port)s' and '%(path)s' are filled in with where the driver
+    # actually is, because the answer to 'what do I type' is not 'your address'.
+    settings = ()
+    notes = ()
+
     # Paths this protocol answers on. Empty means any path, which is the case for
     # every device that lets you type the path into an app. A device with the path
     # burned into its firmware lists it here, and that is then also what identifies

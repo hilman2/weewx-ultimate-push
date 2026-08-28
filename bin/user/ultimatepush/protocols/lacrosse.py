@@ -51,6 +51,17 @@ class LW30x(Protocol):
 
     paths = ()
 
+    settings = ()
+    notes = (
+        "A gateway cannot be told where to post, so box.weatherdirect.com has to "
+        "resolve to %(address)s on your network. With dnsmasq:",
+        "    address=/box.weatherdirect.com/%(address)s",
+        "It posts to port 80, so redirect that:",
+        "    iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT "
+        "--to-port %(port)s",
+        "Once it is pointed here it no longer reaches its own servers.",
+    )
+
     # The gateway does not check what it gets back. An empty 200 is what it sees from
     # its own servers as far as anybody has established.
     answer = ''

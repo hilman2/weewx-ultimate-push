@@ -40,8 +40,8 @@ import weewx
 import weewx.drivers
 import weewx.units
 
-from . import (VERSION, activity, admin, columns, consoles, overrides,
-               protocols, report, server, transport)
+from . import (VERSION, activity, admin, checklist, columns, consoles,
+               overrides, protocols, report, server, transport)
 from .mapping import Mapper
 
 try:
@@ -181,6 +181,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.reload_wanted = False
         self.config_path = _config_path(stn_dict.get('config_dict'))
         self.occupied = None
+        # Read once, for the setup checklist. A station left at the defaults has its
+        # sunrise computed for the north pole, and nothing else says so.
+        self.station_section = _station_section(stn_dict.get('config_dict'))
+        self.listener_path = stn_dict.get('path')
         # Set when the web interface is switched on. See _web_listener.
         self.doorman = None
 
@@ -619,6 +623,30 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             text=request.text or '', ident=ident,
             protocol=protocol.name if protocol else None, note=note))
 
+    def web_address(self):
+        """The address somebody types into their console's app to reach this driver.
+
+        This machine's own, because the answer to "what do I put in the app" is not
+        "your address".
+        """
+        return admin.lan_address() or 'this-machine'
+
+    def data_port(self):
+        """The port the readings arrive on, as opposed to the interface's."""
+        return self.listener.ports[0] if self.listener.ports else 8000
+
+    def data_path(self):
+        """The path to type into the app, or '/' when any will do."""
+        return self.listener_path or '/'
+
+    def station_location(self):
+        """What weewx.conf says about where the station is, or None if unreadable."""
+        return self.station_section
+
+    def web_setup(self):
+        """What is still in the way of a station that records properly."""
+        return checklist.summary(self)
+
     def web_overview(self):
         """Everything the front page draws."""
         stations = self.activity.snapshot()
@@ -934,6 +962,18 @@ def _contested_with(station):
         if mapper.dialect.contested_with:
             return mapper.dialect.contested_with
     return 'another driver'
+
+
+def _station_section(config_dict):
+    """The [Station] section as plain values, or None when there is no config."""
+    if not config_dict:
+        return None
+    try:
+        return {key: config_dict['Station'][key]
+                for key in ('location', 'latitude', 'longitude', 'altitude')
+                if key in config_dict['Station']}
+    except (KeyError, TypeError):
+        return {}
 
 
 def _config_path(config_dict):

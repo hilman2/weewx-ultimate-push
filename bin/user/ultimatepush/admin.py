@@ -254,6 +254,8 @@ class Site:
     def _get(self, route, query):
         if route == 'state':
             return _json(self.driver.web_overview())
+        if route == 'setup':
+            return _json(self.driver.web_setup())
         if route == 'station':
             found = self.driver.web_station(query.get('ident', ''))
             if found is None:

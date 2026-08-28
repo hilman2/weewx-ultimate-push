@@ -57,6 +57,22 @@ class AcuriteBridge(Protocol):
     # the path is not claimed and the payload decides.
     paths = ()
 
+    settings = ()
+    notes = (
+        "A bridge cannot be told where to post. It goes to Chaney's servers, over "
+        "plain HTTP on port 80, and there is no setting for it.",
+        "So hubapi.myacurite.com has to resolve to %(address)s on your network. With "
+        "dnsmasq:",
+        "    address=/hubapi.myacurite.com/%(address)s",
+        "Most routers can do the same under a name like 'local DNS'. A hosts file on "
+        "this machine will not do: the entry has to be seen by the bridge.",
+        "It posts to port 80, so redirect that rather than running WeeWX as root:",
+        "    iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT "
+        "--to-port %(port)s",
+        "Once it is pointed here it no longer reaches Chaney, so the app and the "
+        "website stop showing the station.",
+    )
+
     # What Chaney's servers send, and what the bridge waits for. The timestamp is not
     # checked by the bridge, so a fixed one would do; it is filled in anyway because
     # there is no reason to send something untrue.

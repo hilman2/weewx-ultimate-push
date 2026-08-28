@@ -19,6 +19,7 @@ import pytest
 WITHOUT_WEEWX = [
     'ultimatepush',
     'ultimatepush.activity',
+    'ultimatepush.checklist',
     'ultimatepush.columns',
     'ultimatepush.infer',
     'ultimatepush.mapping',

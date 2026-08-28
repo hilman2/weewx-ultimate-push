@@ -89,6 +89,29 @@ pre { background: var(--code); border: 1px solid var(--line); border-radius: 6px
 .upload { margin-bottom: 12px; }
 .upload .head { display: flex; justify-content: space-between; gap: 10px;
   font-size: 12px; color: var(--dim); margin-bottom: 4px; }
+.setup { max-width: 46rem; }
+.step { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px;
+  background: var(--panel); }
+.step > .head { display: flex; gap: 10px; align-items: baseline; padding: 12px 14px; }
+.step .mark { font-weight: 700; width: 1.4rem; flex: none; }
+.step.done .mark { color: var(--ok); }
+.step.todo .mark { color: var(--warn); }
+.step.done > .head { color: var(--dim); }
+.step .what { font-weight: 600; }
+.step .body { padding: 0 14px 14px 38px; }
+.step .body p { margin: 0 0 10px; }
+.pick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.pick button { background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.pick button.on { border-color: var(--accent); background: var(--panel);
+  box-shadow: inset 0 -2px 0 var(--accent); }
+.settings { border-collapse: collapse; margin-bottom: 10px; }
+.settings td { border: 0; padding: 3px 14px 3px 0; }
+.settings td:first-child { color: var(--dim); white-space: nowrap; }
+.settings td:last-child { font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-weight: 600; }
+.waiting { color: var(--dim); font-size: 13px; }
+.waiting b { color: var(--warn); }
 #flash { position: fixed; right: 16px; bottom: 16px; background: var(--panel);
   border: 1px solid var(--line); border-radius: 7px; padding: 9px 14px; font-size: 13px;
   box-shadow: 0 6px 20px rgba(0,0,0,.13); display: none; max-width: 380px; }
@@ -109,11 +132,12 @@ pre { background: var(--code); border: 1px solid var(--line); border-radius: 6px
   </aside>
   <section>
     <div class="tabs">
+      <button data-tab="setup">Setup</button>
       <button data-tab="fields" class="on">Fields</button>
       <button data-tab="raw">Raw uploads</button>
       <button data-tab="columns">Database columns</button>
     </div>
-    <div id="body"><p class="dim">Pick a station.</p></div>
+    <div id="body"><p class="dim">Loading.</p></div>
   </section>
 </main>
 <div id="flash"></div>
@@ -130,6 +154,7 @@ var BASE = location.pathname.replace(/[^/]*\\.[^/]*$/, '');
 if (BASE.charAt(BASE.length - 1) !== '/') BASE += '/';
 
 var chosen = null, tab = 'fields', state = null, detail = null;
+var setup = null, picked = null, watching = null;
 
 function api(route, body) {
   var opts = { headers: { 'X-Auth-Token': TOKEN } };
@@ -231,6 +256,102 @@ function drawStations() {
   }
 }
 
+/* ---------------------------------------------------------------- setting up */
+
+function loadSetup(then) {
+  return api('setup').then(function (s) {
+    var was = setup && setup.next;
+    setup = s;
+    document.querySelector('[data-tab="setup"]').textContent =
+      s.done ? 'Setup' : 'Setup \u00b7 ' + s.steps.filter(function (x) {
+        return !x.done && !x.optional; }).length;
+    /* The first visit lands on what there is to do, not on an empty field table. */
+    if (!s.done && was === undefined) tab = 'setup';
+    /* Something arrived while we were waiting. Show it. */
+    if (was && was !== s.next) { drawStations(); draw(); }
+    if (then) then();
+  });
+}
+
+function drawSetup(box) {
+  if (!setup) { box.innerHTML = '<p class="dim">Loading.</p>'; return; }
+  box.innerHTML = '<div class="setup">' +
+    (setup.done
+      ? '<p class="ok">Everything is set up. This page stays here as a check.</p>'
+      : '') +
+    setup.steps.map(function (s) {
+      var open = !s.done && s.id === setup.next;
+      return '<div class="step ' + (s.done ? 'done' : 'todo') + '">' +
+        '<div class="head"><span class="mark">' + (s.done ? '\u2713' : '\u25cf') +
+        '</span><span class="what">' + esc(s.title) + '</span></div>' +
+        (open ? '<div class="body">' + stepBody(s) + '</div>' : '') +
+        '</div>';
+    }).join('') + '</div>';
+  if (!setup.done) watch();
+}
+
+function stepBody(s) {
+  var html = s.detail ? '<p>' + esc(s.detail) + '</p>' : '';
+  if (s.id === 'hardware') return html + hardwareBody(s);
+  if (s.id === 'refused') {
+    return html + s.stations.map(function (w) {
+      return '<div class="row" style="margin-bottom:6px">' +
+        '<span class="mono">' + esc(w.ident) + '</span>' +
+        '<span class="dim">' + esc(w.protocol || '?') + ' from ' + esc(w.client) +
+        '</span><input type="text" placeholder="name it" data-name="' +
+        esc(w.ident) + '"><button class="act" data-accept="' + esc(w.ident) +
+        '">Let in</button></div>';
+    }).join('');
+  }
+  if (s.id === 'placements') {
+    return html + '<button class="act" data-goto="fields">Place them</button>';
+  }
+  if (s.id === 'columns') {
+    return html + '<button class="act" data-goto="columns">Show the commands</button>';
+  }
+  if (s.id === 'location') {
+    return html + '<pre>' + esc(s.block || '') + '</pre>';
+  }
+  return html;
+}
+
+function hardwareBody(s) {
+  if (!s.protocols) return '';
+  if (!picked) picked = s.protocols[0].name;
+  var one = s.protocols.filter(function (p) { return p.name === picked; })[0]
+            || s.protocols[0];
+  return '<div class="pick">' + s.protocols.map(function (p) {
+      return '<button data-pick="' + esc(p.name) + '"' +
+        (p.name === picked ? ' class="on"' : '') + '>' + esc(p.label) + '</button>';
+    }).join('') + '</div>' +
+    '<p class="dim">' + esc(one.hardware) + '</p>' +
+    (one.settings.length
+      ? '<p>Put these in:</p><table class="settings">' +
+        one.settings.map(function (kv) {
+          return '<tr><td>' + esc(kv[0]) + '</td><td>' + esc(kv[1]) + '</td></tr>';
+        }).join('') + '</table>'
+      : '') +
+    one.notes.map(function (n) {
+      /* An indented note is a thing to paste, not a thing to read. */
+      return n.indexOf('    ') === 0
+        ? '<pre>' + esc(n.replace(/^ {4}/gm, '')) + '</pre>'
+        : '<p class="dim">' + esc(n) + '</p>';
+    }).join('') +
+    '<p class="waiting"><b>Waiting for the first upload.</b> This page notices by ' +
+    'itself, so you can leave it open.</p>';
+}
+
+function watch() {
+  /* While anything is outstanding, look more often than the fifteen seconds the
+     rest of the page settles for. Somebody is standing at their console. */
+  if (watching) return;
+  watching = setInterval(function () {
+    if (setup && setup.done) { clearInterval(watching); watching = null; return; }
+    loadSetup();
+    if (tab === 'setup') drawSetup(document.getElementById('body'));
+  }, 5000);
+}
+
 /* ---------------------------------------------------------------- a station */
 
 function choose(ident) {
@@ -241,11 +362,23 @@ function choose(ident) {
 
 function draw() {
   var box = document.getElementById('body');
-  if (!chosen) { box.innerHTML = '<p class="dim">Pick a station.</p>'; return; }
+  if (tab === 'setup') return drawSetup(box);
+  if (!chosen) {
+    box.innerHTML = '<p class="dim">Pick a station.</p>';
+    return;
+  }
   box.innerHTML = '<p class="dim">Loading.</p>';
   if (tab === 'fields') return drawFields(box);
   if (tab === 'raw') return drawRaw(box);
   return drawColumns(box);
+}
+
+function show(which) {
+  tab = which;
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.classList.toggle('on', b.dataset.tab === tab);
+  });
+  draw();
 }
 
 function drawFields(box) {
@@ -336,12 +469,15 @@ function drawColumns(box) {
 
 document.addEventListener('click', function (e) {
   var t = e.target;
-  if (t.dataset.tab) {
-    tab = t.dataset.tab;
-    document.querySelectorAll('.tabs button').forEach(function (b) {
-      b.classList.toggle('on', b.dataset.tab === tab);
-    });
-    draw();
+  if (t.dataset.tab) { show(t.dataset.tab); return; }
+  if (t.dataset.pick) {
+    picked = t.dataset.pick;
+    drawSetup(document.getElementById('body'));
+    return;
+  }
+  if (t.dataset.goto) {
+    if (!chosen && state && state.stations.length) chosen = state.stations[0].ident;
+    show(t.dataset.goto);
     return;
   }
   if (t.dataset.accept) {
@@ -349,7 +485,7 @@ document.addEventListener('click', function (e) {
     api('accept', { ident: t.dataset.accept, name: input ? input.value : '' })
       .then(function (r) {
         flash(r.ok ? 'Let in. It records from its next upload.' : r.message, !r.ok);
-        if (r.ok) loadState();
+        if (r.ok) { loadState(); loadSetup(function () { draw(); }); }
       });
     return;
   }
@@ -374,12 +510,19 @@ document.addEventListener('change', function (e) {
   if (!raw) return;
   api('field', { ident: chosen, raw: raw, field: e.target.value }).then(function (r) {
     flash(r.ok ? "'" + raw + "' takes effect on the next upload." : r.message, !r.ok);
-    if (r.ok) draw();
+    if (r.ok) { draw(); loadSetup(); }
   });
 });
 
-loadState();
-setInterval(loadState, 15000);
+loadState().then(function () { return loadSetup(); }).then(function () {
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.classList.toggle('on', b.dataset.tab === tab);
+  });
+  if (!chosen && state.stations.length) chosen = state.stations[0].ident;
+  drawStations();
+  draw();
+});
+setInterval(function () { loadState(); loadSetup(); }, 15000);
 </script>
 </body>
 </html>
