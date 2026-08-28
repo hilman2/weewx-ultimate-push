@@ -419,6 +419,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 self.max_behind, self.max_ahead,
                 role=options.get('role', roles.MAIN),
                 channel=int(channel) if channel else None)
+            built[ident].path = secret or None
             # Give the rebuilt station the catalogs the old one had. A mapper is
             # otherwise made on the next upload, and until then nothing could say
             # where a reading now goes, so the page would show the change it had

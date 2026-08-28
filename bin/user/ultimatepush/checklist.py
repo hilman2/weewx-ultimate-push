@@ -83,21 +83,64 @@ def _step(ident, title, done, detail='', optional=False, **extra):
 
 
 def _hardware(driver, found):
-    """Nothing has ever uploaded. The commonest place to be stuck, and the one the
-    page could say least about until now: it showed an empty list."""
-    from . import admin
-    if found:
-        return _step('hardware', 'Your hardware is uploading', True,
-                     "%d station(s) have been heard from." % len(found))
+    """Nothing has ever uploaded, or something was set up here and has not arrived.
 
+    The commonest place to be stuck, and the one the page could say least about until
+    now: it showed an empty list.
+
+    The protocol list is carried whether the step is finished or not, because setting
+    up a second station is the same job as setting up the first and the page needs
+    the same material for it.
+    """
     address = driver.web_address()
     port = driver.data_port()
+    protocols = [_pointing(protocol, address, port, driver.data_path())
+                 for protocol in driver.enabled]
+    waiting = _set_up_but_not_heard(driver, found, address, port)
+
+    if waiting:
+        return _step(
+            'hardware', 'Put the path into the console', False,
+            "%d station(s) are set up here and have not uploaded yet. Each one has a "
+            "path of its own, below. Leave this page open: it notices the first "
+            "upload by itself." % len(waiting),
+            protocols=protocols, created=waiting)
+    if found:
+        return _step('hardware', 'Your hardware is uploading', True,
+                     "%d station(s) have been heard from." % len(found),
+                     protocols=protocols, created=[])
+
     return _step(
         'hardware', 'Point your hardware at this machine', False,
         "Nothing has uploaded yet. Set this in whichever app your console uses, "
         "then leave this page open: it notices by itself.",
-        protocols=[_pointing(protocol, address, port, driver.data_path())
-                   for protocol in driver.enabled])
+        protocols=protocols, created=[])
+
+
+def _set_up_but_not_heard(driver, found, address, port):
+    """Stations made in the interface that have never uploaded, with their own paths.
+
+    Held here rather than in the page, so that the settings survive a reload. Somebody
+    who set a station up, closed the tab and came back would otherwise have made a
+    secret path that nothing will ever show them again.
+    """
+    from . import protocols as catalogue
+
+    heard = {row['ident'] for row in found}
+    waiting = []
+    for ident, station in sorted(driver.web_stations.items()):
+        if ident in heard or not station.path:
+            continue
+        named = driver.overrides.stations().get(ident, {}).get('protocol')
+        protocol = catalogue.by_name(named) if named else None
+        if protocol is None:
+            continue
+        waiting.append({
+            'name': station.name or ident,
+            'path': station.path,
+            'settings': _pointing(protocol, address, port, station.path),
+        })
+    return waiting
 
 
 def _pointing(protocol, address, port, path):

@@ -9,7 +9,7 @@ import secrets
 
 from weecfg.extension import ExtensionInstaller
 
-VERSION = '0.12.3'
+VERSION = '0.12.4'
 
 
 def loader():

@@ -122,6 +122,7 @@ select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .knock td { padding: 2px 8px 2px 0; border: 0; }
 .knock td:nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; }
 .knock td:nth-child(3) { color: var(--dim); width: 42%; }
+.made { border-left: 3px solid var(--ok); padding-left: 12px; margin: 12px 0 18px; }
 .block { margin-bottom: 22px; }
 .fold { cursor: pointer; display: flex; gap: 8px; align-items: baseline;
   padding: 7px 0; border-bottom: 1px solid var(--line); user-select: none; }
@@ -175,7 +176,7 @@ var BASE = location.pathname.replace(/[^/]*\\.[^/]*$/, '');
 if (BASE.charAt(BASE.length - 1) !== '/') BASE += '/';
 
 var chosen = null, tab = 'fields', state = null, detail = null;
-var fieldsView = null, folded = {};
+var fieldsView = null, folded = {}, adding = false;
 var setup = null, picked = null, watching = null, candidates = null;
 
 function api(route, body) {
@@ -321,10 +322,30 @@ function loadSetup(then) {
   });
 }
 
+function stepFor(id) {
+  if (!setup) return null;
+  return setup.steps.filter(function (s) { return s.id === id; })[0] || null;
+}
+
+function addingBox() {
+  /* Setting up another station is not a step in a checklist: the checklist is
+     finished, and this is a thing somebody wants to do anyway. So it appears when
+     asked for, above the checklist, and goes away on leaving the tab. */
+  var hardware = stepFor('hardware');
+  if (!adding || !hardware || !hardware.protocols) return '';
+  /* While that step is still open the checklist is already showing this, and two
+     protocol pickers on one page is worse than none. */
+  if (!hardware.done) return '';
+  return '<div class="step todo"><div class="head"><span class="mark">\\u25cf</span>' +
+    '<span class="what">Set up another station</span></div>' +
+    '<div class="body">' + hardwareBody(hardware) + '</div></div>';
+}
+
 function drawSetup(box) {
   if (!setup) { box.innerHTML = '<p class="dim">Loading.</p>'; return; }
   box.innerHTML = '<div class="setup">' +
-    (setup.done
+    addingBox() +
+    (setup.done && !adding
       ? '<p class="ok">Everything is set up. This page stays here as a check.</p>'
       : '') +
     setup.steps.map(function (s) {
@@ -340,7 +361,7 @@ function drawSetup(box) {
 
 function stepBody(s) {
   var html = s.detail ? '<p>' + esc(s.detail) + '</p>' : '';
-  if (s.id === 'hardware') return html + hardwareBody(s);
+  if (s.id === 'hardware') return html + createdBody(s.created) + hardwareBody(s);
   if (s.id === 'refused') {
     return html + s.stations.map(function (w) {
       return '<div class="row" style="margin-bottom:6px">' +
@@ -388,6 +409,33 @@ function createBox(protocols) {
     'it is a secret: a PASSKEY can be read off anybody\u2019s upload and repeated.</p>';
 }
 
+function settingsTable(one) {
+  return (one.settings.length
+    ? '<p>Put these in:</p><table class="settings">' +
+      one.settings.map(function (kv) {
+        return '<tr><td>' + esc(kv[0]) + '</td><td>' + esc(kv[1]) + '</td></tr>';
+      }).join('') + '</table>'
+    : '') +
+    one.notes.map(function (n) {
+      /* An indented note is a thing to paste, not a thing to read. */
+      return n.indexOf('    ') === 0
+        ? '<pre>' + esc(n.replace(/^ {4}/gm, '')) + '</pre>'
+        : '<p class="dim">' + esc(n) + '</p>';
+    }).join('');
+}
+
+function createdBody(made) {
+  /* A station set up here has a path of its own, and that path is the whole point:
+     it is how the driver knows which station an upload is from, and it is a secret.
+     It comes from the driver on every load rather than being held here, so closing
+     the tab does not lose it. */
+  if (!made || !made.length) return '';
+  return made.map(function (m) {
+    return '<div class="made"><p><b>' + esc(m.name) + '</b> is set up. Put this into ' +
+      'the console:</p>' + settingsTable(m.settings) + '</div>';
+  }).join('');
+}
+
 function hardwareBody(s) {
   if (!s.protocols) return '';
   if (!picked) picked = s.protocols[0].name;
@@ -398,18 +446,7 @@ function hardwareBody(s) {
         (p.name === picked ? ' class="on"' : '') + '>' + esc(p.label) + '</button>';
     }).join('') + '</div>' +
     '<p class="dim">' + esc(one.hardware) + '</p>' +
-    (one.settings.length
-      ? '<p>Put these in:</p><table class="settings">' +
-        one.settings.map(function (kv) {
-          return '<tr><td>' + esc(kv[0]) + '</td><td>' + esc(kv[1]) + '</td></tr>';
-        }).join('') + '</table>'
-      : '') +
-    one.notes.map(function (n) {
-      /* An indented note is a thing to paste, not a thing to read. */
-      return n.indexOf('    ') === 0
-        ? '<pre>' + esc(n.replace(/^ {4}/gm, '')) + '</pre>'
-        : '<p class="dim">' + esc(n) + '</p>';
-    }).join('') +
+    settingsTable(one) +
     '<p class="waiting"><b>Waiting for the first upload.</b> This page notices by ' +
     'itself, so you can leave it open.</p>' +
     createBox(s.protocols);
@@ -451,6 +488,7 @@ function draw() {
 }
 
 function show(which) {
+  if (which !== 'setup') adding = false;
   tab = which;
   document.querySelectorAll('.tabs button').forEach(function (b) {
     b.classList.toggle('on', b.dataset.tab === tab);
@@ -691,7 +729,7 @@ document.addEventListener('click', function (e) {
     });
     return;
   }
-  if (t.id === 'addstation') { show('setup'); return; }
+  if (t.id === 'addstation') { adding = true; show('setup'); return; }
   if (t.id === 'create') {
     var name = (document.getElementById('newname').value || '').trim();
     var proto = document.getElementById('newproto').value;
@@ -781,6 +819,10 @@ document.addEventListener('change', function (e) {
 });
 
 loadState().then(function () { return loadSetup(); }).then(function () {
+  /* An installation with something still to do opens on the thing still to do. The
+     fields of a station that has not uploaded are an empty table, and an empty table
+     reads like a fault rather than like a step not taken yet. */
+  if (setup && !setup.done) tab = 'setup';
   document.querySelectorAll('.tabs button').forEach(function (b) {
     b.classList.toggle('on', b.dataset.tab === tab);
   });

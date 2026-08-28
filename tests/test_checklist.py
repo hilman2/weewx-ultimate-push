@@ -39,11 +39,11 @@ def station(tmp_path):
     made.closePort()
 
 
-def upload(driver, body):
+def upload(driver, body, path='/'):
     connection = http.client.HTTPConnection('127.0.0.1', driver.listener.ports[0],
                                             timeout=5)
     try:
-        connection.request('POST', '/', body)
+        connection.request('POST', path, body)
         connection.getresponse().read()
     finally:
         connection.close()
@@ -258,6 +258,8 @@ class _Nothing:
     enabled = []
     activity = type('L', (), {'snapshot': lambda self: [],
                               'unknown_stations': lambda self, r: []})()
+    web_stations = {}
+    overrides = type('O', (), {'stations': lambda self: {}})()
 
     def web_address(self):
         return '192.168.1.50'
@@ -273,3 +275,57 @@ class _Nothing:
 
     def web_columns(self, ident, refresh=False):
         return {'ok': True, 'missing': []}
+
+
+# ------------------------------------------- a station set up and not yet heard
+
+
+def test_a_station_set_up_here_is_shown_its_own_path(station):
+    """The path is the whole point of setting one up: it is how the driver knows
+    which station an upload is from, and it is a secret. The page used to show the
+    driver's general path instead, which is the one thing that cannot work."""
+    ok, made = station.web_create('ecowitt', 'garden')
+    assert ok, made
+
+    hardware = step(station, 'hardware')
+
+    assert hardware['done'] is False
+    assert [w['name'] for w in hardware['created']] == ['garden']
+    settings = dict(hardware['created'][0]['settings']['settings'])
+    assert settings['Path'] == made['path']
+    assert settings['Path'] != station.data_path()
+
+
+def test_the_path_survives_closing_the_page(station):
+    """It comes from the driver on every load rather than being held in the browser.
+    Somebody who set a station up, closed the tab and came back would otherwise have
+    made a secret nothing will ever show them again."""
+    _ok, made = station.web_create('ecowitt', 'garden')
+
+    again = step(station, 'hardware')
+
+    assert dict(again['created'][0]['settings']['settings'])['Path'] == made['path']
+
+
+def test_once_it_has_uploaded_it_stops_being_something_to_do(station, payload):
+    _ok, made = station.web_create('ecowitt', 'garden')
+    upload(station, payload('hp2561ae_pro'), path=made['path'])
+    next(station.genLoopPackets())
+
+    hardware = step(station, 'hardware')
+
+    assert hardware['created'] == []
+    assert hardware['done'] is True
+
+
+def test_the_protocols_are_there_even_when_the_step_is_finished(station, payload):
+    """Setting up a second station is the same job as setting up the first, and the
+    page needs the same material for it. Without this the Add a station button led to
+    a page with nothing on it."""
+    send(station, payload('hp2561ae_pro'))
+
+    hardware = step(station, 'hardware')
+
+    assert hardware['done'] is True
+    assert [p['name'] for p in hardware['protocols']]
+    assert any(p['can_create'] for p in hardware['protocols'])

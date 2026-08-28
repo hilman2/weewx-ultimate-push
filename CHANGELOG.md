@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.12.4 (2026-08-28)
+
+Setting a station up in the interface did not work, in three separate ways.
+
+**The path was never shown.** A station set up here gets an upload path of its own,
+and that path is the entire point: it is how the driver knows which station an upload
+is from, and it is a secret. The page said "Put the path below into the console" and
+then showed the driver's general path, `/`, which is the one thing that cannot work.
+The path now comes from the driver on every load, so closing the tab does not lose it
+either.
+
+**Add a station led to an empty page.** The button switches to Setup, and the form
+lives inside a checklist step that stops being drawn once something has uploaded. The
+Setup tab now offers to set up another station when asked, above the finished
+checklist.
+
+**A fresh install opened on Fields**, which said "Nothing has uploaded yet." An
+installation with something still to do now opens on the thing still to do. An empty
+table reads like a fault rather than like a step not taken yet.
+
+A station made in the interface also never learned its own path: only the lookup that
+routes uploads knew it. Anything wanting to show somebody what they had been given had
+nowhere to read it from.
+
 ## 0.12.3 (2026-08-28)
 
 The Fields tab and the Database columns tab disagreed with each other. Fields read the
