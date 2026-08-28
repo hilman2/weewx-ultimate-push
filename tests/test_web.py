@@ -649,3 +649,35 @@ def test_the_open_string_check_would_notice():
     assert _string_left_open('a.replace(/"/g, ' + "'&quot;');") is None
     assert _string_left_open("/* somebody" + "'" + "s comment */") is None
     assert _string_left_open("var a = 1;  // and somebody" + "'" + "s note") is None
+
+
+def test_the_page_calls_only_functions_it_defines():
+    """A block of the script was replaced wholesale once, and a function that lived
+    inside it went with it. Nothing noticed until somebody clicked the tab that used
+    it: the console says `drawRaw is not defined` and the tab says Loading for ever,
+    which reads like the server not answering.
+
+    Only the page's own draw and load names are checked. Everything else in there is
+    the browser's, and this is not the place to keep a list of what a browser has.
+    """
+    from ultimatepush import page
+
+    script = page.PAGE.split('<script>')[1].split('</script>')[0]
+    defined = set(re.findall(r'function\s+([A-Za-z_$][\w$]*)\s*\(', script))
+    called = set(re.findall(r'\b((?:draw|load)[A-Z][\w$]*)\s*\(', script))
+
+    assert called <= defined, "called but never defined: %s" % sorted(called - defined)
+
+
+def test_every_tab_has_something_to_draw():
+    """A tab button with no renderer behind it is a button that does nothing."""
+    from ultimatepush import page
+
+    script = page.PAGE.split('<script>')[1].split('</script>')[0]
+    dispatcher = script[script.index('function draw() {'):]
+    dispatcher = dispatcher[:dispatcher.index(NEWLINE + '}')]
+
+    for tab in sorted(set(re.findall(r'data-tab="([a-z]+)"', page.PAGE))):
+        renderer = 'draw' + tab.capitalize()
+        assert renderer in dispatcher, "the %s tab draws nothing" % tab
+        assert 'function %s(' % renderer in script, "%s does not exist" % renderer

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.12.2 (2026-08-28)
+
+The Raw uploads tab said `Loading.` and never stopped. `drawRaw` was gone: 0.12.0
+replaced the block of the page that drew the fields, and that function lived inside
+it. The console said so; the page did not.
+
+There are now two tests for it. One checks that every `draw` and `load` name the
+script calls is a function the script defines. The other checks that every tab has a
+renderer behind it. Both go red with the function taken out again.
+
+The Fields tab also no longer waits for a station to be picked. It shows all of them
+now, so there was nothing to wait for, and a fresh install saw `Pick a station.` on
+the tab most worth looking at.
+
 ## 0.12.1 (2026-08-28)
 
 A test asked the standard schema for its numbered families, which needs WeeWX

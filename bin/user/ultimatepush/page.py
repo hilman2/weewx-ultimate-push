@@ -437,12 +437,15 @@ function choose(ident) {
 function draw() {
   var box = document.getElementById('body');
   if (tab === 'setup') return drawSetup(box);
+  if (tab === 'fields') {
+    box.innerHTML = '<p class="dim">Loading.</p>';
+    return drawFields(box);
+  }
   if (!chosen) {
     box.innerHTML = '<p class="dim">Pick a station.</p>';
     return;
   }
   box.innerHTML = '<p class="dim">Loading.</p>';
-  if (tab === 'fields') return drawFields(box);
   if (tab === 'raw') return drawRaw(box);
   return drawColumns(box);
 }
@@ -594,6 +597,23 @@ function drawFields(box) {
     box.innerHTML = d.stations.map(function (s) {
       return stationFields(s, several);
     }).join('');
+  });
+}
+
+
+function drawRaw(box) {
+  api('raw?ident=' + encodeURIComponent(chosen)).then(function (d) {
+    if (!d.uploads.length) { box.innerHTML = '<p class="dim">Nothing kept yet.</p>'; return; }
+    box.innerHTML = '<p class="dim">The last ' + d.uploads.length +
+      ' uploads, newest first. Whatever names the station has been replaced, so these ' +
+      'are safe to paste into an issue.</p>' +
+      d.uploads.map(function (u, i) {
+        return '<div class="upload"><div class="head"><span>' + esc(u.method) + ' ' +
+          esc(u.path) + ' from ' + esc(u.client) + ' \\u00b7 ' + ago(u.at) +
+          (u.protocol ? ' \\u00b7 ' + esc(u.protocol) : '') + '</span>' +
+          '<button class="act" data-copy="' + i + '">Copy</button></div>' +
+          '<pre id="raw' + i + '">' + esc(u.text) + '</pre></div>';
+      }).join('');
   });
 }
 
