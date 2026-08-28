@@ -71,13 +71,33 @@ def test_occupied_needs_a_database():
 def test_numbered_families_are_found_and_the_odd_ones_are_not():
     """extraTemp1..8 is a family. appTemp1, co2 and pm2_5 are one field each that
     happens to end in a digit, and offering appTemp2 would be an invention."""
-    found = columns.families(columns.schema_fields())
+    found = columns.families({
+        'extraTemp1', 'extraTemp2', 'extraTemp3', 'extraTemp4',
+        'extraTemp5', 'extraTemp6', 'extraTemp7', 'extraTemp8',
+        'soilMoist1', 'soilMoist2', 'soilMoist3', 'soilMoist4',
+        'appTemp1', 'co2', 'pm2_5', 'outTemp',
+    })
 
     assert found['extraTemp'] == 8
     assert found['soilMoist'] == 4
     assert 'appTemp' not in found
     assert 'co' not in found
     assert 'pm2_' not in found
+
+
+def test_a_family_with_a_hole_in_it_is_not_a_family():
+    """Because the hole is the interesting part, and inventing the members past it
+    would be inventing what the hardware has."""
+    assert columns.families({'extraTemp1', 'extraTemp2', 'extraTemp7'}) == {}
+
+
+def test_the_real_schema_has_the_families_we_think_it_has():
+    pytest.importorskip('weewx', reason="WeeWX is not installed")
+    found = columns.families(columns.schema_fields())
+
+    assert found['extraTemp'] == 8
+    assert found['soilTemp'] == 4
+    assert found['leafWet'] == 2
 
 
 def test_a_family_is_offered_past_where_the_schema_stops():

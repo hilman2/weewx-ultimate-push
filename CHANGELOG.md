@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.1 (2026-08-28)
+
+A test asked the standard schema for its numbered families, which needs WeeWX
+installed, in the half of the matrix that runs without it. The driver is unchanged.
+
 ## 0.12.0 (2026-08-28)
 
 The field map is set in the browser now. No terminal, no editor.
