@@ -58,6 +58,7 @@ class Ambient(Protocol):
     content_type = 'text/plain'
 
     identity = ('PASSKEY',)
+    secret_kind = 'path'
 
     metadata = frozenset([
         'PASSKEY', 'stationtype', 'model', 'dateutc', 'freq', 'interval',

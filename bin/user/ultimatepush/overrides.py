@@ -114,13 +114,18 @@ class Store:
 
     # ---- writing -------------------------------------------------------------
 
-    def set_station(self, ident, name=None, infer_unknown=None):
-        """Record a station, or rename one. Returns (ok, message)."""
+    def set_station(self, ident, name=None, infer_unknown=None, path=None,
+                    protocol=None):
+        """Record a station, or change one. Returns (ok, message)."""
         ident = str(ident).strip()
         if not ident:
             return False, "A station with no identity cannot be told from another."
         stations = self.settings.setdefault('stations', {})
         station = stations.setdefault(ident, {})
+        if path is not None:
+            station['path'] = path
+        if protocol is not None:
+            station['protocol'] = protocol
         if name is not None:
             clean = _as_name(name)
             if not clean:

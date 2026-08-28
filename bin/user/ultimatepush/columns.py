@@ -30,6 +30,30 @@ def schema_fields():
     return {name for name, _type in table}
 
 
+def by_group():
+    """The standard schema's fields, grouped by what they measure.
+
+    For the box that asks where a reading should go. Offering a wind speed as a place
+    to put a temperature is noise, and worse than noise: somebody will pick it.
+
+    Returns (groups, ungrouped). WeeWX knows no group for a few of its own columns,
+    batteryStatus1 and forecast among them, and those are still perfectly good places
+    to put something.
+    """
+    import weewx.units
+    groups = {}
+    ungrouped = []
+    for name in sorted(schema_fields()):
+        if name in ('dateTime', 'usUnits', 'interval'):
+            continue
+        group = weewx.units.obs_group_dict.get(name)
+        if group:
+            groups.setdefault(group, []).append(name)
+        else:
+            ungrouped.append(name)
+    return groups, ungrouped
+
+
 def missing(packet, groups, known=None):
     """Return the columns a packet needs and the database does not have.
 

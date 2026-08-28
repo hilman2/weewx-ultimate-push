@@ -256,6 +256,8 @@ class Site:
             return _json(self.driver.web_overview())
         if route == 'setup':
             return _json(self.driver.web_setup())
+        if route == 'candidates':
+            return _json(self.driver.web_candidates())
         if route == 'station':
             found = self.driver.web_station(query.get('ident', ''))
             if found is None:
@@ -279,6 +281,11 @@ class Site:
     # ---- writing -------------------------------------------------------------
 
     def _post(self, route, body):
+        if route == 'create':
+            ok, answer = self.driver.web_create(body.get('protocol', ''),
+                                                body.get('name', ''))
+            return _json({'ok': ok, 'station': answer} if ok
+                         else {'ok': False, 'message': answer})
         if route == 'accept':
             ok, message = self.driver.web_accept(
                 body.get('ident', ''), body.get('name'), body.get('infer_unknown'))

@@ -155,6 +155,17 @@ class Protocol:
     # hardware can authenticate itself at all.
     secret = None
 
+    # What kind of secret this hardware can be given when a station is set up:
+    #
+    #   'path'      the upload path is yours to choose, so it can be a secret and an
+    #               identity at once. The driver knows which station an upload is
+    #               from before it has parsed anything.
+    #   'password'  the protocol carries one of its own.
+    #   None        it cannot carry anything. Either its path is burned into the
+    #               firmware, or it broadcasts. These are the ones that have to be
+    #               adopted: heard first, confirmed afterwards.
+    secret_kind = None
+
     # The catalog, as class attributes, for a protocol with only one dialect.
     fields = {}
     groups = {}

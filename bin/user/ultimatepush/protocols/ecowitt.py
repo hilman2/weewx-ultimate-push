@@ -50,6 +50,7 @@ class Ecowitt(Protocol):
     content_type = 'application/json'
 
     identity = ('PASSKEY',)
+    secret_kind = 'path'
 
     metadata = frozenset([
         'PASSKEY', 'stationtype', 'model', 'freq', 'dateutc', 'runtime', 'heap',

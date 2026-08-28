@@ -70,7 +70,7 @@ NOT_FOR_LISTENER = frozenset([
     'driver', 'field_map_extensions', 'infer_unknown', 'model', 'report_file',
     'stations', 'passkey', 'password', 'console_file', 'weewx_root', 'sqlite_root',
     'data_binding', 'config_dict', 'protocols', 'metric_wind', 'max_behind',
-    'max_ahead', 'udp_port', 'web',
+    'max_ahead', 'udp_port', 'web', 'path', 'override_file',
 ])
 
 
@@ -179,6 +179,13 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # for this: the worst a race costs is that a change lands one upload later
         # than it might have.
         self.reload_wanted = False
+        # Secret upload path -> station. Filled by _apply_overrides.
+        self.station_paths = {}
+        # Whether a station's own path has ever been used. Until one has, every path
+        # is accepted: somebody who set a station up in the interface but has not
+        # finished typing it into their console must not have their existing uploads
+        # start bouncing.
+        self.paths_proven = False
         self.config_path = _config_path(stn_dict.get('config_dict'))
         self.occupied = None
         # Read once, for the setup checklist. A station left at the defaults has its
@@ -326,10 +333,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         force, and this one does not get to disagree with it.
         """
         built = {}
+        paths = {}
         for ident, options in self.overrides.stations().items():
             if ident in self.stations:
                 # weewx.conf names it. Nothing here may change that.
                 continue
+            secret = str(options.get('path', '')).strip()
+            if secret:
+                paths[secret.rstrip('/')] = ident
             extensions = dict(self.conf_extensions)
             extensions.update(options.get('field_map_extensions', {}))
             built[ident] = Station(
@@ -337,6 +348,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 options.get('infer_unknown', self.infer_unknown),
                 self.max_behind, self.max_ahead)
         self.web_stations = built
+        self.station_paths = paths
         for ident in built:
             self.known.add(ident)
 
@@ -412,6 +424,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             # The answer is per request now, so the listener's own is never used.
             http.pop('response', None)
             http.pop('content_type', None)
+            # Not the configured path but a question, because a station set up while
+            # WeeWX is running brings a path of its own with it.
+            http['path'] = self.wanted_path
             listeners.append(server.http_listener(HTTPListener, self._answer, **http))
 
         for protocol in self.enabled:
@@ -428,6 +443,28 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             listeners.append(web)
 
         return listeners
+
+    def wanted_path(self, path):
+        """Whether an upload to this path is one this driver answers for.
+
+        Handed to the listener as a callable rather than a list, because a station
+        can be set up while WeeWX is running and its path has to work from the next
+        upload rather than the next restart.
+
+        Everything is accepted until a station has actually been heard on its own
+        path. A path that has never worked is not yet protecting anything, and
+        turning it into a 404 before that would break the console somebody is still
+        in the middle of configuring.
+        """
+        path = (path or '/').rstrip('/')
+        if path in self.station_paths:
+            return True
+        for protocol in self.enabled:
+            if path in [p.rstrip('/') for p in protocol.paths]:
+                return True
+        if self.listener_path:
+            return path == self.listener_path.rstrip('/')
+        return not self.paths_proven
 
     def _web_listener(self, configured):
         """The web interface, when it has been switched on and given a token.
@@ -539,11 +576,19 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                                  "no protocol recognised this")
             return None, None, None, None
 
-        # Which console this is, and whether it presents the right password, are
-        # asked of the upload as it arrived. A protocol that unpacks its payload may
-        # not carry the name through: WeatherFlow's observations are an array, and the
-        # hub's serial is on the message around it rather than in it.
-        station = self._station_for(protocol, raw, request.client_address)
+        # A station whose path is its own needs nothing else: the upload arrived
+        # where only that console was told to send, which is a better answer than a
+        # PASSKEY anybody can read off somebody else's upload and repeat.
+        by_path = self.station_paths.get((request.path or '/').rstrip('/'))
+        if by_path is not None:
+            self.paths_proven = True
+            station = self.web_stations.get(by_path) or self.default_station
+        else:
+            # Which console this is, and whether it presents the right password, are
+            # asked of the upload as it arrived. A protocol that unpacks its payload
+            # may not carry the name through: WeatherFlow's observations are an array,
+            # and the hub's serial is on the message around it rather than in it.
+            station = self._station_for(protocol, raw, request.client_address)
         if station is None:
             self._record_refused(request, protocol, protocol.station_of(raw),
                                  "not one of this driver's consoles")
@@ -726,9 +771,88 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         found['guesses'] = sorted(seen & set(found['guesses']))
         return found
 
+    def web_candidates(self):
+        """Where a reading could be put, and what is already there.
+
+        One call for the whole page rather than one per row: the answer is the same
+        for every row and it is a few kilobytes.
+        """
+        try:
+            groups, ungrouped = columns.by_group()
+        except Exception as e:
+            return {'ok': False, 'error': "Cannot read the schema: %s" % e}
+
+        # What each station is already writing, so that the box can say so rather
+        # than letting two stations quietly land in one column.
+        used = {}
+        for row in self.activity.snapshot():
+            who = row['name'] or row['ident']
+            for raw in row.get('raw_seen', ()):
+                field = row['fields'].get(raw)
+                if field:
+                    used.setdefault(field, []).append(who)
+
+        occupied = self.occupied or {}
+        return {
+            'ok': True,
+            'groups': groups,
+            'ungrouped': ungrouped,
+            'used': {field: sorted(set(who)) for field, who in used.items()},
+            'history': {field: count for field, (count, _last) in occupied.items()},
+        }
+
     def _station_for_ident(self, ident):
         return (self.stations.get(ident) or self.web_stations.get(ident)
                 or self.default_station)
+
+    def web_create(self, protocol_name, name):
+        """Set a station up before it has ever uploaded.
+
+        For hardware whose upload path is yours to choose. A path is made here, the
+        interface shows it, you type it into the console, and from the first upload
+        the driver knows which station that is without anyone having adopted
+        anything. The path is the identity and the secret at once, which is better
+        than a PASSKEY: that is readable off any upload and can be repeated by
+        anybody.
+
+        Hardware that cannot be given a path is not set up this way. It broadcasts,
+        or its path is burned into its firmware, and the only way to know it is to
+        hear it and confirm. Those are adopted, and web_accept is that.
+        """
+        import secrets
+
+        protocol = protocols.by_name(protocol_name)
+        if protocol is None:
+            return False, "No protocol called '%s'." % protocol_name
+        if protocol.secret_kind != 'path':
+            return False, ("%s hardware cannot be told which path to use, so there "
+                           "is nothing to set up in advance. Point it here and it "
+                           "will turn up as something waiting to be let in."
+                           % protocol.label)
+        clean = overrides._as_name(name)
+        if not clean:
+            return False, ("A name may hold letters, digits, dashes and underscores.")
+        if any(s.name == clean for s in self.web_stations.values()):
+            return False, "There is already a station called '%s'." % clean
+
+        path = '/%s/report' % secrets.token_urlsafe(9)
+        # The identity is the path until the console says otherwise. The first upload
+        # brings a PASSKEY with it and the station is recorded under that instead,
+        # because that is what every later upload carries.
+        ident = 'path:' + path
+        ok, message = self.overrides.set_station(
+            ident, name=clean, path=path, protocol=protocol_name)
+        if not ok:
+            return False, message
+        self.known.add(ident)
+        self.reload_wanted = True
+        self._reload()
+        log.info("Station '%s' was set up for %s. Its upload path is %s.",
+                 clean, protocol.label, path)
+        return True, {'name': clean, 'protocol': protocol_name, 'path': path,
+                      'address': self.web_address(), 'port': self.data_port(),
+                      'settings': checklist._pointing(protocol, self.web_address(),
+                                                      self.data_port(), path)}
 
     def web_accept(self, ident, name=None, infer_unknown=None):
         """Let a station in, and give it a name."""

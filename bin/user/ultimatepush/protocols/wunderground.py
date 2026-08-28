@@ -87,6 +87,7 @@ class WeatherUnderground(Protocol):
 
     identity = ('ID',)
     secret = 'PASSWORD'
+    secret_kind = 'password'
 
     metadata = _catalog.METADATA
 
