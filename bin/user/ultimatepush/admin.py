@@ -356,3 +356,37 @@ def schema_fields():
 
 def uptime(since):
     return max(0, int(time.time() - since))
+
+
+def lan_address():
+    """This machine's address on the network it would reach out on.
+
+    A UDP socket is pointed at an address in the documentation range and the kernel is
+    then asked which of our addresses it picked. Nothing is sent and nothing has to
+    exist at the other end: connect() on a datagram socket only chooses a route.
+
+    Better than asking for the hostname, which on a Debian machine usually answers
+    127.0.1.1, and better than making somebody run `ip addr` to find out where their
+    own weather station is.
+    """
+    import socket
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(('192.0.2.1', 9))
+        return probe.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        probe.close()
+
+
+def url(address, port, token):
+    """The address to open, as somebody would type it.
+
+    Printed at startup so that nobody has to work out which of their addresses the
+    driver ended up on. A listener bound to every interface reports itself as '*',
+    which is true and useless.
+    """
+    host = address if address and address not in ('0.0.0.0', '::', '*') else None
+    return 'http://%s:%d/?token=%s' % (host or lan_address() or 'this-machine',
+                                       port, token)

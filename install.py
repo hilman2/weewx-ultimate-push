@@ -5,9 +5,11 @@
 #
 """Installer for the UltimatePush driver."""
 
+import secrets
+
 from weecfg.extension import ExtensionInstaller
 
-VERSION = '0.7.0'
+VERSION = '0.8.0'
 
 
 def loader():
@@ -48,7 +50,22 @@ class UltimatePushInstaller(ExtensionInstaller):
                     # 'compat' is deliberately absent. Fields that drivers place
                     # differently stay out until somebody says which placement is
                     # wanted, because the wrong one cannot be undone.
-                    'field_map_extensions': {}}},
+                    'field_map_extensions': {},
+                    # The web interface, ready to open. It is where a field gets
+                    # placed, and placing a field is the one thing about this
+                    # hardware that cannot be undone once it is wrong, so it should
+                    # not be behind three steps of setting up.
+                    #
+                    # The token is made here, once, and is different on every
+                    # installation. An upgrade keeps the one already in the file:
+                    # weecfg merges only what is missing.
+                    #
+                    # Set 'enable = false' to close the port. The driver prints the
+                    # whole address to the log at startup.
+                    'web': {
+                        'enable': 'true',
+                        'port': '8080',
+                        'token': secrets.token_urlsafe(12)}}},
             files=[
                 ('bin/user', ['bin/user/listener.py']),
                 # Every module in the package. A test keeps these lists complete,

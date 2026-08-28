@@ -1,28 +1,78 @@
 # The web interface
 
-A small page on a port of its own that shows what each station is sending, keeps the
-last few raw uploads, and lets you place a field without editing a file or restarting
-anything.
+A page that shows what each station is sending, keeps the last few raw uploads, and
+lets you place a field without editing a file or restarting anything.
 
-It is off unless you switch it on.
+**It is already on.** Installing the extension switches it on, on port 8080, with a
+token made at install time that is different on every machine. There is nothing to
+set up.
+
+The driver prints the whole address to the log when it starts:
+
+```
+INFO user.ultimatepush.driver: The web interface is at
+http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
+```
+
+Or ask for it again later:
+
+```
+python -m user.ultimatepush --url
+```
+
+That address holds the token, so treat the log the way you treat `weewx.conf`.
+
+To close the port:
 
 ```ini
 [UltimatePush]
     [[web]]
-        enable = true
-        port = 8080
-        token = paste-a-long-random-string-here
+        enable = false
 ```
 
-Make the token with:
+## The normal case: a Pi or a NUC on your own network
+
+Nothing in front of it, no proxy, no Docker.
 
 ```
-python -c "import secrets; print(secrets.token_urlsafe(12))"
+   Console                              Raspberry Pi 192.168.1.50
+      |                                 WeeWX, running as user weewx
+      |  POST /a8f3c1e0/report          +-------------------------+
+      +-------------------------------->|  :8000   the readings   |--> weewx.sdb
+                    every 16 to 60 s    |                         |
+   Laptop, phone                        |  :8080   this page      |
+      |  GET :8080/?token=...           +-------------------------+
+      +-------------------------------->
 ```
 
-Ten characters is the minimum. Anything you can paste is fine.
+Both ports are above 1024, so nothing here needs root.
 
-Then open `http://your-weewx-machine:8080/?token=that-string`.
+The whole of it:
+
+```
+weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.8.0.zip
+sudo systemctl restart weewx
+```
+
+Then point the console at `192.168.1.50:8000`, and open the address the log printed.
+
+### Where things land
+
+| | |
+|---|---|
+| The driver | `/etc/weewx/bin/user/ultimatepush/` |
+| `weewx.conf` | `/etc/weewx/`, owned by root |
+| What this page writes | `/var/lib/weewx/ultimate-push-web.conf` |
+| Which consoles are accepted | in the database, with a file beside it as a fallback |
+
+WeeWX runs as the user `weewx` and `/etc/weewx` belongs to root. That is exactly why
+this page writes to `/var/lib/weewx` and not into `weewx.conf`: there, it could not.
+
+### Leave `trust_proxy` alone
+
+It is off, and on a Pi with nothing in front of it that is what you want. Turned on
+without a proxy, anybody could put an address of their choosing in `X-Forwarded-For`
+and the doorman below would count invented addresses instead of theirs.
 
 ## What it is for
 
@@ -187,10 +237,10 @@ unchanged.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `enable` | `false` | Whether to open the port at all. |
+| `enable` | `true` | Whether to open the port at all. Set by the installer. |
 | `port` | 8080 | Which port. |
 | `address` | every interface | Bind to one address. `localhost` makes it unreachable from the network. |
-| `token` | none | Required. At least 10 characters. |
+| `token` | made at install | Required. At least 10 characters. Change it here and restart. |
 | `tries` | 10 | Wrong tokens from one address before it stops being answered. |
 | `window` | 300 | Over how many seconds, and how long the silence lasts. |
 | `allowed_hosts` | anywhere | Comma-separated addresses to accept from. |

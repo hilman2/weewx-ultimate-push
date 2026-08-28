@@ -421,3 +421,85 @@ def test_nonsense_in_a_post_is_survivable(station):
         assert connection.getresponse().status == 200
     finally:
         connection.close()
+
+
+def test_the_page_asks_for_the_api_relative_to_itself(station):
+    """Behind a reverse proxy it is served under whatever path the proxy chose. An
+    absolute /api/ would land on whatever else that host serves from the root."""
+    _, _, body = web(station, '/')
+
+    assert b"fetch(BASE + 'api/'" in body
+    assert b"fetch('/api/" not in body
+    assert b'location.pathname' in body
+
+
+# ---------------------------------------------------------------- finding it
+
+
+def test_the_driver_says_where_the_interface_is(station, caplog):
+    """A listener bound to every interface reports itself as '*', which is true and
+    useless. Somebody should not have to run `ip addr` to find their own station."""
+    from ultimatepush import admin
+
+    address = admin.url('', 8080, TOKEN)
+
+    assert address.startswith('http://')
+    assert address.endswith(':8080/?token=' + TOKEN)
+    assert '*' not in address
+    assert '0.0.0.0' not in address
+
+
+def test_an_address_that_was_asked_for_is_the_one_reported():
+    from ultimatepush import admin
+
+    assert admin.url('localhost', 8080, 'x') == 'http://localhost:8080/?token=x'
+    assert admin.url('192.168.1.50', 80, 'x') == 'http://192.168.1.50:80/?token=x'
+
+
+def test_the_url_can_be_asked_for_again(tmp_path, capsys):
+    """It is in the log at startup, and a log is a poor place to keep something you
+    want to open next week."""
+    from ultimatepush.__main__ import main
+
+    conf = tmp_path / 'weewx.conf'
+    conf.write_text("[UltimatePush]\n    [[web]]\n        enable = true\n"
+                    "        port = 8080\n        token = kJ7mQx2vRt9w\n",
+                    encoding='utf-8')
+
+    assert main(['--url', '--config', str(conf)]) == 0
+    assert 'kJ7mQx2vRt9w' in capsys.readouterr().out
+
+
+def test_it_says_so_when_there_is_nowhere_to_go(tmp_path, capsys):
+    from ultimatepush.__main__ import main
+
+    conf = tmp_path / 'weewx.conf'
+    conf.write_text("[UltimatePush]\n    [[web]]\n        enable = false\n",
+                    encoding='utf-8')
+
+    assert main(['--url', '--config', str(conf)]) == 1
+    assert 'switched off' in capsys.readouterr().out
+
+
+def test_the_installer_leaves_it_ready_to_open():
+    """Two commands, not five. Placing a field is the one thing about this hardware
+    that cannot be undone once it is wrong, and it should not sit behind a setup."""
+    import pytest
+
+    pytest.importorskip('weecfg', reason="WeeWX is not installed")
+    import importlib.util
+    import os
+    import sys
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location('up_install',
+                                                  os.path.join(root, 'install.py'))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules['up_install'] = module
+    spec.loader.exec_module(module)
+    web = module.loader()['config']['UltimatePush']['web']
+
+    assert web['enable'] == 'true'
+    assert len(web['token']) >= 10
+    # A different one on every installation, and never the one in this repository.
+    assert web['token'] != module.loader()['config']['UltimatePush']['web']['token']

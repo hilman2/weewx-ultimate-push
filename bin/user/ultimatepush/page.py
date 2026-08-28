@@ -120,6 +120,15 @@ pre { background: var(--code); border: 1px solid var(--line); border-radius: 6px
 <script>
 'use strict';
 var TOKEN = new URLSearchParams(location.search).get('token') || '';
+
+/* Where this page is being served from, which is not always the root. Behind a
+   reverse proxy it is whatever path the proxy puts it under, and the API has to be
+   asked for relative to that, or every call lands on whatever else the proxy serves
+   from the root. A trailing file name is dropped and a missing trailing slash added,
+   so /secret, /secret/ and /secret/index.html all come to the same thing. */
+var BASE = location.pathname.replace(/[^/]*\\.[^/]*$/, '');
+if (BASE.charAt(BASE.length - 1) !== '/') BASE += '/';
+
 var chosen = null, tab = 'fields', state = null, detail = null;
 
 function api(route, body) {
@@ -129,7 +138,7 @@ function api(route, body) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
   }
-  return fetch('/api/' + route, opts).then(function (r) { return r.json(); });
+  return fetch(BASE + 'api/' + route, opts).then(function (r) { return r.json(); });
 }
 
 function flash(text, bad) {

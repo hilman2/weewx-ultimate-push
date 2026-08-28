@@ -51,7 +51,13 @@ def main(argv=None):
     parser.add_argument('--no-database', action='store_true',
                         help="Skip looking at the database. Faster, and one section "
                              "less when setting up from scratch.")
+    parser.add_argument('--url', action='store_true',
+                        help="Print the address of the web interface and stop. It is "
+                             "in the log at startup too, but this saves looking.")
     args = parser.parse_args(argv)
+
+    if args.url:
+        return _say_url(args.config)
 
     logging.basicConfig(level=logging.WARNING, format='%(message)s')
     known = protocols.posting()
@@ -115,6 +121,38 @@ def main(argv=None):
         _decisions(mapper)
     if not args.no_database:
         _check_history(packet, args.config)
+    return 0
+
+
+def _say_url(config_path):
+    """Print where the web interface is, or why there is nowhere to go.
+
+    The address is in the log at startup, but a log is a poor place to keep something
+    you want to open next week.
+    """
+    try:
+        import configobj
+        section = configobj.ConfigObj(config_path, encoding='utf-8',
+                                      interpolation=False)['UltimatePush']
+    except Exception as e:
+        print("Cannot read %s: %s" % (config_path, e), file=sys.stderr)
+        return 1
+
+    web = section.get('web') or {}
+    if str(web.get('enable', 'false')).lower() not in ('true', 'yes', '1'):
+        print("The web interface is switched off. Set 'enable = true' under "
+              "[UltimatePush] [[web]] in %s, then restart WeeWX." % config_path)
+        return 1
+    token = str(web.get('token', '')).strip()
+    if not token:
+        print("The web interface has no token, so the driver will not start it. Make "
+              "one with:\n"
+              "    python -c \"import secrets; print(secrets.token_urlsafe(12))\"",
+              file=sys.stderr)
+        return 1
+
+    from . import admin
+    print(admin.url(web.get('address', ''), int(web.get('port', 8080)), token))
     return 0
 
 

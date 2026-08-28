@@ -465,13 +465,16 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         site = admin.Site(self, self.doorman)
         listener = server.http_listener(HTTPListener, site.answer, queue=False,
                                         **options)
-        where = options['address'] or '*'
-        log.info("The web interface is on http://%s:%d/?token=... . An address that "
-                 "gets the token wrong %d times in %d seconds stops being answered. "
-                 "It is plain HTTP, so the token travels in clear: bind it to "
-                 "localhost and use a tunnel, or put TLS in front, if the network is "
-                 "not one you trust.",
-                 where, listener.port, self.doorman.tries, self.doorman.window)
+        # The whole address, because the alternative is somebody running `ip addr` to
+        # find out where their own weather station is. A listener bound to every
+        # interface reports itself as '*', which is true and useless.
+        log.info("The web interface is at %s",
+                 admin.url(options['address'], listener.port, token))
+        log.info("That address holds the token, so treat the log the way you treat "
+                 "weewx.conf. An address that gets the token wrong %d times in %d "
+                 "seconds stops being answered. It is plain HTTP: on a network you "
+                 "do not trust, set 'address = localhost' and use a tunnel, or put "
+                 "TLS in front.", self.doorman.tries, self.doorman.window)
         return listener
 
     # ---- answering ----------------------------------------------------------

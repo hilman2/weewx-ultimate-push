@@ -48,8 +48,11 @@ what is in it, and says out loud what it could not place. On top of that:
 
 ## Install
 
-    weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push.zip
-    weectl station reconfigure
+    weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.8.0.zip
+    sudo systemctl restart weewx
+
+That is the whole of it. The installer sets the station type, the driver section and the
+web interface, and the log then says where the interface is.
 
 Then point the hardware at it. For an Ecowitt console, in the WSView app: *Weather
 Services*, then *Customized*, protocol *Ecowitt*, server the address of the machine
@@ -135,17 +138,16 @@ outside the standard schema need `weectl database add-column` first.
 
 ## The web interface
 
-Optional, off by default, on a port of its own. It shows what each station sends, keeps
-the last twenty raw uploads, and lets you place a field without editing a file or
-restarting anything.
+On a port of its own, already switched on, with a token made at install time that is
+different on every machine. The driver prints the whole address when it starts:
 
-```ini
-[UltimatePush]
-    [[web]]
-        enable = true
-        port = 8080
-        token = paste-a-long-random-string-here
 ```
+INFO user.ultimatepush.driver: The web interface is at
+http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
+```
+
+It shows what each station sends, keeps the last twenty raw uploads, and lets you place
+a field without editing a file or restarting anything.
 
 The reason it exists: placing a field is irreversible if you get it wrong, and the one
 thing you want to know first, whether that column already holds another sensor’s
@@ -153,8 +155,8 @@ readings, is the one thing a log line cannot tell you. The page shows it, per fi
 next to the value that just arrived.
 
 An address that gets the token wrong ten times in five minutes stops being answered at
-all. It is still plain HTTP and the token travels in clear, so bind it to localhost and
-tunnel, or put TLS in front, unless the network is one you trust. See
+all. It is plain HTTP, which on your own network is the usual trade; across the internet
+put TLS in front. `enable = false` closes the port. See
 [Web interface](docs/Web-interface.md).
 
 ## Documentation

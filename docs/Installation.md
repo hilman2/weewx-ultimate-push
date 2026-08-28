@@ -11,12 +11,15 @@ Nothing else. No pip packages, no compiler.
 ## Install
 
 ```
-weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push.zip
-weectl station reconfigure
+weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.8.0.zip
+sudo systemctl restart weewx
 ```
 
-`reconfigure` offers `UltimatePush` in the list of station types. Picking it writes an
-`[UltimatePush]` section with starting values.
+Two commands. The installer sets `station_type`, writes the `[UltimatePush]` section,
+sets up the rain counter, and switches on the web interface with a token of its own.
+
+`weectl station reconfigure` also offers `UltimatePush` in its list, if you would rather
+go that way.
 
 To install from a clone instead:
 

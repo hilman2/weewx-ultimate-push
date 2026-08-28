@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.8.0 (2026-08-28)
+
+Two commands to a working station, and the driver says where its web interface is.
+
+```
+weectl extension install <the zip>
+sudo systemctl restart weewx
+```
+
+The installer now switches the web interface on and puts a token in `weewx.conf` that
+is made at install time and different on every machine. It was three more steps: make
+a token, edit the file, work out which of your addresses the listener ended up on.
+
+**This opens port 8080 on upgrade** for anyone who did not have `[[web]]` in their
+configuration. `enable = false` closes it. The port answers nothing without the token,
+and stops answering an address entirely after ten wrong ones in five minutes.
+
+The driver prints the whole address at startup, with the machine's own address rather
+than the `*` a listener bound to every interface reports:
+
+```
+INFO user.ultimatepush.driver: The web interface is at
+http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
+```
+
+That line holds the token, so treat the log the way you treat `weewx.conf`.
+
+`python -m user.ultimatepush --url` prints it again later, because a log is a poor
+place to keep something you want to open next week.
+
+The page now asks for its API relative to its own path, so it works behind a reverse
+proxy that puts it under a prefix. It used to ask for `/api/...` from the root, which
+loaded the page and then found nothing.
+
 ## 0.7.0 (2026-08-28)
 
 The web interface takes a shorter token, and stops answering an address that keeps
