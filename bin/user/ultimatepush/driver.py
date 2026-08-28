@@ -41,7 +41,7 @@ import weewx.drivers
 import weewx.units
 
 from . import (VERSION, activity, admin, checklist, columns, consoles,
-               overrides, protocols, report, server, transport)
+               overrides, protocols, report, roles, server, transport)
 from .mapping import Mapper
 
 try:
@@ -101,20 +101,30 @@ class Station:
     do, and inference learned from one catalog must not be applied to the other.
     """
 
-    def __init__(self, name, ident, extensions, infer_unknown, max_behind, max_ahead):
+    def __init__(self, name, ident, extensions, infer_unknown, max_behind,
+                 max_ahead, role=roles.MAIN, channel=None):
         self.name = name
         self.ident = ident
         self.extensions = extensions
         self.infer_unknown = infer_unknown
         self.max_behind = max_behind
         self.max_ahead = max_ahead
+        # Which fields this station may fill. See roles.py. One station is always
+        # 'main' and nothing here does anything to it.
+        self.role = role
+        self.channel = channel
         self.mappers = {}
 
     def mapper_for(self, dialect):
         """The mapper for this dialect, made the first time it is needed."""
         mapper = self.mappers.get(dialect.name)
         if mapper is None:
-            mapper = Mapper(dialect, extensions=self.extensions,
+            # The role moves this station's readings out of the main station's way.
+            # A field named by hand outranks it, which is why it goes underneath.
+            extensions = roles.extensions_for(self.role, self.channel,
+                                              dialect.fields)
+            extensions.update(self.extensions)
+            mapper = Mapper(dialect, extensions=extensions,
                             infer_unknown=self.infer_unknown,
                             max_behind=self.max_behind, max_ahead=self.max_ahead)
             self.mappers[dialect.name] = mapper
@@ -215,6 +225,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.unknown_consoles = set()
         self.unclaimed = 0
         self.assumed = False
+        # What the main station has been seen to fill, so that an extra one can be
+        # kept out of it. Learned rather than declared: it is what actually arrives.
+        self.owned_by_main = set()
+        self.said_apart = set()
 
         self.listener = server.Fan(self._listeners(stn_dict))
 
@@ -343,10 +357,13 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 paths[secret.rstrip('/')] = ident
             extensions = dict(self.conf_extensions)
             extensions.update(options.get('field_map_extensions', {}))
+            channel = options.get('channel')
             built[ident] = Station(
                 options.get('name') or None, ident, extensions,
                 options.get('infer_unknown', self.infer_unknown),
-                self.max_behind, self.max_ahead)
+                self.max_behind, self.max_ahead,
+                role=options.get('role', roles.MAIN),
+                channel=int(channel) if channel else None)
         self.web_stations = built
         self.station_paths = paths
         for ident in built:
@@ -626,6 +643,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             self._register_units(dialect.groups)
         self._maybe_report(request.text, guesses, protocol)
 
+        self._keep_stations_apart(station, packet)
+
         enough = len(packet) > 1
         self._record(request, protocol, dialect, raw, packet if enough else None,
                      station, mapper)
@@ -636,7 +655,44 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         packet['usUnits'] = dialect.units
         if station.name:
             packet['station'] = station.name
+        if station.role == roles.MAIN:
+            # What the main station fills is what an extra one must keep out of.
+            self.owned_by_main.update(f for f in packet
+                                      if f not in ('dateTime', 'usUnits', 'station'))
         return packet
+
+    def _keep_stations_apart(self, station, packet):
+        """Stop a station that is not the main one from writing over it.
+
+        The role moves what can be moved. What cannot, a second station's wind or
+        rain or pressure, has nowhere to go, and writing it would mean two sensors
+        taking turns in one column every few seconds. Nothing afterwards can separate
+        that, so it is dropped and said once.
+
+        A field the user named by hand is left alone. Naming it is the decision.
+        """
+        if station.role == roles.MAIN or not self.owned_by_main:
+            return
+        wanted = set(station.extensions.values())
+        dropped = sorted(set(packet) & self.owned_by_main - wanted)
+        self.activity.kept_apart(station.ident or '', dropped)
+        if not dropped:
+            return
+        for field in dropped:
+            packet.pop(field, None)
+        # One line for the lot. A second weather station has thirty readings with
+        # nowhere to go, and thirty copies of the same sentence is not a log anybody
+        # reads. Said once per station per run: after that it is not news.
+        who = station.name or station.ident
+        if who in self.said_apart:
+            return
+        self.said_apart.add(who)
+        log.warning(
+            "%d reading(s) from station '%s' are not being written, because the main "
+            "station already fills those columns and two sensors in one column "
+            "cannot be separated afterwards: %s. Give them fields of their own under "
+            "[[field_map_extensions]], or make this the main station.",
+            len(dropped), who, ', '.join(dropped))
 
     # ---- what the web interface reads ---------------------------------------
 
@@ -645,7 +701,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
 
         Bounded and in memory only. See activity.py.
         """
-        ident = protocol.station_of(raw)
+        # Under the station's own identity where it has one, not under whatever the
+        # payload happens to say. Two consoles of the same model send the same shape
+        # of upload, and a station set up with a path of its own is that station even
+        # if a PASSKEY in the body says something else.
+        ident = station.ident or protocol.station_of(raw)
         self.activity.arrived(ident, activity.Upload(
             at=time.time(), client=request.client_address,
             path=request.path or '', method=request.method or '',
@@ -696,6 +756,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         """Everything the front page draws."""
         stations = self.activity.snapshot()
         for row in stations:
+            known = self._station_for_ident(row['ident'])
+            row['role'] = getattr(known, 'role', roles.MAIN)
+            row['channel'] = getattr(known, 'channel', None)
             seen = set(row.get('raw_seen', ()))
             row['field_count'] = len(seen)
             row['undecided_count'] = len(seen & set(row.get('undecided', {})))
@@ -766,6 +829,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 'why': why,
             })
         found['ok'] = True
+        found['role'] = getattr(station, 'role', 'main')
+        found['channel'] = getattr(station, 'channel', None)
         found['fields'] = rows
         found['undecided'] = sorted(seen & set(found['undecided']))
         found['guesses'] = sorted(seen & set(found['guesses']))
@@ -882,6 +947,56 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             return False, message
         self.reload_wanted = True
         return True, message
+
+    def web_role(self, ident, role):
+        """Say whether a station is the station, or an extra sensor.
+
+        Exactly one is the main one. Making a second station main would leave two
+        writing the same columns, which is the thing this is here to stop, so the
+        one that was main becomes extra and is told which channel it got.
+        """
+        ident = str(ident or '').strip()
+        if role not in roles.ROLES:
+            return False, "A role is one of %s." % ', '.join(roles.ROLES)
+        if ident in self.stations:
+            return False, "weewx.conf names this station, so its role lives there."
+
+        if role == roles.MAIN:
+            for other, station in self.web_stations.items():
+                if other != ident and station.role == roles.MAIN:
+                    channel = self._free_channel(exclude=other)
+                    if channel is None:
+                        return False, ("There is no free extra channel to move the "
+                                       "station that is main into. The schema has "
+                                       "eight.")
+                    ok, message = self.overrides.set_station(
+                        other, role=roles.EXTRA, channel=channel)
+                    if not ok:
+                        return False, message
+            ok, message = self.overrides.set_station(ident, role=roles.MAIN)
+        else:
+            channel = self._free_channel(exclude=ident)
+            if channel is None:
+                return False, ("Every extra channel is taken. The standard schema "
+                               "has eight of them.")
+            ok, message = self.overrides.set_station(ident, role=roles.EXTRA,
+                                                     channel=channel)
+        if not ok:
+            return False, message
+        self.reload_wanted = True
+        self._reload()
+        # What the main station owns is learned from what it sends, so it has to be
+        # learned again once the roles have moved.
+        self.owned_by_main = set()
+        self.said_apart = set()
+        return True, message
+
+    def _free_channel(self, exclude=None):
+        taken = set()
+        for ident, station in self.web_stations.items():
+            if ident != exclude and station.role == roles.EXTRA and station.channel:
+                taken.add(station.channel)
+        return roles.next_channel(taken)
 
     def web_forget(self, ident):
         ok, message = self.overrides.forget_station(ident)

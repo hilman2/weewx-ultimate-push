@@ -110,6 +110,14 @@ pre { background: var(--code); border: 1px solid var(--line); border-radius: 6px
 .settings td:first-child { color: var(--dim); white-space: nowrap; }
 .settings td:last-child { font-family: ui-monospace, Menlo, Consolas, monospace;
   font-weight: 600; }
+select { background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 5px; padding: 4px 6px; font: inherit; font-size: 13px;
+  max-width: 220px; width: 100%; }
+select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.taken { color: var(--warn); font-size: 12px; }
+.newcol { font-size: 12px; margin-top: 4px; }
+.newcol code { background: var(--code); padding: 2px 5px; border-radius: 4px; }
+.add { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .waiting { color: var(--dim); font-size: 13px; }
 .waiting b { color: var(--warn); }
 #flash { position: fixed; right: 16px; bottom: 16px; background: var(--panel);
@@ -127,6 +135,9 @@ pre { background: var(--code); border: 1px solid var(--line); border-radius: 6px
     <div id="door"></div>
     <h2>Stations</h2>
     <div id="stations"></div>
+    <div class="add">
+      <button class="act" id="addstation">Add a station</button>
+    </div>
     <h2>Waiting to be let in</h2>
     <div id="waiting"><div class="dim" style="font-size:13px">Nothing refused.</div></div>
   </aside>
@@ -154,7 +165,7 @@ var BASE = location.pathname.replace(/[^/]*\\.[^/]*$/, '');
 if (BASE.charAt(BASE.length - 1) !== '/') BASE += '/';
 
 var chosen = null, tab = 'fields', state = null, detail = null;
-var setup = null, picked = null, watching = null;
+var setup = null, picked = null, watching = null, candidates = null;
 
 function api(route, body) {
   var opts = { headers: { 'X-Auth-Token': TOKEN } };
@@ -233,8 +244,10 @@ function drawStations() {
         '<div class="id">' + esc(s.name || s.ident) + '</div>' +
         '<div class="sub">' + esc(s.protocol || '?') +
         (s.dialect && s.dialect !== s.protocol ? ' \\u00b7 ' + esc(s.dialect) : '') +
-        ' \\u00b7 ' + s.field_count + ' fields \\u00b7 ' + s.uploads + ' uploads' +
-        ' \\u00b7 ' + ago(s.last_seen) + '</div>' +
+        (s.role === 'extra' ? ' \\u00b7 extra ' + (s.channel || '?')
+                            : ' \\u00b7 the station') +
+        ' \\u00b7 ' + s.field_count + ' fields \\u00b7 ' + ago(s.last_seen) +
+        '</div>' +
         (s.undecided_count ? '<div class="sub warn">' + s.undecided_count +
           ' waiting for a placement</div>' : '') +
         '</div>';
@@ -254,6 +267,12 @@ function drawStations() {
         '</div>';
     }).join('');
   }
+}
+
+function loadCandidates() {
+  /* The same answer for every row, so it is asked for once. */
+  if (candidates) return Promise.resolve(candidates);
+  return api('candidates').then(function (c) { candidates = c; return c; });
 }
 
 /* ---------------------------------------------------------------- setting up */
@@ -306,6 +325,14 @@ function stepBody(s) {
   if (s.id === 'placements') {
     return html + '<button class="act" data-goto="fields">Place them</button>';
   }
+  if (s.id === 'sharing') {
+    return html + '<table><thead><tr><th>Column</th><th>Wanted by</th></tr></thead>' +
+      '<tbody>' + s.fields.map(function (f) {
+        return '<tr><td class="mono">' + esc(f.field) + '</td><td>' +
+          esc(f.stations.join(', ')) + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<button class="act" data-goto="fields">Give them fields of their own</button>';
+  }
   if (s.id === 'columns') {
     return html + '<button class="act" data-goto="columns">Show the commands</button>';
   }
@@ -313,6 +340,23 @@ function stepBody(s) {
     return html + '<pre>' + esc(s.block || '') + '</pre>';
   }
   return html;
+}
+
+function createBox(protocols) {
+  /* Only hardware whose upload path is yours to choose can be set up in advance.
+     The rest has to be heard first, and says so. */
+  var canBeNamed = protocols.filter(function (p) { return p.can_create; });
+  if (!canBeNamed.length) return '';
+  return '<div class="add">' +
+    '<input type="text" id="newname" placeholder="name this station">' +
+    '<select id="newproto">' + canBeNamed.map(function (p) {
+      return '<option value="' + esc(p.name) + '"' +
+        (p.name === picked ? ' selected' : '') + '>' + esc(p.label) + '</option>';
+    }).join('') + '</select>' +
+    '<button class="act" id="create">Set it up</button></div>' +
+    '<p class="dim" style="margin-top:8px">Naming it here gives it an upload path of ' +
+    'its own. That path is how the driver knows which station an upload is from, and ' +
+    'it is a secret: a PASSKEY can be read off anybody\u2019s upload and repeated.</p>';
 }
 
 function hardwareBody(s) {
@@ -338,7 +382,8 @@ function hardwareBody(s) {
         : '<p class="dim">' + esc(n) + '</p>';
     }).join('') +
     '<p class="waiting"><b>Waiting for the first upload.</b> This page notices by ' +
-    'itself, so you can leave it open.</p>';
+    'itself, so you can leave it open.</p>' +
+    createBox(s.protocols);
 }
 
 function watch() {
@@ -381,20 +426,75 @@ function show(which) {
   draw();
 }
 
+function chooser(f) {
+  /* Where this reading could go. The ones that measure the same thing first: a wind
+     speed offered as a home for a temperature is worse than no suggestion, because
+     somebody will pick it. */
+  var fits = (candidates.groups[f.group] || []).slice();
+  var others = [];
+  Object.keys(candidates.groups).forEach(function (g) {
+    if (g !== f.group) others = others.concat(candidates.groups[g]);
+  });
+  others = others.concat(candidates.ungrouped).sort();
+
+  function option(name) {
+    var who = candidates.used[name];
+    var mine = who && who.length === 1 && detail && who[0] ===
+               (detail.name || detail.ident);
+    var note = who && !mine ? ' \u2014 ' + who.join(', ') : '';
+    return '<option value="' + esc(name) + '"' +
+      (name === f.field ? ' selected' : '') + '>' + esc(name) + esc(note) + '</option>';
+  }
+
+  var here = f.field && fits.indexOf(f.field) < 0 && others.indexOf(f.field) < 0
+    ? '<option value="' + esc(f.field) + '" selected>' + esc(f.field) +
+      ' \u2014 not in the schema</option>'
+    : '';
+
+  return '<select data-raw="' + esc(f.raw) + '">' +
+    '<option value=""' + (f.field ? '' : ' selected') + '>\u2014 not written</option>' +
+    here +
+    (fits.length ? '<optgroup label="Measures the same thing">' +
+      fits.map(option).join('') + '</optgroup>' : '') +
+    '<optgroup label="Everything else">' + others.map(option).join('') + '</optgroup>' +
+    '<option value="__new__">\u2014 a field of my own \u2014</option>' +
+    '</select>';
+}
+
+function roleBox() {
+  /* Only worth asking about once there is a second station. With one, there is
+     nothing to decide and the question would be noise. */
+  if (!state || state.stations.length < 2 || !detail) return '';
+  var role = detail.role || 'main';
+  return '<div class="note" style="border-left-color:var(--line)">' +
+    '<b>' + esc(detail.name || detail.ident) + '</b> is ' +
+    (role === 'main'
+      ? 'the station: its readings go where they belong.'
+      : 'an extra sensor on channel ' + (detail.channel || '?') + ': its temperature '
+        + 'and humidity are moved there, and what has nowhere to go is dropped rather '
+        + 'than written over the main station\u2019s.') +
+    '<div class="add"><button class="act" data-role="' +
+    (role === 'main' ? 'extra' : 'main') + '">Make it ' +
+    (role === 'main' ? 'an extra sensor' : 'the station') + '</button></div></div>';
+}
+
 function drawFields(box) {
-  api('station?ident=' + encodeURIComponent(chosen)).then(function (d) {
+  Promise.all([api('station?ident=' + encodeURIComponent(chosen)),
+               loadCandidates()]).then(function (both) {
+    var d = both[0];
     if (!d.ok) { box.innerHTML = '<p class="bad">' + esc(d.error) + '</p>'; return; }
     detail = d;
     var rows = d.fields.map(function (f) {
       var where = f.reserved
         ? '<span class="dim">set in weewx.conf</span>'
-        : '<input type="text" data-raw="' + esc(f.raw) + '" value="' + esc(f.field) + '">';
+        : chooser(f);
       var status = f.field
         ? (f.column
             ? (f.history
                 ? '<span class="warn">column holds ' + f.history + ' earlier values</span>'
                 : '<span class="ok">column ready</span>')
-            : '<span class="bad">no column</span>')
+            : '<span class="bad">no column</span><div class="newcol dim">needs ' +
+              '<code>weectl database add-column ' + esc(f.field) + '</code></div>')
         : '<span class="dim">not written</span>';
       return '<tr><td class="mono">' + esc(f.raw) + '</td>' +
         '<td class="mono">' + (f.value === null ? '<span class="dim">no reading</span>'
@@ -404,7 +504,7 @@ function drawFields(box) {
         '<td>' + status + '</td>' +
         '<td class="dim">' + esc(f.why || '') + '</td></tr>';
     }).join('');
-    box.innerHTML =
+    box.innerHTML = roleBox() +
       (d.undecided.length ? '<div class="note"><b>' + d.undecided.length +
         ' field(s) are not being written</b> because where they go is your call and not ' +
         'the hardware\\u2019s. Two sensors in one column cannot be separated afterwards, ' +
@@ -475,6 +575,28 @@ document.addEventListener('click', function (e) {
     drawSetup(document.getElementById('body'));
     return;
   }
+  if (t.dataset.role) {
+    api('role', { ident: chosen, role: t.dataset.role }).then(function (r) {
+      flash(r.ok ? 'Changed. It takes effect on the next upload.' : r.message, !r.ok);
+      candidates = null;
+      if (r.ok) { loadState(); loadSetup(); draw(); }
+    });
+    return;
+  }
+  if (t.id === 'addstation') { show('setup'); return; }
+  if (t.id === 'create') {
+    var name = (document.getElementById('newname').value || '').trim();
+    var proto = document.getElementById('newproto').value;
+    if (!name) { flash('Give it a name first.', true); return; }
+    api('create', { protocol: proto, name: name }).then(function (r) {
+      if (!r.ok) { flash(r.message, true); return; }
+      flash('Set up. Put the path below into the console.');
+      candidates = null;
+      loadState();
+      loadSetup(function () { draw(); });
+    });
+    return;
+  }
   if (t.dataset.goto) {
     if (!chosen && state && state.stations.length) chosen = state.stations[0].ident;
     show(t.dataset.goto);
@@ -508,8 +630,16 @@ document.addEventListener('click', function (e) {
 document.addEventListener('change', function (e) {
   var raw = e.target.dataset.raw;
   if (!raw) return;
-  api('field', { ident: chosen, raw: raw, field: e.target.value }).then(function (r) {
+  var field = e.target.value;
+  if (field === '__new__') {
+    field = (window.prompt('A field of your own. Letters, digits and underscores.\n' +
+      'It will need a column: the command appears once it is set.', '') || '').trim();
+    if (!field) { draw(); return; }
+  }
+  api('field', { ident: chosen, raw: raw, field: field }).then(function (r) {
     flash(r.ok ? "'" + raw + "' takes effect on the next upload." : r.message, !r.ok);
+    /* The choice changes who owns what, so the suggestions are asked for again. */
+    candidates = null;
     if (r.ok) { draw(); loadSetup(); }
   });
 });

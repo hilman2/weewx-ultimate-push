@@ -25,6 +25,7 @@ WITHOUT_WEEWX = [
     'ultimatepush.mapping',
     'ultimatepush.overrides',
     'ultimatepush.page',
+    'ultimatepush.roles',
     'ultimatepush.transport',
     'ultimatepush.catalogs',
     'ultimatepush.catalogs.acurite',

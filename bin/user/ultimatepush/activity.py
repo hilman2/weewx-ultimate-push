@@ -90,6 +90,16 @@ class Station:
         self.fields = {}
         self.guesses = {}
         self.undecided = {}
+        # The WeeWX fields the last upload actually reached, as opposed to the ones
+        # this station's catalog could fill. The difference is what a role moved out
+        # of the way and what was dropped rather than written over another station's.
+        #
+        # The last upload rather than all of them, because the question it answers is
+        # whether two stations are sharing a column now. A station whose role changed
+        # this morning wrote outTemp before that, and it is not writing it any more.
+        self.written = set()
+        # How many readings were dropped for that reason, from the last upload.
+        self.dropped_fields = []
         # The raw names this station has actually sent. The catalog has five hundred
         # and a station sends forty, and a page listing the catalog would bury the
         # forty that matter. Kept as a union rather than the last upload, because a
@@ -122,6 +132,7 @@ class Log:
             station.dialect = upload.dialect or station.dialect
             if upload.packet:
                 station.packets += 1
+                station.written = set(upload.packet)
             else:
                 station.dropped += 1
             station.recent.append(upload)
@@ -132,6 +143,13 @@ class Log:
         is not appearing."""
         with self.lock:
             self.unclaimed.append(upload)
+
+    def kept_apart(self, ident, fields):
+        """Readings this station is not writing because another station has them."""
+        with self.lock:
+            station = self.stations.get(ident)
+            if station is not None:
+                station.dropped_fields = sorted(fields)
 
     def named(self, ident, name):
         with self.lock:
@@ -179,6 +197,8 @@ class Log:
             'packets': station.packets,
             'dropped': station.dropped,
             'raw_seen': sorted(station.raw_seen),
+            'written': sorted(station.written),
+            'dropped_fields': list(station.dropped_fields),
             'fields': dict(station.fields),
             'guesses': dict(station.guesses),
             'undecided': dict(station.undecided),

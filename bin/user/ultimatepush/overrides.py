@@ -115,7 +115,7 @@ class Store:
     # ---- writing -------------------------------------------------------------
 
     def set_station(self, ident, name=None, infer_unknown=None, path=None,
-                    protocol=None):
+                    protocol=None, role=None, channel=None):
         """Record a station, or change one. Returns (ok, message)."""
         ident = str(ident).strip()
         if not ident:
@@ -126,6 +126,13 @@ class Store:
             station['path'] = path
         if protocol is not None:
             station['protocol'] = protocol
+        if role is not None:
+            from .roles import ROLES
+            if role not in ROLES:
+                return False, "A role is one of %s." % ', '.join(ROLES)
+            station['role'] = role
+        if channel is not None:
+            station['channel'] = str(int(channel))
         if name is not None:
             clean = _as_name(name)
             if not clean:

@@ -49,6 +49,7 @@ def steps(driver):
         _hardware(driver, found),
         _refused(driver, waiting),
         _placements(driver, found),
+        _sharing(driver, found),
         _columns(driver, found),
         _location(driver),
     ]
@@ -110,6 +111,9 @@ def _pointing(protocol, address, port, path):
         'name': protocol.name,
         'label': protocol.label,
         'hardware': protocol.hardware,
+        # Whether a station of this kind can be set up before it has ever uploaded.
+        # Only hardware whose path is yours to choose; the rest has to be heard first.
+        'can_create': protocol.secret_kind == 'path',
         'settings': [[label, value % fill] for label, value in protocol.settings],
         'notes': [note % fill for note in protocol.notes],
     }
@@ -146,6 +150,43 @@ def _placements(driver, found):
         "sensors into one column for good. Nothing is guessed. The Fields tab has "
         "them, with what each column already holds.",
         fields=pending)
+
+
+def _sharing(driver, found):
+    """Two stations writing one column.
+
+    The role moves what can be moved and the driver drops the rest rather than let
+    two sensors take turns in a column. This says which fields that was, because a
+    reading being dropped is a thing somebody should know about rather than discover
+    a month later.
+    """
+    from . import roles
+    if len(found) < 2:
+        return _step('sharing', 'Nothing is sharing a column', True)
+
+    # What actually reached a packet, not what a catalog could fill. A role moves
+    # some of it out of the way and the driver drops the rest, and a step that counted
+    # the catalog would stay outstanding for ever: a second weather station always has
+    # wind and rain with nowhere of their own to go.
+    by_station = {row['name'] or row['ident']: set(row.get('written', ()))
+                  for row in found}
+    shared = roles.collisions(by_station)
+    if not shared:
+        dropped = sum(len(row.get('dropped_fields', ())) for row in found)
+        return _step(
+            'sharing', 'Nothing is sharing a column', True,
+            ("%d stations. None writes where another does, and %d reading(s) are "
+             "being dropped to keep it that way." % (len(found), dropped))
+            if dropped else
+            "%d stations, and none of them writes where another does." % len(found))
+    return _step(
+        'sharing', '%d column(s) more than one station would fill' % len(shared),
+        False,
+        "The main station keeps them and the others are dropped, because two sensors "
+        "in one column cannot be separated afterwards. Give the others fields of "
+        "their own on the Fields tab, or change which station is the main one.",
+        fields=[{'field': field, 'stations': who}
+                for field, who in sorted(shared.items())])
 
 
 def _columns(driver, found):

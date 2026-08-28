@@ -294,6 +294,10 @@ class Site:
             ok, message = self.driver.web_set_field(
                 body.get('ident', ''), body.get('raw', ''), body.get('field', ''))
             return _json({'ok': ok, 'message': message})
+        if route == 'role':
+            ok, message = self.driver.web_role(body.get('ident', ''),
+                                               body.get('role', ''))
+            return _json({'ok': ok, 'message': message})
         if route == 'forget':
             ok, message = self.driver.web_forget(body.get('ident', ''))
             return _json({'ok': ok, 'message': message})

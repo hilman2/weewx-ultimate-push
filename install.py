@@ -85,6 +85,7 @@ class UltimatePushInstaller(ExtensionInstaller):
                     'bin/user/ultimatepush/overrides.py',
                     'bin/user/ultimatepush/page.py',
                     'bin/user/ultimatepush/report.py',
+                    'bin/user/ultimatepush/roles.py',
                     'bin/user/ultimatepush/server.py',
                     'bin/user/ultimatepush/transport.py']),
                 ('bin/user/ultimatepush/catalogs', [
