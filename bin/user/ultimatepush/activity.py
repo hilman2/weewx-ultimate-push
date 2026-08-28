@@ -37,10 +37,10 @@ class Upload:
     """One arrival, and what came of it."""
 
     __slots__ = ('at', 'client', 'path', 'method', 'ident', 'protocol', 'dialect',
-                 'text', 'packet', 'note')
+                 'text', 'packet', 'readings', 'note')
 
     def __init__(self, at, client, path, method, text, ident='', protocol=None,
-                 dialect=None, packet=None, note=''):
+                 dialect=None, packet=None, readings=(), note=''):
         self.at = at
         self.client = client
         self.path = path
@@ -53,6 +53,10 @@ class Upload:
         self.dialect = dialect
         self.text = text[:LONGEST]
         self.packet = packet
+        # A few readings in plain sight, for an upload nobody has claimed yet.
+        # Whoever decides whether to let it in has to be able to tell their own
+        # new console from somebody else's, and an address cannot do that.
+        self.readings = list(readings)
         self.note = note
 
     def as_dict(self, redact):
@@ -68,6 +72,7 @@ class Upload:
             'dialect': self.dialect,
             'text': redact(self.text),
             'packet': self.packet,
+            'readings': self.readings,
             'note': self.note,
         }
 
