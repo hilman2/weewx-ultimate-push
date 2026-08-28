@@ -144,7 +144,9 @@ def test_the_main_station_is_untouched_by_a_second_one(driver, payload):
     driver.overrides.set_station('path:' + extra['path'], role='extra', channel=3)
     driver._reload()
 
-    send(driver, extra['path'], payload('hp2561ae_pro'))
+    # Posted rather than waited for: until the main station has been heard, an extra
+    # one is held back, so this upload yields no packet at all.
+    post(driver, extra['path'], payload('hp2561ae_pro'))
     first = send(driver, main['path'], payload('hp2561ae_pro'))
 
     assert first['outTemp'] == 59.7
@@ -340,3 +342,66 @@ def test_two_main_stations_are_said_out_loud(tmp_path, caplog):
 
     assert 'set up as the main one' in caplog.text
     assert 'garden' in caplog.text and 'roof' in caplog.text
+
+
+# ------------------------------------------------------- after a restart
+
+
+def test_an_extra_station_waits_for_the_main_one_after_a_restart(tmp_path, payload):
+    """What the main station fills is learned from its uploads, so at startup it is
+    not yet known. If the extra station uploads first, nothing would hold its wind and
+    pressure back and they would land in the main station's columns for an interval.
+
+    One interval of two sensors in one column is the failure this whole mechanism
+    exists to prevent, and it would happen at every restart.
+    """
+    def build():
+        return UltimatePushDriver(
+            port=0, address='127.0.0.1', report_file='',
+            console_file=str(tmp_path / 'consoles.txt'),
+            override_file=str(tmp_path / 'web.conf'))
+
+    made = build()
+    _, garden = made.web_create('ecowitt', 'garden')
+    _, roof = made.web_create('ecowitt', 'roof')
+    made.web_role('path:' + roof['path'], roles.EXTRA)
+    made.closePort()
+
+    made = build()
+    try:
+        # The extra station is first out of the gate, which is a coin toss.
+        post(made, roof['path'], payload('hp2561ae_pro'))
+        packets = made.genLoopPackets()
+        post(made, garden['path'], payload('hp2561ae_pro'))
+
+        first = next(packets)
+        assert first['station'] == 'garden'
+        assert first['barometer'] is not None
+
+        # And once the main station has been heard, the extra one is let through
+        # with its temperature moved and the rest dropped, as always.
+        after = send(made, roof['path'], payload('hp2561ae_pro'))
+        assert after['station'] == 'roof'
+        assert 'barometer' not in after
+        assert after['extraTemp1'] is not None
+    finally:
+        made.closePort()
+
+
+def test_an_extra_station_is_not_held_back_when_there_is_no_main_one(tmp_path, payload):
+    """Otherwise it would wait for something that is never coming."""
+    made = UltimatePushDriver(
+        port=0, address='127.0.0.1', report_file='',
+        console_file=str(tmp_path / 'consoles.txt'),
+        override_file=str(tmp_path / 'web.conf'))
+    try:
+        _, roof = made.web_create('ecowitt', 'roof')
+        made.web_role('path:' + roof['path'], roles.EXTRA)
+        made.said_apart.clear()
+
+        packet = send(made, roof['path'], payload('hp2561ae_pro'))
+
+        assert packet['extraTemp1'] is not None
+        assert packet['barometer'] is not None
+    finally:
+        made.closePort()

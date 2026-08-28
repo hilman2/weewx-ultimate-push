@@ -503,3 +503,60 @@ def test_the_installer_leaves_it_ready_to_open():
     assert len(web['token']) >= 10
     # A different one on every installation, and never the one in this repository.
     assert web['token'] != module.loader()['config']['UltimatePush']['web']['token']
+
+
+# ---------------------------------------------------- what is knocking
+
+
+STRANGER = ('PASSKEY=%s&stationtype=GW2000A&tempf=61.0&humidity=88&'
+            'windspeedmph=3.4&baromrelin=29.91&dailyrainin=0.02' % ('B' * 32))
+
+
+def test_a_refused_upload_shows_the_readings_it_sent(station, payload):
+    """The card asks somebody to let this into their database, or to turn their own
+    new console away. An address and a protocol name cannot tell those two apart.
+    Sixty-one degrees and eighty-eight per cent can."""
+    upload(station, STRANGER)
+    station._packet_from(_last_request(station))
+
+    waiting = station.web_overview()['waiting']
+    assert len(waiting) == 1
+    readings = waiting[0]['sample']['readings']
+    assert readings
+
+    placed = {row['field']: row['value'] for row in readings if row['field']}
+    assert placed['outTemp'] == '61.0'          # exactly as it arrived
+    assert placed['outHumidity'] == '88'
+
+    # Ordered by what a person can check against a thermometer or a window, rather
+    # than alphabetically, where the temperature is somewhere past the middle.
+    assert readings[0]['field'] == 'outTemp'
+
+    # The raw name is kept beside it, because it carries its own unit: tempf is
+    # Fahrenheit whatever this driver would have made of it.
+    assert readings[0]['raw'] == 'tempf'
+
+
+def test_a_refused_upload_does_not_show_what_names_the_console(station):
+    """The readings belong on the page. The PASSKEY does not: anybody who has seen
+    one upload can repeat it, and this page gets pasted into issues."""
+    upload(station, STRANGER)
+    station._packet_from(_last_request(station))
+
+    sample = station.web_overview()['waiting'][0]['sample']
+
+    assert not any(row['raw'] == 'PASSKEY' for row in sample['readings'])
+    assert not any('B' * 32 in str(row['value']) for row in sample['readings'])
+    assert 'B' * 32 not in sample['text']
+
+
+def test_an_upload_no_protocol_recognised_still_shows_what_arrived(station):
+    """The case where somebody has the wrong hardware entirely. There is no catalog
+    to place the names with, so they are shown as they arrived."""
+    upload(station, 'wind=3&temperature=17&whatever=1')
+    station._packet_from(_last_request(station))
+
+    waiting = station.web_overview()['waiting']
+    if waiting:                       # a protocol may yet claim it; if not, show it
+        readings = waiting[0]['sample']['readings']
+        assert {row['raw'] for row in readings} >= {'temperature', 'whatever'}

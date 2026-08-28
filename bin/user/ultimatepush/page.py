@@ -118,6 +118,10 @@ select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .newcol { font-size: 12px; margin-top: 4px; }
 .newcol code { background: var(--code); padding: 2px 5px; border-radius: 4px; }
 .add { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.knock { width: 100%; border-collapse: collapse; margin: 8px 0 2px; font-size: 12px; }
+.knock td { padding: 2px 8px 2px 0; border: 0; }
+.knock td:nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; }
+.knock td:nth-child(3) { color: var(--dim); width: 42%; }
 .waiting { color: var(--dim); font-size: 13px; }
 .waiting b { color: var(--warn); }
 #flash { position: fixed; right: 16px; bottom: 16px; background: var(--panel);
@@ -250,6 +254,8 @@ function drawStations() {
         '</div>' +
         (s.undecided_count ? '<div class="sub warn">' + s.undecided_count +
           ' waiting for a placement</div>' : '') +
+        (s.held_back ? '<div class="sub warn">Nothing recorded: waiting for the main ' +
+          'station, which has not uploaded since this driver started.</div>' : '') +
         '</div>';
     }).join('');
   }
@@ -257,13 +263,29 @@ function drawStations() {
   if (!state.waiting.length) {
     waiting.innerHTML = '<div class="dim" style="font-size:13px">Nothing refused.</div>';
   } else {
-    waiting.innerHTML = state.waiting.map(function (w) {
+    waiting.innerHTML = state.waiting.map(function (w, i) {
+      /* The readings, because the decision is whether to let this into your
+         database, and an address cannot tell your own new console from a
+         stranger's. Nine degrees and ninety per cent can. */
+      var sample = w.sample || {};
+      var rows = (sample.readings || []).map(function (r) {
+        return '<tr><td class="mono">' + esc(r.raw) + '</td><td>' + esc(r.value) +
+          '</td><td>' + (r.field ? '\u2192 ' + esc(r.field) : '') + '</td></tr>';
+      }).join('');
       return '<div class="card"><div class="id">' + esc(w.ident) + '</div>' +
         '<div class="sub">' + esc(w.protocol || '?') + ' from ' + esc(w.client) +
-        ' \\u00b7 ' + w.uploads + ' seen</div>' +
+        ' \u00b7 ' + w.uploads + ' seen \u00b7 ' + ago(w.last_seen) + '</div>' +
+        (rows ? '<table class="knock">' + rows + '</table>'
+              : '<div class="dim" style="font-size:12px;margin-top:6px">' +
+                'Nothing readable in it.</div>') +
         '<div class="row" style="margin-top:8px">' +
         '<input type="text" placeholder="name it" data-name="' + esc(w.ident) + '">' +
-        '<button class="act" data-accept="' + esc(w.ident) + '">Let in</button></div>' +
+        '<button class="act" data-accept="' + esc(w.ident) + '">Let in</button>' +
+        '<button class="act" data-knock="' + i + '">All of it</button></div>' +
+        '<div id="knockraw' + i + '" style="display:none">' +
+        '<div class="row" style="margin-top:8px;justify-content:flex-end">' +
+        '<button class="act" data-knockcopy="' + i + '">Copy</button></div>' +
+        '<pre id="knocktext' + i + '">' + esc(sample.text || '') + '</pre></div>' +
         '</div>';
     }).join('');
   }
@@ -609,6 +631,18 @@ document.addEventListener('click', function (e) {
         flash(r.ok ? 'Let in. It records from its next upload.' : r.message, !r.ok);
         if (r.ok) { loadState(); loadSetup(function () { draw(); }); }
       });
+    return;
+  }
+  if (t.dataset.knock !== undefined) {
+    var shown = document.getElementById('knockraw' + t.dataset.knock);
+    var open = shown.style.display !== 'none';
+    shown.style.display = open ? 'none' : 'block';
+    t.textContent = open ? 'All of it' : 'Less';
+    return;
+  }
+  if (t.dataset.knockcopy !== undefined) {
+    copy(document.getElementById('knocktext' + t.dataset.knockcopy).textContent,
+         'the upload');
     return;
   }
   if (t.dataset.copy !== undefined) {
