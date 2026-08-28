@@ -22,6 +22,9 @@ python -m user.ultimatepush --url
 
 That address holds the token, so treat the log the way you treat `weewx.conf`.
 
+In a container the address it reports is the container's own, because that is where the
+process is. Use the address of the host, and whichever port the container publishes.
+
 To close the port:
 
 ```ini
