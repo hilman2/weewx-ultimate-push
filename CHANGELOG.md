@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.11.1 (2026-08-28)
+
+The web interface drew its frame and then stopped. It looked like the server hanging;
+the server was answering in seventeen milliseconds.
+
+A newline escape in the page's source reached the browser as a real newline, inside a
+JavaScript string literal. That is a syntax error, the whole script failed to parse,
+and nothing on the page ran. It arrived in 0.10.0, in the prompt for naming a field of
+your own.
+
+Nothing here would have caught it. Every test asks the driver for its answers, and the
+driver's answers were right the whole time. There is now a test that reads the page as
+a browser would.
+
 ## 0.11.0 (2026-08-28)
 
 ### An upload nobody claimed shows what it sent

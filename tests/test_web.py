@@ -16,6 +16,7 @@ The doorman has its own file. Here it is only checked that the door is wired to 
 import http.client
 import json
 import os
+import re
 
 import pytest
 
@@ -560,3 +561,67 @@ def test_an_upload_no_protocol_recognised_still_shows_what_arrived(station):
     if waiting:                       # a protocol may yet claim it; if not, show it
         readings = waiting[0]['sample']['readings']
         assert {row['raw'] for row in readings} >= {'temperature', 'whatever'}
+
+
+# ---------------------------------------------------- the page itself
+
+
+BACKSLASH = chr(92)
+NEWLINE = chr(10)
+
+
+def _string_left_open(script):
+    """The line number of the first single-quoted string a line does not close.
+
+    This does not parse JavaScript. It looks for the one mistake that has actually
+    happened, and it looks only at single quotes: the page writes its strings with
+    those, and leaves double quotes for the HTML inside them and the odd regular
+    expression, neither of which this needs an opinion about.
+    """
+    without_comments = re.sub(r'/\*.*?\*/', '', script, flags=re.S)
+    for number, line in enumerate(without_comments.split(NEWLINE), 1):
+        inside, escaped, was = False, False, ''
+        for char in line:
+            if escaped:
+                escaped = False
+            elif inside and char == BACKSLASH:
+                escaped = True
+            elif char == "'":
+                inside = not inside
+            elif not inside and char == '/' and was == '/':
+                break                       # the rest of the line is a comment
+            was = char
+        if inside:
+            return number
+    return None
+
+
+def test_the_page_is_javascript_a_browser_can_parse():
+    """A newline escape written with one backslash in the Python source reaches the
+    page as a real newline. Inside a JavaScript string literal that is a syntax error,
+    the whole script fails to parse, and the page draws its frame and then stops. It
+    looks exactly like the server hanging, and the server is fine.
+
+    That shipped once, in 0.10.0, in a prompt about naming a field of your own.
+    Nothing else here would have caught it: every test asks the driver for its
+    answers, and the driver's answers were right the whole time.
+    """
+    from ultimatepush import page
+
+    script = page.PAGE.split('<script>')[1].split('</script>')[0]
+    line = _string_left_open(script)
+
+    assert line is None, (
+        "line %d of the page's script leaves a string open, which a browser reads as "
+        "a syntax error, and then the whole page stops working: %s"
+        % (line or 0, script.split(NEWLINE)[(line or 1) - 1].strip()))
+
+
+def test_the_open_string_check_would_notice():
+    """Because a check that cannot fail is not a check."""
+    assert _string_left_open("var a = 'fine';" + NEWLINE + "var b = 'broken") == 2
+    assert _string_left_open("var a = 'it" + BACKSLASH + "'s fine';") is None
+    assert _string_left_open("var a = 'a real " + BACKSLASH + "n escape';") is None
+    assert _string_left_open('a.replace(/"/g, ' + "'&quot;');") is None
+    assert _string_left_open("/* somebody" + "'" + "s comment */") is None
+    assert _string_left_open("var a = 1;  // and somebody" + "'" + "s note") is None

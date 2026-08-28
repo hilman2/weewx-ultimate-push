@@ -666,7 +666,7 @@ document.addEventListener('change', function (e) {
   if (!raw) return;
   var field = e.target.value;
   if (field === '__new__') {
-    field = (window.prompt('A field of your own. Letters, digits and underscores.\n' +
+    field = (window.prompt('A field of your own. Letters, digits and underscores.\\n' +
       'It will need a column: the command appears once it is set.', '') || '').trim();
     if (!field) { draw(); return; }
   }
