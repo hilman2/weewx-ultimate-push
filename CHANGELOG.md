@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.7.0 (2026-08-28)
+
+The web interface takes a shorter token, and stops answering an address that keeps
+getting it wrong.
+
+Ten characters instead of sixteen. Ten random ones is about sixty bits, which no
+amount of guessing gets through; what a longer minimum bought was inconvenience.
+
+What makes a short token sound is the doorman. Ten wrong ones from one address inside
+five minutes and that address gets nothing back at all, right token or not, until
+those tries fall out of the window. Not an error and not a hint: an empty reply, which
+also means it costs nothing to serve.
+
+    [[web]]
+        tries = 10
+        window = 300
+
+A right token clears the tally, so somebody who mistyped it four times and then pasted
+it properly is not left one try from a lockout. One address getting it wrong never
+shuts out another. And the page shows what has been knocking, so it is not only in the
+log.
+
+That record is kept separately from the tally that decides, and has to be: reading it
+means getting the token right first, and if success cleared both there would never be
+anything to see.
+
+### One thing moved to make this possible
+
+The token used to be checked by `weewx.listener`, which did it before anything of ours
+ran and answered a wrong one with a real 403. That is a better status code and a worse
+design: a wrong token was answered and forgotten, and there was nothing to count. So
+the check is now the driver's, still constant time, and every reply is a 200 with the
+answer in the body.
+
 ## 0.6.0 (2026-08-28)
 
 A web interface, on a port of its own, off unless you switch it on.

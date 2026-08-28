@@ -87,8 +87,9 @@ network is the boundary.
 ## The web interface is a second door
 
 If you switch it on, there is a second port that can change the field map. It is off by
-default, refuses to start without a token of at least 16 characters, and the token is
-checked by the listener before anything else runs.
+default and refuses to start without a token of at least 10 characters. An address that
+gets the token wrong ten times in five minutes stops being answered at all, right token
+or not, until those tries fall out of the window.
 
 It is still plain HTTP, so the token travels in clear and ends up in the browser
 history. Bind it to `localhost` and use an SSH tunnel, or put TLS in front, unless the

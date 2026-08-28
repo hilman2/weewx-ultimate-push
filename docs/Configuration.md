@@ -94,7 +94,9 @@ A subsection, off unless switched on. See [Web interface](Web-interface).
 | `enable` | `false` | Whether to open the port at all. |
 | `port` | 8080 | Which port. |
 | `address` | every interface | `localhost` makes it unreachable from the network. |
-| `token` | none | Required, at least 16 characters. The driver refuses to start without one. |
+| `token` | none | Required, at least 10 characters. The driver refuses to start without one. |
+| `tries` | 10 | Wrong tokens from one address before it stops being answered at all. |
+| `window` | 300 | Over how many seconds, and how long that silence lasts. |
 | `allowed_hosts` | anywhere | Comma-separated addresses to accept from. |
 | `trust_proxy` | `false` | Take the client address from `X-Forwarded-For`. |
 

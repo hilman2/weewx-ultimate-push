@@ -101,6 +101,7 @@ pre { background: var(--code); border: 1px solid var(--line); border-radius: 6px
 </header>
 <main>
   <aside>
+    <div id="door"></div>
     <h2>Stations</h2>
     <div id="stations"></div>
     <h2>Waiting to be let in</h2>
@@ -170,8 +171,21 @@ function loadState() {
       'version ' + s.version + ' \\u00b7 up ' + Math.round(s.uptime / 60) + ' min' +
       ' \\u00b7 listening on ' + s.ports.join(', ') +
       ' \\u00b7 ' + s.protocols.join(', ');
+    drawDoor(s.door);
     drawStations();
   });
+}
+
+function drawDoor(door) {
+  var box = document.getElementById('door');
+  if (!door || !door.clients.length) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="note"><b>' + door.refused +
+    ' request(s) with the wrong token.</b> An address that gets it wrong ' +
+    door.tries + ' times in ' + door.window + ' seconds stops being answered.<br>' +
+    door.clients.map(function (c) {
+      return esc(c.client) + ': ' + c.wrong + ' wrong, last ' + ago(c.last) +
+        (c.blocked ? ' <b>(blocked)</b>' : '');
+    }).join('<br>') + '</div>';
 }
 
 function drawStations() {

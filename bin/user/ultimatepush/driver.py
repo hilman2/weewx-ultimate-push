@@ -181,6 +181,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.reload_wanted = False
         self.config_path = _config_path(stn_dict.get('config_dict'))
         self.occupied = None
+        # Set when the web interface is switched on. See _web_listener.
+        self.doorman = None
 
         # Which consoles to answer to. Anyone who can reach the port can point a
         # console at it, and a second one writing the same channels would mix two
@@ -439,28 +441,37 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         if not to_bool(configured.get('enable', False)):
             return None
         token = str(configured.get('token', '')).strip()
-        if len(token) < 16:
+        if len(token) < admin.SHORTEST_TOKEN:
             raise ValueError(
-                "The web interface needs 'token' set to at least 16 characters. It "
+                "The web interface needs 'token' set to at least %d characters. It "
                 "is the only thing between the field map and whoever else is on the "
                 "network. Make one with: "
-                "python -c \"import secrets; print(secrets.token_urlsafe(24))\"")
+                "python -c \"import secrets; print(secrets.token_urlsafe(12))\""
+                % admin.SHORTEST_TOKEN)
         options = {
             'port': to_int(configured.get('port', 8080)),
             'address': configured.get('address', ''),
-            'token': token,
             'allowed_hosts': configured.get('allowed_hosts'),
             'trust_proxy': configured.get('trust_proxy', False),
             'queue_size': 1,
         }
-        site = admin.Site(self)
+        # The token is checked in admin.Site, not by the listener. The listener would
+        # do it before anything of ours ran, which means a wrong one would be answered
+        # and forgotten, and there would be nothing for the doorman to count.
+        self.doorman = admin.Doorman(
+            token,
+            tries=to_int(configured.get('tries', admin.TRIES)),
+            window=to_int(configured.get('window', admin.WINDOW)))
+        site = admin.Site(self, self.doorman)
         listener = server.http_listener(HTTPListener, site.answer, queue=False,
                                         **options)
         where = options['address'] or '*'
-        log.info("The web interface is on http://%s:%d/?token=... . It is plain "
-                 "HTTP, so the token travels in clear; bind it to localhost and use "
-                 "a tunnel, or put TLS in front, if the network it is on is not one "
-                 "you trust.", where, listener.port)
+        log.info("The web interface is on http://%s:%d/?token=... . An address that "
+                 "gets the token wrong %d times in %d seconds stops being answered. "
+                 "It is plain HTTP, so the token travels in clear: bind it to "
+                 "localhost and use a tunnel, or put TLS in front, if the network is "
+                 "not one you trust.",
+                 where, listener.port, self.doorman.tries, self.doorman.window)
         return listener
 
     # ---- answering ----------------------------------------------------------
@@ -624,6 +635,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             'protocols': [p.name for p in self.enabled],
             'settings_file': self.overrides.path,
             'settings_error': self.overrides.error,
+            'door': self.doorman.state() if self.doorman else None,
             'stations': sorted(stations, key=lambda r: r['ident']),
             'waiting': self.activity.unknown_stations(transport.redact),
         }
@@ -969,8 +981,11 @@ class UltimatePushConfEditor(weewx.drivers.AbstractConfEditor):
     [[field_map_extensions]]
 
     # A small web interface, on a port of its own. Off unless switched on, and it
-    # will not start without a token of at least 16 characters. Make one with:
-    #   python -c "import secrets; print(secrets.token_urlsafe(24))"
+    # will not start without a token of at least 10 characters. Make one with:
+    #   python -c "import secrets; print(secrets.token_urlsafe(12))"
+    #
+    # An address that gets the token wrong 'tries' times within 'window' seconds
+    # stops being answered at all until those tries fall out of the window.
     #
     # It is plain HTTP, so the token travels in clear. On a network you do not
     # trust, set address = localhost and reach it through an SSH tunnel, or put a
@@ -981,6 +996,8 @@ class UltimatePushConfEditor(weewx.drivers.AbstractConfEditor):
         # address = localhost
         # token =
         # allowed_hosts =
+        # tries = 10
+        # window = 300
 
     # The driver to use:
     driver = user.ultimatepush.driver

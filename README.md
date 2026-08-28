@@ -152,8 +152,9 @@ thing you want to know first, whether that column already holds another sensorâ€
 readings, is the one thing a log line cannot tell you. The page shows it, per field,
 next to the value that just arrived.
 
-It is plain HTTP and the token travels in clear, so bind it to localhost and tunnel, or
-put TLS in front, unless the network is one you trust. See
+An address that gets the token wrong ten times in five minutes stops being answered at
+all. It is still plain HTTP and the token travels in clear, so bind it to localhost and
+tunnel, or put TLS in front, unless the network is one you trust. See
 [Web interface](docs/Web-interface.md).
 
 ## Documentation

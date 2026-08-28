@@ -7,9 +7,10 @@
 
 Two halves, tested differently. What it shows is checked through the driver, from a
 captured upload, because that is the only way to know the numbers on the page are the
-ones the driver actually has. What it refuses is checked over a socket, because the
-refusing is done by the listener before anything here runs, and a test that called the
-Python would not exercise the thing that protects it.
+ones the driver actually has. What it refuses is checked over a socket, because a
+token is only worth what it is worth against a real request.
+
+The doorman has its own file. Here it is only checked that the door is wired to it.
 """
 
 import http.client
@@ -101,14 +102,81 @@ def test_it_refuses_to_start_without_a_token(tmp_path):
     assert 'token' in str(caught.value)
 
 
-def test_a_missing_token_gets_a_real_403(station):
-    """Checked by the listener, before anything in the interface runs."""
-    assert web(station, '/', token=None)[0] == 403
-    assert web(station, '/api/state', token=None)[0] == 403
+def test_ten_characters_is_enough(tmp_path):
+    """A weather station, not a bank. Ten random characters is about sixty bits, and
+    the doorman is what covers a token somebody thought up instead."""
+    made = UltimatePushDriver(
+        port=0, address='127.0.0.1', passkey=PASSKEY, report_file='',
+        console_file=str(tmp_path / 'c.txt'), override_file=str(tmp_path / 'w.conf'),
+        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1',
+             'token': 'abcde12345'})
+    try:
+        assert len(made.listener.ports) == 2
+    finally:
+        made.closePort()
 
 
-def test_a_wrong_token_gets_a_403(station):
-    assert web(station, '/api/state', token='a-token-long-enough-to-fai')[0] == 403
+def test_no_token_gets_nothing_useful(station):
+    _, _, answer = web(station, '/api/state', token=None)
+
+    assert answer['ok'] is False
+    assert 'token' in answer['error'].lower()
+
+
+def test_a_wrong_token_is_told_so_and_nothing_else(station, payload):
+    """Not what is behind the door, and not how close the guess was."""
+    send(station, payload('hp2561ae_pro'))
+    _, _, answer = web(station, '/api/state', token='a-token-long-enough')
+
+    assert answer['ok'] is False
+    assert 'stations' not in answer
+
+
+def test_a_person_who_mistypes_it_is_told_where_to_look(station):
+    """A browser gets a page rather than a line of JSON."""
+    status, content_type, body = web(station, '/', token='wrong-but-long')
+
+    assert status == 200
+    assert content_type.startswith('text/html')
+    assert b'token' in body
+
+
+def test_an_address_that_keeps_guessing_stops_being_answered(tmp_path):
+    """The black hole. Three wrong ones here, then nothing, right token or not."""
+    made = UltimatePushDriver(
+        port=0, address='127.0.0.1', passkey=PASSKEY, report_file='',
+        console_file=str(tmp_path / 'c.txt'), override_file=str(tmp_path / 'w.conf'),
+        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': TOKEN,
+             'tries': 3, 'window': 300})
+    try:
+        for _ in range(3):
+            assert web(made, '/api/state', token='wrong-but-long')[2]['ok'] is False
+        # Now nothing comes back at all, and the right token does not help.
+        assert web(made, '/api/state', token='wrong-but-long')[2] == b''
+        assert web(made, '/api/state', token=TOKEN)[2] == b''
+    finally:
+        made.closePort()
+
+
+def test_the_knocking_is_visible_on_the_page(station):
+    """Rather than only in the log, which is the thing nobody is reading."""
+    web(station, '/api/state', token='wrong-but-long')
+    web(station, '/api/state', token='wrong-but-long')
+    _, _, state = web(station, '/api/state')
+
+    assert state['door']['refused'] == 2
+    assert state['door']['clients'][0]['client'] == '127.0.0.1'
+    assert state['door']['clients'][0]['wrong'] == 2
+
+
+def test_getting_it_right_does_not_hide_that_it_was_wrong_before(station):
+    """The record has to survive the successful request, or it could never be read:
+    reading it means getting the token right first."""
+    web(station, '/api/state', token='wrong-but-long')
+    _, _, state = web(station, '/api/state')
+
+    assert state['door']['clients'][0]['wrong'] == 1
+    assert state['door']['clients'][0]['blocked'] is False
 
 
 def test_the_admin_port_is_not_a_data_port(station, payload):

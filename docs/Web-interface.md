@@ -17,8 +17,10 @@ It is off unless you switch it on.
 Make the token with:
 
 ```
-python -c "import secrets; print(secrets.token_urlsafe(24))"
+python -c "import secrets; print(secrets.token_urlsafe(12))"
 ```
+
+Ten characters is the minimum. Anything you can paste is fine.
 
 Then open `http://your-weewx-machine:8080/?token=that-string`.
 
@@ -86,17 +88,58 @@ lives there, and the interface will not write one for it.
 
 ## What protects it, and what does not
 
-The token, and where the socket is bound. That is all, and it is worth being plain
-about what it is worth.
+A token, a doorman that stops answering an address which keeps getting it wrong, and
+where the socket is bound. That is all, and it is worth being plain about what it is
+worth.
+
+This is a weather station. The point is not to withstand somebody determined who has
+your address. It is that a stray scanner, a curious guest and a typo all come to
+nothing, and that you can see it happened.
+
+### The doorman
+
+Ten wrong tokens from one address inside five minutes and that address stops being
+answered at all. Not an error, not a hint: an empty reply. The right token does not
+help either, because the black hole does not check one, which is also what stops it
+costing anything.
+
+It is not a punishment to be served out. The tries fall out of the window and the
+address is answered again. And a right token clears the tally, so somebody who
+mistyped it four times and then pasted it properly is not left one try from a lockout.
+
+One address getting it wrong never shuts out another. Otherwise anybody on the network
+could lock you out of your own station.
+
+```ini
+    [[web]]
+        tries = 10
+        window = 300
+```
+
+The page shows what has been knocking, so it is not only in the log:
+
+    3 request(s) with the wrong token.
+    192.168.1.99: 3 wrong, last 2m ago
+
+That record survives your own successful login. It has to: reading it means getting
+the token right first, and if success cleared it there would never be anything to see.
+
+### The rest
 
 **It is HTTP.** The token is in the URL on the first request, so it is in the browser
-history and in the logs of anything in between. On a network you trust that is a real
-but bounded exposure. Across the internet it is not acceptable without TLS in front.
+history and in the logs of anything in between. On a network you trust that is a
+bounded exposure. Across the internet it is not acceptable without TLS in front.
 
-**The token is checked by the listener**, before anything in the interface runs, in
-constant time, and a wrong one gets a 403. It has to be at least 16 characters or the
-driver refuses to start: an interface that can change the field map is not something
-to leave open because somebody left the setting blank.
+**Ten random characters is about sixty bits.** At ten guesses per five minutes, working
+through that takes longer than the sun has left. A token you thought up rather than
+generated is a different sum, and the doorman is what makes even that impractical from
+outside. The driver refuses to start with fewer than ten characters, because an
+interface that can change the field map should not be open because somebody left the
+setting blank.
+
+**The token is checked by the driver, not by the listener.** The listener would do it
+first, which sounds better and is not: its check runs before anything of ours, so a
+wrong token would be answered and forgotten and there would be nothing to count.
 
 **Anybody with the token can change the field map.** There are no roles.
 
@@ -147,7 +190,9 @@ unchanged.
 | `enable` | `false` | Whether to open the port at all. |
 | `port` | 8080 | Which port. |
 | `address` | every interface | Bind to one address. `localhost` makes it unreachable from the network. |
-| `token` | none | Required. At least 16 characters. |
+| `token` | none | Required. At least 10 characters. |
+| `tries` | 10 | Wrong tokens from one address before it stops being answered. |
+| `window` | 300 | Over how many seconds, and how long the silence lasts. |
 | `allowed_hosts` | anywhere | Comma-separated addresses to accept from. |
 | `trust_proxy` | `false` | Take the client address from `X-Forwarded-For`. Only with a proxy you control. |
 | `override_file` | beside the console list | Where the settings the interface writes are kept. |
