@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.11.0 (2026-08-28)
+
+### An upload nobody claimed shows what it sent
+
+The card used to say `ecowitt from 192.168.1.51, 12 seen` and offer a button called
+"Let in". That asks somebody to put a stranger into their database, or to turn their
+own new console away, with nothing to tell the two apart.
+
+It now shows the readings, ordered by what a person can check against a thermometer or
+a look out of the window, with the raw name beside the field each one would fill:
+
+    tempf           61.0    -> outTemp
+    humidity        88      -> outHumidity
+    windspeedmph    3.4     -> windSpeed
+    baromrelin      29.91   -> barometer
+
+"All of it" opens the whole payload, with a button to copy it. What names the console
+is not shown, here or anywhere else on the page.
+
+### An extra station no longer writes into the main station's columns after a restart
+
+What the main station fills was learned from its uploads, so at startup nothing was
+known and nothing held an extra station back. If the extra one uploaded first, which is
+a coin toss, its wind and pressure went into the main station's columns until the main
+station was heard.
+
+An interval of two sensors in one column cannot be separated afterwards, and it
+happened at every restart. An extra station now waits for the main one, and says so
+once:
+
+    INFO user.ultimatepush.driver: Holding back station 'roof' until the main station
+    has been heard, so that its readings cannot land in the main station's columns.
+
+Losing one upload of an extra station is the cheaper of the two.
+
 ## 0.10.0 (2026-08-28)
 
 Stations are set up in the web interface, and the driver decides nothing about which
