@@ -235,3 +235,47 @@ def test_without_a_config_file_it_says_so_rather_than_failing(driver, payload):
 
     assert answer['ok'] is False
     assert 'weectl database add-column dayRain' in answer['message']
+
+
+def test_the_two_tabs_agree_about_what_the_database_has(tmp_path, payload):
+    """The Fields tab read the archive table and the Database columns tab read the
+    schema, so one said 'column ready' and the other said the same reading had
+    nowhere to live. Both about the same column, on the same page."""
+    import configobj
+    import weewx.manager
+
+    config = configobj.ConfigObj({
+        'WEEWX_ROOT': str(tmp_path),
+        'DatabaseTypes': {'SQLite': {'driver': 'weedb.sqlite',
+                                     'SQLITE_ROOT': str(tmp_path)}},
+        'Databases': {'archive_sqlite': {'database_type': 'SQLite',
+                                         'database_name': 'test.sdb'}},
+        'DataBindings': {'wx_binding': {
+            'database': 'archive_sqlite',
+            'table_name': 'archive',
+            'manager': 'weewx.manager.DaySummaryManager',
+            'schema': 'schemas.wview_extended.schema'}},
+    })
+    config.filename = str(tmp_path / 'weewx.conf')
+    config.write()
+    with weewx.manager.open_manager_with_config(config, 'wx_binding',
+                                                initialize=True):
+        pass
+
+    made = UltimatePushDriver(
+        port=0, address='127.0.0.1', report_file='', config_dict=config,
+        console_file=str(tmp_path / 'consoles.txt'),
+        override_file=str(tmp_path / 'web.conf'))
+    try:
+        _, garden = made.web_create('ecowitt', 'garden')
+        send(made, garden['path'], payload('hp2561ae_pro'))
+        ident = made.web_fields()['stations'][0]['ident']
+
+        made.web_add_column('dayRain')
+
+        rows = made.web_fields()['stations'][0]['rows']
+        assert [r for r in rows if r['field'] == 'dayRain'][0]['column'] is True
+        missing = {row['field'] for row in made.web_columns(ident)['missing']}
+        assert 'dayRain' not in missing
+    finally:
+        made.closePort()

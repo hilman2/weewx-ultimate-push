@@ -1339,7 +1339,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             groups.update(mapper.wanted_groups())
 
         try:
-            wanted = columns.missing(packet, groups)
+            wanted = columns.missing(packet, groups, known=self.columns_present())
         except Exception as e:
             return {'ok': False, 'error': "Cannot work out the columns: %s" % e}
 

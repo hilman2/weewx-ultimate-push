@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12.3 (2026-08-28)
+
+The Fields tab and the Database columns tab disagreed with each other. Fields read the
+archive table; Database columns still asked the schema, so the same reading was
+`column ready` on one tab and had nowhere to live on the other.
+
+Measured on a live station: the archive table has 134 columns, the schema names 115.
+Nineteen columns had been added at some point, and the page had been asking for them
+to be added again ever since.
+
+The diagnostic run does the same now: with a configuration file it reads the table
+rather than the schema.
+
 ## 0.12.2 (2026-08-28)
 
 The Raw uploads tab said `Loading.` and never stopped. `drawRaw` was gone: 0.12.0

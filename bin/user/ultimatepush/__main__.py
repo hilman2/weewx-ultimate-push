@@ -185,6 +185,21 @@ def _free_temperature_fields():
     return {f for f in known if f.startswith(('extraTemp', 'soilTemp', 'leafTemp'))}
 
 
+def _columns_of(config):
+    """What the archive table has, or None to fall back to the standard schema.
+
+    Asking the schema is asking what a fresh database would have been given, which is
+    not the question. A database somebody has already added columns to would be told
+    it needs them again.
+    """
+    if not config:
+        return None
+    try:
+        return columns.existing(config)
+    except Exception:                               # pylint: disable=broad-except
+        return None
+
+
 def _report(packet, guesses, mapper, config):
     readings = {f: v for f, v in packet.items() if f != 'dateTime'}
     print("\n%d readings" % len(readings))
@@ -202,7 +217,8 @@ def _report(packet, guesses, mapper, config):
                   % ' '.join(sorted(flagged)))
 
     try:
-        wanted = columns.missing(packet, mapper.wanted_groups())
+        wanted = columns.missing(packet, mapper.wanted_groups(),
+                                 known=_columns_of(config))
     except ImportError:
         print("\nWeeWX is not importable here, so the columns cannot be worked out.",
               file=sys.stderr)
