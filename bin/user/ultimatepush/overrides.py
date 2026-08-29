@@ -32,6 +32,7 @@ says it means.
 
 import logging
 import os
+import threading
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +54,16 @@ HEADER = """# Settings made through the web interface of weewx-ultimate-push.
 
 
 def path_for(weewx_root=None, configured=None, sqlite_root=None):
-    """Where to keep it. Beside the console list, for the same reasons."""
+    """Where to keep the file. Beside the console list, for the same reasons.
+
+    Args:
+        weewx_root (str): The WeeWX root directory, when there is one.
+        configured (str): A path set in weewx.conf, which wins over everything else.
+        sqlite_root (str): Where the SQLite database lives, when it is SQLite.
+
+    Returns:
+        str: The path to the file.
+    """
     from . import consoles
     if configured:
         return configured
@@ -77,6 +87,10 @@ class Store:
         self.reserved = reserved or {}
         self.settings = {}
         self.error = None
+        # Two threads write this file now. The web interface writes it when somebody
+        # changes something, and the upload thread writes it when a station takes a
+        # column nobody had. Both rewrite the whole file, so one at a time.
+        self.lock = threading.RLock()
 
     # ---- reading -------------------------------------------------------------
 
@@ -106,52 +120,108 @@ class Store:
         return dict(self.settings.get('stations', {}))
 
     def station(self, ident):
+        """What this file records about one station.
+
+        Args:
+            ident (str): The station's identity.
+
+        Returns:
+            dict: Its settings, empty if this file does not have it.
+        """
         return self.stations().get(ident, {})
 
     def extensions_for(self, ident):
-        """The field map this file adds for one station."""
+        """The field map this file adds for one station.
+
+        Args:
+            ident (str): The station's identity.
+
+        Returns:
+            dict: Raw field name to WeeWX field.
+        """
         return dict(self.station(ident).get('field_map_extensions', {}))
 
     # ---- writing -------------------------------------------------------------
 
     def set_station(self, ident, name=None, infer_unknown=None, path=None,
                     protocol=None, role=None, channel=None):
-        """Record a station, or change one. Returns (ok, message)."""
-        ident = str(ident).strip()
-        if not ident:
-            return False, "A station with no identity cannot be told from another."
-        stations = self.settings.setdefault('stations', {})
-        station = stations.setdefault(ident, {})
-        if path is not None:
-            station['path'] = path
-        if protocol is not None:
-            station['protocol'] = protocol
-        if role is not None:
-            from .roles import ROLES
-            if role not in ROLES:
-                return False, "A role is one of %s." % ', '.join(ROLES)
-            station['role'] = role
-        if channel is not None:
-            station['channel'] = str(int(channel))
-        if name is not None:
-            clean = _as_name(name)
-            if not clean:
-                return False, ("A name may hold letters, digits, dashes and "
-                               "underscores. It becomes a section heading.")
-            station['name'] = clean
-        if infer_unknown is not None:
-            from .mapping import MODES
-            if infer_unknown not in MODES:
-                return False, "infer_unknown must be one of %s." % ', '.join(MODES)
-            station['infer_unknown'] = infer_unknown
-        return self._save()
+        """Record a station, or change one.
+
+        Every argument left as None is left as it was, so that one caller can change
+        a name without knowing anything about roles.
+
+        Args:
+            ident (str): The station's identity. Required.
+            name (str): What to call it.
+            infer_unknown (str): This station's own inference setting.
+            path (str): An upload path of its own.
+            protocol (str): Which protocol its uploads are read with.
+            role (str): MAIN or EXTRA. Setting MAIN clears any channel, because the
+                main station has no use for one.
+            channel (int): Which extra channel it writes to, from 1 to CHANNELS.
+
+        Returns:
+            tuple: (ok, message), where the message is the path written or the
+            reason nothing was.
+        """
+        with self.lock:
+            ident = str(ident).strip()
+            if not ident:
+                return False, "A station with no identity cannot be told from another."
+            stations = self.settings.setdefault('stations', {})
+            station = stations.setdefault(ident, {})
+            if path is not None:
+                station['path'] = path
+            if protocol is not None:
+                station['protocol'] = protocol
+            if role is not None:
+                from .roles import MAIN, ROLES
+                if role not in ROLES:
+                    return False, "A role is one of %s." % ', '.join(ROLES)
+                station['role'] = role
+                if role == MAIN:
+                    # The main station's readings go where they belong. A channel left
+                    # behind from when it was an extra sensor would read like it still
+                    # meant something.
+                    station.pop('channel', None)
+            if channel is not None:
+                from .roles import CHANNELS
+                try:
+                    channel = int(channel)
+                except (TypeError, ValueError):
+                    return False, "A channel is a number from 1 to %d." % CHANNELS
+                if not 1 <= channel <= CHANNELS:
+                    return False, ("A channel is a number from 1 to %d. The standard "
+                                   "schema has that many extraTemp columns." % CHANNELS)
+                station['channel'] = str(channel)
+            if name is not None:
+                clean = _as_name(name)
+                if not clean:
+                    return False, ("A name may hold letters, digits, dashes and "
+                                   "underscores. It becomes a section heading.")
+                station['name'] = clean
+            if infer_unknown is not None:
+                from .mapping import MODES
+                if infer_unknown not in MODES:
+                    return False, "infer_unknown must be one of %s." % ', '.join(MODES)
+                station['infer_unknown'] = infer_unknown
+            return self._save()
 
     def forget_station(self, ident):
-        stations = self.settings.get('stations', {})
-        if ident not in stations:
-            return False, "This file does not have that station."
-        del stations[ident]
-        return self._save()
+        """Take a station out of this file.
+
+        Args:
+            ident (str): The station's identity.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        with self.lock:
+            stations = self.settings.get('stations', {})
+            if ident not in stations:
+                return False, "This file does not have that station."
+            del stations[ident]
+            return self._save()
 
     def set_field(self, ident, raw, field):
         """Place one raw field. An empty `field` removes the placement again.
@@ -161,28 +231,76 @@ class Store:
         made rather than a read-only view of a file. What it cannot outrank is a
         station declared under `[[stations]]`: that station's field map is part of
         its declaration, and the driver refuses that one step higher up.
-        """
-        from .mapping import NOWHERE
 
-        raw = str(raw).strip()
-        if not raw:
-            return False, "No field named."
-        stations = self.settings.setdefault('stations', {})
-        station = stations.setdefault(str(ident).strip(), {})
-        extensions = station.setdefault('field_map_extensions', {})
-        field = str(field or '').strip()
-        if not field:
-            extensions.pop(raw, None)
-        elif field == NOWHERE:
-            # Written nowhere, on purpose, which is not the same as not written here:
-            # taking the entry out would hand the reading back to the catalog.
-            extensions[raw] = NOWHERE
-        else:
-            if not _as_field(field):
-                return False, ("A WeeWX field name may hold letters, digits and "
-                               "underscores, and must not start with a digit.")
-            extensions[raw] = field
-        return self._save()
+        Args:
+            ident (str): The station the placement is for.
+            raw (str): The raw field name, as the console sends it.
+            field (str): The WeeWX field to write it to. Empty removes the placement;
+                mapping.NOWHERE records that it is deliberately written nowhere.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        with self.lock:
+            from .mapping import NOWHERE
+
+            raw = str(raw).strip()
+            if not raw:
+                return False, "No field named."
+            stations = self.settings.setdefault('stations', {})
+            station = stations.setdefault(str(ident).strip(), {})
+            extensions = station.setdefault('field_map_extensions', {})
+            field = str(field or '').strip()
+            if not field:
+                extensions.pop(raw, None)
+            elif field == NOWHERE:
+                # Written nowhere, on purpose, which is not the same as not
+                # written here: taking the entry out would hand the reading back
+                # to the catalog.
+                extensions[raw] = NOWHERE
+            else:
+                if not _as_field(field):
+                    return False, ("A WeeWX field name may hold letters, digits and "
+                                   "underscores, and must not start with a digit.")
+                extensions[raw] = field
+            return self._save()
+
+    def columns(self):
+        """{archive column: the identity of the station that fills it}."""
+        return dict(self.settings.get('columns', {}))
+
+    def set_column(self, field, ident):
+        """Record which station fills one archive column.
+
+        Args:
+            field (str): The WeeWX field.
+            ident (str): The station that fills it.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        with self.lock:
+            self.settings.setdefault('columns', {})[str(field)] = str(ident)
+            return self._save()
+
+    def drop_columns(self, fields):
+        """Give up several columns at once, written once.
+
+        Args:
+            fields (iterable): The columns to release. Columns this file does not
+                record are ignored.
+
+        Returns:
+            tuple: (ok, message). Releasing nothing is not an error.
+        """
+        with self.lock:
+            held = self.settings.get('columns', {})
+            gone = [f for f in fields if f in held]
+            if not gone:
+                return True, self.path
+            for field in gone:
+                del held[field]
+            return self._save()
 
     def _save(self):
         """Write the whole file. Returns (ok, message)."""
@@ -210,7 +328,14 @@ class Store:
 
 
 def _plain(node):
-    """A configobj section as ordinary dicts, so nothing downstream has to know."""
+    """A configobj section as ordinary dicts, so nothing downstream has to know.
+
+    Args:
+        node: A configobj Section, or anything else, which is returned unchanged.
+
+    Returns:
+        dict: The same content in plain dicts.
+    """
     out = {}
     for key in node:
         value = node[key]
@@ -219,7 +344,15 @@ def _plain(node):
 
 
 def _as_name(name):
-    """A station name that is safe as a section heading and as a packet value."""
+    """A station name that is safe as a section heading and as a packet value.
+
+    Args:
+        name (str): The name as somebody typed it.
+
+    Returns:
+        str: The name with anything that would break a section heading removed, or
+        an empty string if nothing usable is left.
+    """
     name = str(name).strip()
     if not name or len(name) > 40:
         return ''
@@ -227,7 +360,15 @@ def _as_name(name):
 
 
 def _as_field(field):
-    """A WeeWX field name. Anything else would make a column nobody can query."""
+    """Whether this is usable as a WeeWX field name.
+
+    Args:
+        field (str): The name to check.
+
+    Returns:
+        str: The name if it is usable, otherwise an empty string. Anything else
+        would make a column nobody can query.
+    """
     field = str(field).strip()
     if not field or len(field) > 64 or field[0].isdigit():
         return ''

@@ -1,15 +1,16 @@
 # Stations
 
-One station needs nothing on this page. It uploads, the driver records it, and every
-reading goes where it belongs. That case is meant to stay that simple, and everything
-below only starts to matter once there is a second one.
+A single station requires nothing on this page. It uploads, the driver records it, and
+every reading is written where it belongs. Everything below applies once there is a
+second station.
 
-## Setting one up
+## Setting up a station
 
-Open the [web interface](Web-interface), give the station a name and say what it is.
+Open the [web interface](Web-interface.md), enter a name for the station, and select
+what it is.
 
-For hardware whose upload path is yours to choose, that is the whole of it. The driver
-makes a path for that station and shows you what to type:
+For hardware whose upload path is yours to choose, that completes the setup. The driver
+generates a path for that station and displays the settings to enter into its app:
 
 | | |
 |---|---|
@@ -18,87 +19,159 @@ makes a path for that station and shows you what to type:
 | Path | `/E0rbpxexKCsb/report` |
 | Port | 8000 |
 
-From the first upload the driver knows which station that is. Nothing was adopted and
-nothing was guessed.
+From the first upload the driver knows which station sent it. The same settings remain
+available on the **Stations** tab afterwards, for a console that has to be set up again.
 
-### Why the path and not the PASSKEY
+### Why the path rather than the PASSKEY
 
-Because the path is a secret and a PASSKEY is not.
+The path is a secret and a PASSKEY is not.
 
-Every Ecowitt and Ambient console sends a PASSKEY built from its MAC address, in every
-upload, in the clear. It says which console sent something, which is useful, but anybody
-who has seen one upload can repeat it. The path is known only to whoever was shown it.
+Every Ecowitt and Ambient console sends a PASSKEY derived from its MAC address, in
+every upload, in the clear. It identifies the console, but anyone who has seen one
+upload can repeat it. The path is known only to whoever was shown it.
 
-So where the hardware can carry a path, that is the identity. Where it cannot, the
-PASSKEY is what there is, and the driver falls back to it.
+Where the hardware can be given a path, the path is the identity. Where it cannot, the
+PASSKEY is used instead.
 
 ### Hardware that cannot be pointed anywhere
 
-Three of the six cannot be set up in advance, and the interface says so rather than
-offering something that would not work:
+Three of the six protocols cannot be set up in advance:
 
-| | Why |
+| | Reason |
 |---|---|
-| WeatherFlow | The hub broadcasts. Nothing is configured on it at all. |
+| WeatherFlow | The hub broadcasts. Nothing is configured on it. |
 | Acurite | The bridge posts to Chaney's servers. Its path is in the firmware. |
-| LaCrosse | The same, to its own maker. |
+| LaCrosse | The same, to its own manufacturer's servers. |
 
-These are **adopted**: point them here, and the first thing that arrives turns up in the
-interface as something waiting to be let in, with its readings, so you can see whether
-it is yours. One click accepts it.
+These stations are adopted. Point one at the driver, and the first upload appears in
+the web interface as a station waiting to be let in, with its readings shown so that
+you can confirm it is yours. Accepting it takes one click.
 
-The first console a fresh driver ever hears is adopted without being asked, because at
-that point there is nothing it could be confused with. Everything after that waits.
+The first console a new driver ever hears is adopted without being asked, because at
+that point there is nothing to confuse it with. Every station after that waits.
 
-## Which station may fill which field
+## Roles
 
-Two stations both send `outTemp`, and there is one `outTemp`. Left alone they would take
-turns writing it every few seconds, and afterwards the column would hold a mixture that
-nothing can separate. So each station has a role.
+Two stations both send `outTemp`, and there is one `outTemp` column. Left alone, the
+two would write it in turn every few seconds, producing a column that holds a mixture
+nothing can separate afterwards. Each station therefore has a role.
 
-**`main`** is the station. Its readings go where they belong. Exactly one station is
-this, and with only one station it is that one without anyone deciding.
+#### main
 
-**`extra`** is a sensor. Its temperature and humidity are moved to `extraTempN` and
-`extraHumidN`, where N is a channel the driver picks. Everything else it sends is
-**dropped rather than written over the main station's**, and said once in the log:
+The station. Its readings are written where they belong. Exactly one station has this
+role. With a single station it has the role without anyone deciding.
+
+#### extra
+
+A sensor beside the main station. Its temperature and humidity are written to
+`extraTempN` and `extraHumidN`, where N is the channel. Readings that have nowhere of
+their own to go are dropped rather than written over another station's.
+
+A station set up while another is already the main station is given the `extra` role
+and the next free channel, without being asked. This is what is meant in almost every
+case: a second console beside an existing one is an additional sensor.
+
+The standard schema provides `extraTemp1` to `extraTemp8` and `extraHumid1` to
+`extraHumid8`, and nothing equivalent for wind, rain or pressure. A second full weather
+station therefore contributes its temperature and its humidity, and anything else it
+sends requires a field and a column of its own. See [Field map](Field-map.md).
+
+### Changing which station is the main station
+
+Making a second station the main station moves the first aside: from its next upload it
+is an extra sensor on a channel of its own, its temperature and humidity are written to
+`extraTempN` and `extraHumidN` instead of `outTemp` and `outHumidity`, and its wind,
+rain and pressure are no longer recorded at all.
+
+What is already in the archive is not changed. `outTemp` therefore holds one sensor's
+readings up to that moment and another's from then on, and nothing afterwards can
+determine which reading came from which sensor. Reversing the change does not undo
+this; it adds a second discontinuity.
+
+The web interface states this in full and requires confirmation twice: a checkbox
+confirming that you have a copy of the archive database, and then the button itself.
+The same change over the API requires `force`.
+
+The driver refuses to have two main stations. A configuration file written by hand can
+still declare two, in which case the first station declared is the one that writes and
+the second is treated as any other station: it fills only the columns nobody else has.
+This is reported at startup and in the log at the first upload.
+
+## Column ownership
+
+Roles alone do not settle every case. Three identical consoles set up as extra sensors
+all send `soilmoisture1`, and if the main station is a console with no such reading,
+nothing about the role keeps them out of `soilMoist1`.
+
+A column therefore belongs to whichever station fills it first. Every other station's
+reading for that column is dropped. The main station takes precedence over an existing
+claim, so which console owns `outTemp` does not depend on which one happened to upload
+first after a restart.
+
+Ownership is recorded in `ultimate-push-web.conf`:
+
+```ini
+[columns]
+    outTemp = path:/E0rbpxexKCsb/report
+    extraTemp1 = path:/g0nTdxurjQd8/report
+    soilMoist1 = path:/g0nTdxurjQd8/report
+```
+
+Because it is recorded rather than learned again at each startup, an extra station is
+held back only once — until the main station's first upload, ever. After that a restart
+costs no readings.
+
+The **Stations** tab lists the columns each station fills. The checklist reports
+readings that were dropped, which station sent them, and which station holds the column:
 
 ```
-WARNING user.ultimatepush.driver: 27 reading(s) from station 'roof' are not being
-written, because the main station already fills those columns and two sensors in one
-column cannot be separated afterwards: UV, barometer, dayRain, ...
+[ ] sharing     12 reading(s) have nowhere of their own to go
+
+    soilMoist1     wanted by shed     held by roof
+    rainRate       wanted by shed     held by roof
 ```
 
-Be clear about the limit. The standard schema has `extraTemp1` to `extraTemp8` and
-`extraHumid1` to `extraHumid8`, and nothing of the sort for wind, rain or pressure. A
-second full weather station therefore contributes its temperature and its humidity, and
-anything else it sends needs a field and a column of its own.
+An extra sensor's wind and pressure being kept out of the main station's columns is the
+role working as intended and is not reported here. A reading you placed by hand that is
+not written is always reported, because placing it was a decision that did not take
+effect.
 
-That is what the Fields tab is for. It shows every station at once, so that the
-question "who fills `outTemp`" has one place to be answered. Pick any WeeWX field for
-any reading; the box offers the ones that measure the same thing first, then everything
-else, then `nowhere`, then a field of your own. Numbered families run to 16, past where
-the schema stops, and a field with no column has a button in the row that makes one.
+### Releasing a column
 
-One WeeWX field takes one reading. Picking one that another station has says so and
-waits for an answer.
+A station holds its columns until it is told otherwise, which is correct while a
+console is merely offline and wrong once a sensor has been removed for good. **Give
+them up** on the Stations tab releases them, and the next station to send one of those
+readings takes it. What is already in the archive is not changed.
 
-A field you place by hand outranks the role. Placing it is the decision.
+Changing a station's role or channel releases its columns as well, because it writes
+different columns from then on. Removing a station releases them.
 
-### The interface says when two stations collide
+## Columns that already hold readings
+
+When a station is set up, the driver reads the archive table and reports which of the
+columns it would write already hold data:
 
 ```
-[ ] sharing     29 column(s) more than one station would fill
-                UV, barometer, dayRain, eventRain, hourRain, inHumidity ...
+outTemp        4000 readings, last on 2022-11-21
+barometer      4000 readings, last on 2022-11-21
+extraTemp1     4000 readings, last on 2022-11-21
 ```
 
-Setting a role settles it. Nothing else in WeeWX would have said anything.
+Those readings came from somewhere: an older console, a different driver, an import. If
+this is the same weather station in the same place, writing on is correct and the
+series continues. If it is a different sensor, the column ends up holding two of them.
+Only you can tell which, so the driver asks rather than choosing.
 
-## Writing it by hand
+Where the choice can be avoided, it is: a channel whose `extraTempN` and `extraHumidN`
+already hold readings is skipped when a channel is assigned automatically. A second
+station therefore lands on a clean channel without any question being asked, and the
+confirmation appears only when every free channel has history.
 
-Everything the interface does can be written into `weewx.conf`, and a station written
-under `[[stations]]` is the one in force: the interface shows it and declines to change
-it, field map included.
+## Configuring stations in weewx.conf
+
+Everything the interface does can be written into `weewx.conf`. A station declared
+under `[[stations]]` is the one in force: the interface displays it and declines to
+change it, field map included.
 
 ```ini
 [UltimatePush]
@@ -116,53 +189,72 @@ it, field map included.
             channel = 4
 ```
 
-| Option | Meaning |
-|---|---|
-| `passkey` or `id` | What the console sends to name itself. A PASSKEY for Ecowitt and Ambient, an ID for Weather Underground, a serial number for WeatherFlow, a MAC for the two bridges. |
-| `path` | An upload path of this station's own. Its identity and its secret at once. |
-| `role` | `main` or `extra`. Default `main`. |
-| `channel` | Which `extraTempN` an extra station gets. |
-| `infer_unknown` | As in the driver section, for this station only. |
-| `field_map_extensions` | This station's own field map. Wins over everything. |
+#### passkey or id
 
-Two stations set to `main` is a mistake the driver says out loud at startup. It still
-refuses to let the second one overwrite the first, but it should not have to.
+What the console sends to identify itself: a PASSKEY for Ecowitt and Ambient hardware,
+an ID for Weather Underground, a serial number for WeatherFlow, a MAC address for the
+two bridges. One of the two is required. No default.
 
-What the interface writes goes in `ultimate-push-web.conf` beside the console list, not
-here. See [Web interface](Web-interface).
+#### path
 
-## What happens to an upload nobody expected
+An upload path belonging to this station, which is both its identity and its secret.
+Default is none.
+
+#### role
+
+`main` or `extra`. Default is `main`.
+
+#### channel
+
+Which `extraTempN` and `extraHumidN` an extra station writes to. Default is the next
+free channel.
+
+#### infer_unknown
+
+As in the driver section, for this station only. Default is the driver setting.
+
+#### field_map_extensions
+
+This station's own field map. Takes precedence over the catalog and the role. Default
+is empty.
+
+Settings written by the web interface are kept in `ultimate-push-web.conf` beside the
+console list, not in `weewx.conf`. See [Web interface](Web-interface.md).
+
+## Uploads from stations that are not known
 
 The driver answers only to stations it knows. Anything else is refused and shown in the
-interface with its readings.
+web interface with its readings, so that it can be identified before it is accepted.
 
 ```
 WARNING user.ultimatepush.driver: An ecowitt upload from 192.168.1.51 names station
 '9A2B4C6D8E0F1A3B5C7D9E1F2A4B6C8D', which is not one of this driver's consoles.
 ```
 
-That is not paranoia about strangers. It is the same rule as everywhere else here: two
-sensors in one column cannot be separated afterwards, so nothing writes into your
-station's fields until you have said it may.
+The reason is the same as everywhere else here: two sensors in one column cannot be
+separated afterwards, so nothing writes into an existing station's fields until it has
+been accepted.
 
-### Once a path has been used, others stop being answered
+### Paths that are answered
 
-A station with a path of its own is proof that the path works. From the first upload
-that arrives on one, a request to any other path gets a 404, except the endpoints that
-are burned into firmware and the one you may have set as `path` in the driver section.
+The driver's own path is always answered, because it is what the setup page tells you
+to enter and how every console that cannot be given its own path arrives.
 
-Until then everything is accepted, so that setting a station up here and not yet having
-typed it into the console does not bounce the uploads you already have.
+A path belonging to a station is answered. Once any station's own path has been used,
+other paths are refused with a 404, except the endpoints burned into firmware and the
+path set as `path` in the driver section. Until a station path has been used, every
+path is accepted, so that a station set up in the interface but not yet entered into
+its console does not cause existing uploads to be refused.
 
-## Where the list of accepted stations lives
+## Where the list of accepted stations is kept
 
-In the database, in the same metadata table WeeWX keeps `lastUpdate` in, so that it
-travels with the readings it protects and is in every backup of them. A text file beside
-the database is the fallback when there is no database to ask.
+In the database, in the same metadata table WeeWX uses for `lastUpdate`, so that it
+travels with the readings it protects and is included in every backup of them. A text
+file beside the database is the fallback when there is no database to query.
 
-A station named in `weewx.conf` needs neither. That is the version that survives a
-rebuilt machine and a copied database, which is why the driver suggests it the first
-time it adopts one:
+A station named in `weewx.conf` requires neither. That is the configuration that
+survives a rebuilt machine and a copied database, which is why the driver suggests it
+the first time it adopts a console:
 
 ```
 INFO user.ultimatepush.driver: To keep it independent of anything stored, put it in

@@ -47,13 +47,41 @@ CHANNELS = 8
 
 
 def shifted(field, channel):
-    """Where an extra station's reading goes, or None if it has nowhere."""
+    """Where an extra station's reading goes.
+
+    Args:
+        field (str): The WeeWX field the reading would have filled.
+        channel (int): The station's channel.
+
+    Returns:
+        str: The field it is moved to, or None when there is nowhere for it to go.
+        Only temperature and humidity have anywhere; see the module docstring.
+    """
     pattern = SHIFT.get(field)
     return pattern % channel if pattern else None
 
 
+def columns_for(channel):
+    """The archive columns one extra channel writes into.
+
+    Args:
+        channel (int): A channel from 1 to CHANNELS.
+
+    Returns:
+        tuple: The WeeWX field names an extra station on that channel fills.
+    """
+    return tuple(pattern % channel for pattern in SHIFT.values())
+
+
 def next_channel(taken):
-    """The lowest channel no extra station has yet, or None if they are all used."""
+    """The lowest channel that is free.
+
+    Args:
+        taken (set): The channels already in use.
+
+    Returns:
+        int: The lowest free channel, or None when all of them are used.
+    """
     for channel in range(1, CHANNELS + 1):
         if channel not in taken:
             return channel
@@ -61,11 +89,21 @@ def next_channel(taken):
 
 
 def extensions_for(role, channel, catalog_fields):
-    """The field map a role implies, as raw name -> WeeWX field.
+    """The field map a role implies.
 
     Built from the station's own catalog, so that only the raw names this hardware
     actually sends are shifted. Returned as an ordinary extension map, which is what
     the mapper already knows how to take, and which a hand-written one then overrides.
+
+    Args:
+        role (str): MAIN or EXTRA.
+        channel (int): The station's channel, or None if it has not been given one.
+        catalog_fields (dict): Raw field name to WeeWX field, from the catalog the
+            station's uploads are read with.
+
+    Returns:
+        dict: Raw field name to WeeWX field, for the readings that are moved. Empty
+        for the main station, which has nothing moved.
     """
     if role != EXTRA or not channel:
         return {}
@@ -81,10 +119,12 @@ def collisions(by_station):
     """WeeWX fields more than one station writes.
 
     Args:
-        by_station (dict): station name -> set of WeeWX fields it has produced.
+        by_station (dict): Station name to the set of WeeWX fields it has produced.
 
-    Returns {field: [station, ...]} for every field with more than one, sorted so the
-    answer is the same every time somebody looks at it.
+    Returns:
+        dict: Each field more than one station writes, to the list of stations that
+        write it, sorted so that the answer is the same every time somebody looks at
+        it.
     """
     owners = {}
     for station, fields in by_station.items():

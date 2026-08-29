@@ -33,6 +33,15 @@ except ImportError:
 
 
 def main(argv=None):
+    """Run the diagnostic command.
+
+    Args:
+        argv (list): Command line arguments, without the program name. Defaults to
+            what was actually passed on the command line.
+
+    Returns:
+        int: An exit status, 0 when there was nothing to complain about.
+    """
     parser = argparse.ArgumentParser(prog='python -m user.ultimatepush',
                                      description=__doc__)
     parser.add_argument('--port', default=8000, help="Port to listen on. Default 8000.")
@@ -66,7 +75,15 @@ def main(argv=None):
              ', '.join(p.name for p in known)))
 
     def answer(request):
-        """The reply the sender is waiting for, worked out from what it sent."""
+        """The reply the sender is waiting for, worked out from what it sent.
+
+        Args:
+            request: The upload, as the listener hands it over.
+
+        Returns:
+            tuple: (body, content_type), which is what this hardware's firmware
+            waits for before it counts the upload as delivered.
+        """
         try:
             protocol = protocols.detect(request, transport.parse(request.text), known)
         except Exception:
@@ -129,6 +146,12 @@ def _say_url(config_path):
 
     The address is in the log at startup, but a log is a poor place to keep something
     you want to open next week.
+
+    Args:
+        config_path (str): The path to weewx.conf.
+
+    Returns:
+        int: An exit status.
     """
     try:
         import configobj
@@ -157,7 +180,12 @@ def _say_url(config_path):
 
 
 def _decisions(mapper):
-    """Print the configuration block for everything that is waiting on the user."""
+    """Print the configuration block for everything that is waiting on the user.
+
+    Args:
+        mapper (Mapper): The mapper that read the upload, which is holding what it
+            would not place on its own.
+    """
     waiting = sorted(mapper.warned & set(mapper.undecided))
     if not waiting:
         return
@@ -191,6 +219,12 @@ def _columns_of(config):
     Asking the schema is asking what a fresh database would have been given, which is
     not the question. A database somebody has already added columns to would be told
     it needs them again.
+
+    Args:
+        config (str): The path to weewx.conf, or None when there is none to read.
+
+    Returns:
+        set: The columns the archive table has, or None to fall back to the schema.
     """
     if not config:
         return None
@@ -201,6 +235,14 @@ def _columns_of(config):
 
 
 def _report(packet, guesses, mapper, config):
+    """Print what one upload produced, and what it would still need.
+
+    Args:
+        packet (dict): The loop packet the upload became.
+        guesses (dict): Fields the driver worked out for itself, and how.
+        mapper (Mapper): The mapper that read it.
+        config (str): The path to weewx.conf, or None.
+    """
     readings = {f: v for f, v in packet.items() if f != 'dateTime'}
     print("\n%d readings" % len(readings))
     for field, value in sorted(readings.items()):
@@ -237,7 +279,12 @@ def _report(packet, guesses, mapper, config):
 
 
 def _check_history(packet, config):
-    """Say which of these fields already hold readings, and why that matters."""
+    """Say which of these fields already hold readings, and why that matters.
+
+    Args:
+        packet (dict): The loop packet the upload became.
+        config (str): The path to weewx.conf, or None when there is nothing to read.
+    """
     try:
         used = columns.occupied(config)
     except Exception as e:

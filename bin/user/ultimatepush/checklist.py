@@ -36,7 +36,13 @@ UNSET_COORDINATE = (0.0, 90.0, -90.0)
 
 
 def steps(driver):
-    """Every step, in the order somebody meets them. Each is a dict for the page."""
+    """Every step, in the order somebody meets them.
+
+    Args:
+        driver: The running driver, which is where every answer comes from.
+
+    Returns:
+        list: One dict per step, ready for the page."""
     found = driver.activity.snapshot()
     # The activity log keeps what was refused, which is history. Whether a console is
     # still being refused is a question about now, and the answer is whether the
@@ -56,7 +62,13 @@ def steps(driver):
 
 
 def summary(driver):
-    """The steps, and whether anything is left."""
+    """The steps, and whether anything is left.
+
+    Args:
+        driver: The running driver.
+
+    Returns:
+        dict: The steps, which one is next, and whether everything is done."""
     listed = steps(driver)
     outstanding = [s for s in listed if not s['done'] and not s['optional']]
     return {
@@ -68,11 +80,33 @@ def summary(driver):
 
 
 def _nothing(text):
-    """A redaction that redacts nothing. The counts here never reach the page."""
+    """A redaction that redacts nothing.
+
+    The counts taken here never reach the page, so there is nothing to hide from.
+
+    Args:
+        text (str): An upload body.
+
+    Returns:
+        str: The same text.
+    """
     return text
 
 
 def _step(ident, title, done, detail='', optional=False, **extra):
+    """One step of the checklist, as the page wants it.
+
+    Args:
+        ident (str): The step's identity, which the page dispatches on.
+        title (str): One line, saying what is or is not the case.
+        done (bool): Whether this step is settled.
+        detail (str): What to do about it, where there is something to do.
+        optional (bool): Whether an unfinished step still counts as outstanding.
+        **extra: Anything the page needs for this step in particular.
+
+    Returns:
+        dict: The step.
+    """
     step = {'id': ident, 'title': title, 'done': done, 'detail': detail,
             'optional': optional}
     step.update(extra)
@@ -91,6 +125,13 @@ def _hardware(driver, found):
     The protocol list is carried whether the step is finished or not, because setting
     up a second station is the same job as setting up the first and the page needs
     the same material for it.
+
+    Args:
+        driver: The running driver.
+        found (list): The stations that have uploaded.
+
+    Returns:
+        dict: The step.
     """
     address = driver.web_address()
     port = driver.data_port()
@@ -102,8 +143,8 @@ def _hardware(driver, found):
         return _step(
             'hardware', 'Put the path into the console', False,
             "%d station(s) are set up here and have not uploaded yet. Each one has a "
-            "path of its own, below. Leave this page open: it notices the first "
-            "upload by itself." % len(waiting),
+            "path of its own, on the Stations tab. Leave this page open: it notices "
+            "the first upload by itself." % len(waiting),
             protocols=protocols, created=waiting)
     if found:
         return _step('hardware', 'Your hardware is uploading', True,
@@ -123,6 +164,15 @@ def _set_up_but_not_heard(driver, found, address, port):
     Held here rather than in the page, so that the settings survive a reload. Somebody
     who set a station up, closed the tab and came back would otherwise have made a
     secret path that nothing will ever show them again.
+
+    Args:
+        driver: The running driver.
+        found (list): The stations that have uploaded.
+        address (str): This machine's address, as the console has to be told it.
+        port (int): The data port.
+
+    Returns:
+        list: One entry per station that is set up and still silent.
     """
     from . import protocols as catalogue
 
@@ -148,6 +198,15 @@ def _pointing(protocol, address, port, path):
 
     The settings and the sentences stay apart. The page lays the first out as a table
     to copy from, and a sentence in that table would read as a field to fill in.
+
+    Args:
+        protocol: The protocol class.
+        address (str): This machine's address.
+        port (int): The data port.
+        path (str): The path this station should upload to.
+
+    Returns:
+        dict: What to put into the console, as settings and as sentences.
     """
     fill = {'address': address, 'port': port, 'path': path}
     return {
@@ -163,8 +222,18 @@ def _pointing(protocol, address, port, path):
 
 
 def _refused(driver, waiting):
-    """Something is uploading and being turned away. Either it is theirs and should
-    be let in, or somebody else's and the refusal is the point."""
+    """Something is uploading and being turned away.
+
+    Either it is theirs and should be let in, or somebody else's and the refusal is
+    the point.
+
+    Args:
+        driver: The running driver.
+        waiting (list): The stations being refused.
+
+    Returns:
+        dict: The step.
+    """
     if not waiting:
         return _step('refused', 'Nothing is being turned away', True)
     return _step(
@@ -179,7 +248,15 @@ def _refused(driver, waiting):
 
 
 def _placements(driver, found):
-    """Fields nobody but the user can place. The reason this interface exists."""
+    """Fields nobody but the user can place. The reason this interface exists.
+
+    Args:
+        driver: The running driver.
+        found (list): The stations that have uploaded.
+
+    Returns:
+        dict: The step.
+    """
     pending = []
     for row in found:
         seen = set(row.get('raw_seen', ()))
@@ -196,45 +273,75 @@ def _placements(driver, found):
 
 
 def _sharing(driver, found):
-    """Two stations writing one column.
+    """Readings that are not being written, because another station has the column.
 
-    The role moves what can be moved and the driver drops the rest rather than let
-    two sensors take turns in a column. This says which fields that was, because a
-    reading being dropped is a thing somebody should know about rather than discover
-    a month later.
+    Used to be "two stations writing one column", which the driver now stops before
+    it starts: a column belongs to whoever filled it first, and the main station
+    outranks that. So the thing worth showing is no longer the collision. It is what
+    the rule costs -- which readings of which station are going nowhere, and who has
+    the column they wanted.
+
+    Somebody whose third console is not recording its soil moisture should find that
+    out here rather than a month later in an empty graph.
+
+    Args:
+        driver: The running driver.
+        found (list): The stations that have uploaded.
+
+    Returns:
+        dict: The step, with one entry per reading that went nowhere.
     """
-    from . import roles
     if len(found) < 2:
         return _step('sharing', 'Nothing is sharing a column', True)
 
-    # What actually reached a packet, not what a catalog could fill. A role moves
-    # some of it out of the way and the driver drops the rest, and a step that counted
-    # the catalog would stay outstanding for ever: a second weather station always has
-    # wind and rain with nowhere of their own to go.
-    by_station = {row['name'] or row['ident']: set(row.get('written', ()))
-                  for row in found}
-    shared = roles.collisions(by_station)
-    if not shared:
-        dropped = sum(len(row.get('dropped_fields', ())) for row in found)
+    main = driver._main_ident()
+    turned_away, expected = [], 0
+    for row in found:
+        named = driver.named_by_hand(row['ident'])
+        for field in row.get('dropped_fields', ()):
+            owner = driver.owners.owner(field)
+            if owner == main and field not in named:
+                # An extra sensor's wind and pressure, kept out of the main
+                # station's columns. That is the role doing what it is for, and a
+                # checklist step that stayed red for it would stay red for ever.
+                expected += 1
+                continue
+            turned_away.append({
+                'field': field,
+                'station': row['name'] or row['ident'],
+                'owner': driver.name_of_owner(field),
+            })
+    if not turned_away:
         return _step(
             'sharing', 'Nothing is sharing a column', True,
             ("%d stations. None writes where another does, and %d reading(s) are "
-             "being dropped to keep it that way." % (len(found), dropped))
-            if dropped else
-            "%d stations, and none of them writes where another does." % len(found))
+             "dropped to keep it that way." % (len(found), expected)) if expected
+            else "%d stations, and none of them writes where another does."
+                 % len(found))
     return _step(
-        'sharing', '%d column(s) more than one station would fill' % len(shared),
-        False,
-        "The main station keeps them and the others are dropped, because two sensors "
-        "in one column cannot be separated afterwards. Give the others fields of "
-        "their own on the Fields tab, or change which station is the main one.",
-        fields=[{'field': field, 'stations': who}
-                for field, who in sorted(shared.items())])
+        'sharing',
+        '%d reading(s) have nowhere of their own to go' % len(turned_away), False,
+        "A column takes one answer, so these are dropped rather than written over "
+        "somebody else's readings. That is the right outcome when the column really "
+        "is the other station's. When it is not, give this one a field of its own on "
+        "the Fields tab, and add the column if the database has none.",
+        fields=[{'field': r['field'], 'stations': [r['station']],
+                 'owner': r['owner']}
+                for r in sorted(turned_away,
+                                key=lambda r: (r['station'], r['field']))])
 
 
 def _columns(driver, found):
     """Readings with nowhere to live. They show up as current conditions and are gone
-    at the next archive interval, which looks like the driver losing them."""
+    at the next archive interval, which looks like the driver losing them.
+
+    Args:
+        driver: The running driver.
+        found (list): The stations that have uploaded.
+
+    Returns:
+        dict: The step.
+    """
     missing = []
     for row in found:
         answer = driver.web_columns(row['ident'])
@@ -252,7 +359,14 @@ def _columns(driver, found):
 
 
 def _location(driver):
-    """Where the station is. Not ours to write, so it is shown to paste."""
+    """Where the station is. Not ours to write, so it is shown to paste.
+
+    Args:
+        driver: The running driver.
+
+    Returns:
+        dict: The step, with the block to paste into weewx.conf.
+    """
     station = driver.station_location()
     if station is None:
         return _step('location', 'Where the station is', True,

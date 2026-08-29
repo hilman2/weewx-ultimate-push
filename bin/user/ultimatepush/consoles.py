@@ -64,6 +64,14 @@ def path_for(weewx_root=None, configured=None, sqlite_root=None):
     Beside the database, because that is a directory WeeWX writes to as itself, and
     the one people back up. Under a package installation the configuration directory
     belongs to root and the driver cannot write there at all.
+
+    Args:
+        weewx_root (str): The WeeWX root directory, when there is one.
+        configured (str): A path set in weewx.conf, which wins over everything else.
+        sqlite_root (str): Where the SQLite database lives, when it is SQLite.
+
+    Returns:
+        str: The path to the file.
     """
     if configured:
         return configured
@@ -78,6 +86,11 @@ class Store:
 
     The database is asked first and written first. The file is used when there is no
     binding to open, which is the case in tests and when running the driver directly.
+
+    Args:
+        path (str): The fallback file, used when there is no database.
+        config_dict (dict): The whole of weewx.conf, for opening the database.
+        binding (str): The data binding to use.
     """
 
     def __init__(self, path, config_dict=None, binding='wx_binding'):
@@ -95,7 +108,16 @@ class Store:
         return _read_file(self.path)
 
     def add(self, passkey, note=''):
-        """Record an identity. Returns where it went, or None if it went nowhere."""
+        """Record an identity this driver answers to.
+
+        Args:
+            passkey (str): The identity, as the console sends it.
+            note (str): Why it was recorded, kept beside it in the file.
+
+        Returns:
+            str: Where it went, 'database' or the path of the file, or None if it
+            could not be recorded anywhere.
+        """
         known = self.read()
         if passkey in known:
             return self.where
@@ -131,6 +153,15 @@ class Store:
         return [k for k in (stored or '').split(',') if k.strip()]
 
     def _to_database(self, known):
+        """Record the identities in the database.
+
+        Args:
+            known (list): Every identity to record.
+
+        Returns:
+            bool: Whether the database took them. False when there is no database
+            to write to, which is when the file is used instead.
+        """
         manager = self._manager()
         if manager is None:
             return False
@@ -144,6 +175,14 @@ class Store:
 
 
 def _read_file(path):
+    """The identities recorded in the fallback file.
+
+    Args:
+        path (str): The file.
+
+    Returns:
+        list: The identities, or an empty list when there is no file.
+    """
     try:
         with open(path, encoding='utf-8') as fd:
             return [line.split('#')[0].strip() for line in fd
@@ -153,6 +192,16 @@ def _read_file(path):
 
 
 def _write_file(path, passkey, note=''):
+    """Add one identity to the fallback file.
+
+    Args:
+        path (str): The file.
+        passkey (str): The identity to record.
+        note (str): Why, kept beside it as a comment.
+
+    Returns:
+        bool: Whether it was written.
+    """
     try:
         directory = os.path.dirname(path)
         if directory and not os.path.isdir(directory):

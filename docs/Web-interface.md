@@ -1,29 +1,28 @@
 # The web interface
 
-A page that shows what each station is sending, keeps the last few raw uploads, and
-lets you place a field without editing a file or restarting anything.
+A page that shows what each station sends, keeps the most recent raw uploads, and lets
+you place a field without editing a file or restarting WeeWX.
 
-**It is already on.** Installing the extension switches it on, on port 8080, with a
-token made at install time that is different on every machine. There is nothing to
-set up.
+The interface is enabled by the installer, on port 8080, with a token generated at
+install time that differs on every machine. No setup is required.
 
-The driver prints the whole address to the log when it starts:
+The driver logs the full address at startup:
 
 ```
 INFO user.ultimatepush.driver: The web interface is at
 http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
 ```
 
-Or ask for it again later:
+To retrieve the address later:
 
 ```
 python -m user.ultimatepush --url
 ```
 
-That address holds the token, so treat the log the way you treat `weewx.conf`.
+The address contains the token, so treat the log as you would treat `weewx.conf`.
 
-In a container the address it reports is the container's own, because that is where the
-process is. Use the address of the host, and whichever port the container publishes.
+In a container, the address reported is the container's own, because that is where the
+process runs. Use the address of the host and whichever port the container publishes.
 
 To close the port:
 
@@ -33,9 +32,9 @@ To close the port:
         enable = false
 ```
 
-## The normal case: a Pi or a NUC on your own network
+## A typical installation
 
-Nothing in front of it, no proxy, no Docker.
+A Raspberry Pi or similar on a private network, with no proxy in front of it.
 
 ```
    Console                              Raspberry Pi 192.168.1.50
@@ -48,161 +47,163 @@ Nothing in front of it, no proxy, no Docker.
       +-------------------------------->
 ```
 
-Both ports are above 1024, so nothing here needs root.
-
-The whole of it:
+Both ports are above 1024, so neither requires root.
 
 ```
-weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.8.0.zip
+weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.12.4.zip
 sudo systemctl restart weewx
 ```
 
-Then point the console at `192.168.1.50:8000`, and open the address the log printed.
+Then point the console at `192.168.1.50:8000` and open the address from the log.
 
-### Where things land
+### Where files are placed
 
 | | |
 |---|---|
 | The driver | `/etc/weewx/bin/user/ultimatepush/` |
 | `weewx.conf` | `/etc/weewx/`, owned by root |
-| What this page writes | `/var/lib/weewx/ultimate-push-web.conf` |
+| Settings written by this page | `/var/lib/weewx/ultimate-push-web.conf` |
 | Which consoles are accepted | in the database, with a file beside it as a fallback |
 
-WeeWX runs as the user `weewx` and `/etc/weewx` belongs to root. That is exactly why
-this page writes to `/var/lib/weewx` and not into `weewx.conf`: there, it could not.
+WeeWX runs as the user `weewx` and `/etc/weewx` is owned by root. This is why the
+interface writes to `/var/lib/weewx` rather than to `weewx.conf`.
 
-### Leave `trust_proxy` alone
+### trust_proxy
 
-It is off, and on a Pi with nothing in front of it that is what you want. Turned on
-without a proxy, anybody could put an address of their choosing in `X-Forwarded-For`
-and the doorman below would count invented addresses instead of theirs.
+Leave this off unless there is a proxy in front. With it on and no proxy present, any
+client can supply an address of its choosing in `X-Forwarded-For`, and the rate limiter
+described below would count invented addresses instead of the real one.
 
-## What it is for
+## What the interface is for
 
-Placing a field is a decision only the person who installed the sensor can make. A
-WN34 reports on `tf_ch1` whether it is a spike in a bed or a lead in a pool, and the
-driver will not guess, because two sensors in one column cannot be separated
-afterwards.
+Placing a field is a decision only the person who installed the sensor can make. A WN34
+reports on `tf_ch1` whether it is a spike in a raised bed or a lead in a pool. The
+driver does not guess, because two sensors in one column cannot be separated afterwards.
 
-Today that decision is made like this: read a log line, paste a line into
-`weewx.conf`, restart WeeWX, wait for an upload, read the log again. That is a poor
-loop for something irreversible, and it leaves out the one thing you actually want to
-know before deciding: whether the column you are about to use already holds somebody
-else's readings.
+Without the interface, that decision is made by reading a log entry, adding a line to
+`weewx.conf`, restarting WeeWX, waiting for an upload and reading the log again. It
+also omits the information that matters most: whether the column is already in use.
 
-The page shows that. Per raw field: what arrived, its last value, where it would go,
-whether a column exists, and how many earlier values that column already holds.
+The interface shows, for each raw field, what arrived, its last value, where it would be
+written, whether a column exists, and how many earlier values that column holds.
 
-## What you see first
+## The checklist
 
-Until a station is recording properly, the page opens on a checklist of what is still
-in the way. It is not a wizard: it has no step number, it works out what is true every
-time you look, and it is right whether this is your first visit or your hundredth.
-
-Five things can be in the way:
+Until a station is recording properly, the page opens on a checklist of what still
+stands in the way. It has no step numbers and no fixed order: it determines what is
+true each time it is loaded.
 
 | | |
 |---|---|
-| Your hardware is not pointing here | Name the station and pick your make. For hardware whose path is yours to choose it makes one and shows exactly what to type. It waits and notices the first upload by itself. |
-| Something is being turned away | A console this driver does not know. One click lets it in. |
-| A field is waiting for you | The placements only you can make. |
-| Two stations want one column | Which columns, and who wants them. A role settles it. |
+| Your hardware is not pointing here | Enter a name and select the hardware. For hardware whose path is yours to choose, the driver generates one and displays the settings to enter. The page detects the first upload without being reloaded. |
+| Something is being turned away | A console the driver does not know. One click accepts it. |
+| A field is waiting for you | Placements only you can make. |
+| Readings have nowhere of their own to go | Which readings were dropped, which station sent them, and which station holds the column. |
 | A reading has no column | With the `weectl` commands. |
-| The station does not know where it is | `[Station]` in `weewx.conf`, which this driver cannot write, so it shows the block to paste. |
+| The station does not know where it is | `[Station]` in `weewx.conf`, which this driver cannot write, so the block to paste is displayed. |
 
-Once everything is answered it stops asking and stays as a health page. A second console
-that turns up next year puts its step back at the top.
+Once everything is resolved the checklist stops asking and remains as a status page. A
+console that appears a year later puts its step back at the top.
 
-## The five things it shows
+## The tabs
 
-**Setup.** The checklist above.
+### Setup
 
-**Stations.** Everything that has uploaded since the driver started, with its
-protocol, which catalog its uploads are read with, how many fields it sends and when
-it was last heard from. Underneath, the stations being refused.
+The checklist above, and the form for setting up a station. Selecting a role is part of
+that form: the first station is the main station, and every station after it is offered
+as an extra sensor. See [Stations](Stations.md).
 
-**Fields.** Every station at once, one block each, foldable. Not one page per
-station: the question is not "what does this station send", it is "who fills
-`outTemp`", and with two stations that answer used to be spread over two pages,
-neither of which could show the collision that matters.
+### Stations
 
-The box in each row offers the WeeWX fields that measure the same thing first, then
-everything else, then `nowhere`, then a field of your own. Numbered families run to
-16, past where the schema stops, so `extraTemp12` is offered even though no database
-has a column for it. Options say what they cost: `new column`, or the station and
-reading that already hold them.
+Every station the driver knows, including stations set up but never heard from, and
+stations declared in `weewx.conf`. Each entry is collapsed and opens to show:
 
-One WeeWX field takes one reading. Picking one that is taken says who has it and
-changes nothing until you say yes, and then the reading that had it is placed
+- The console settings for that station, with its own upload path. The checklist shows
+  these once and then stops; a console that has to be set up again a year later needs
+  them again.
+- Which archive columns the station fills, and a button to release them.
+- The station's name, role and channel, and a button to remove it.
+
+Stations declared in `weewx.conf` are shown but not editable, and say so. The console
+adopted as the first one ever heard is shown but has no settings to change, because it
+is named in no file.
+
+### Fields
+
+Every station at once, one block each, collapsible. Not one page per station: the
+question is not what a given station sends, it is which station fills `outTemp`, and
+that answer is spread across two pages if each station has its own.
+
+The selector in each row offers the WeeWX fields that measure the same thing first,
+then everything else, then `nowhere`, then a field of your own. Numbered families run
+to 16, past the end of the standard schema, so `extraTemp12` is offered even though no
+database has a column for it. Each option states what it costs: `new column`, or the
+station and reading that already hold it.
+
+One WeeWX field takes one reading. Selecting a field that is taken reports who holds it
+and changes nothing until you confirm, after which the reading that held it is placed
 `nowhere` rather than left to take turns in the column.
 
-A field with no column has a button that makes it, in the row. What you pick takes
-effect on the next upload.
+A field with no column has a button in the row that creates it. A selection takes effect
+on the next upload.
 
-Each block carries the station's role, and a button to change it. See
-[Stations](Stations).
+### Raw uploads
 
-**Raw uploads.** The last twenty per station, newest first, with a copy button.
-Everything that names the station is replaced, so they are safe to paste into an
-issue. This replaces turning on `log_raw` and waiting with a grep running.
+The last twenty uploads per station, newest first, with a copy button. Anything that
+names the station is redacted, so they are safe to attach to an issue. This replaces
+enabling `log_raw` and watching the log.
 
-**Database columns.** Which readings have nowhere to live, with the `weectl database
-add-column` commands for anyone who would rather run them, and the same check the
-Fields tab uses. There is also a check of what the archive table already holds, which
-is one pass over it, so it happens when you ask rather than on every page load.
+### Database columns
 
-## Where the settings go
+Which readings have nowhere to be written, with the `weectl database add-column`
+commands, and the same check the Fields tab uses. The archive table is also checked for
+what it already holds. That check is one pass over the table, so it runs when the page
+is first opened rather than on every load.
 
-Not into `weewx.conf`. Three reasons, all about the file rather than the interface:
+## Where the settings are written
 
-WeeWX is running from it, so a change written there does nothing until a restart, and
-a driver cannot restart the engine it is part of. Under a package installation the
-file belongs to root and the driver runs as the weewx user. And it is your file, with
-your comments in it.
+Not to `weewx.conf`, for three reasons that concern the file rather than the interface.
+WeeWX is running from it, so a change written there has no effect until a restart, and a
+driver cannot restart the engine it is part of. Under a package installation the file is
+owned by root while the driver runs as the `weewx` user. And it is your file, with your
+comments in it.
 
-So what the interface changes goes in `ultimate-push-web.conf`, beside the console
-list, in the same format. It is read on the next upload. Nothing restarts.
+Settings the interface changes are written to `ultimate-push-web.conf`, beside the
+console list, in the same format. They are read on the next upload, without a restart.
 
-Everything that does need a restart, the port, `protocols`, `path`, the interface
-shows as a block to copy rather than writing it.
+Anything that does require a restart — the port, `protocols`, `path` — is displayed as a
+block to copy rather than written.
 
-### Which file wins
+### Which file takes precedence
 
-A placement written here beats `[[field_map_extensions]]` in `weewx.conf`. The row says
-where the one it is showing came from, so the change is made knowingly. The interface
-is meant to replace the terminal and the editor; if the one placement somebody most
-wants to fix were the one it refused to touch, it would not have replaced anything.
+A placement written by the interface takes precedence over `[[field_map_extensions]]` in
+`weewx.conf`. Each row states where the value it is showing came from.
 
-**A station declared under `[[stations]]` is different.** Its field map is part of that
-declaration, and the interface shows it and declines to change it. Half a station's
-configuration living somewhere else is how a configuration becomes unreadable.
+A station declared under `[[stations]]` is different. Its field map is part of that
+declaration, and the interface displays it and declines to change it, as it does the
+station's name, role and channel.
 
-The same goes for a station named under `[[stations]]` in `weewx.conf`: its field map
-lives there, and the interface will not write one for it.
+## Access control
 
-## What protects it, and what does not
+The interface is protected by a token, a rate limiter, and the address the socket is
+bound to.
 
-A token, a doorman that stops answering an address which keeps getting it wrong, and
-where the socket is bound. That is all, and it is worth being plain about what it is
-worth.
+This is a weather station rather than a bank. The intent is that a stray scanner, a
+curious guest and a mistyped address all come to nothing, and that you can see that it
+happened.
 
-This is a weather station. The point is not to withstand somebody determined who has
-your address. It is that a stray scanner, a curious guest and a typo all come to
-nothing, and that you can see it happened.
+### The rate limiter
 
-### The doorman
+Ten wrong tokens from one address within five minutes, and that address stops receiving
+answers: not an error, an empty reply. A correct token does not help either, because the
+check is not reached.
 
-Ten wrong tokens from one address inside five minutes and that address stops being
-answered at all. Not an error, not a hint: an empty reply. The right token does not
-help either, because the black hole does not check one, which is also what stops it
-costing anything.
+The limit is not a fixed penalty. Attempts fall out of the window and the address is
+answered again. A correct token clears the count, so an address that mistyped the token
+four times and then supplied it correctly is not left one attempt from a lockout.
 
-It is not a punishment to be served out. The tries fall out of the window and the
-address is answered again. And a right token clears the tally, so somebody who
-mistyped it four times and then pasted it properly is not left one try from a lockout.
-
-One address getting it wrong never shuts out another. Otherwise anybody on the network
-could lock you out of your own station.
+One address exceeding the limit never affects another, or anyone on the network could
+lock you out of your own station.
 
 ```ini
     [[web]]
@@ -210,47 +211,48 @@ could lock you out of your own station.
         window = 300
 ```
 
-The page shows what has been knocking, so it is not only in the log:
+The page reports what has been attempted, so that it is not only in the log:
 
-    3 request(s) with the wrong token.
-    192.168.1.99: 3 wrong, last 2m ago
+```
+3 request(s) with the wrong token.
+192.168.1.99: 3 wrong, last 2m ago
+```
 
-That record survives your own successful login. It has to: reading it means getting
-the token right first, and if success cleared it there would never be anything to see.
+That record survives a successful login, because reading it requires supplying the
+correct token first.
 
-### The rest
+### What the token is worth
 
-**It is HTTP.** The token is in the URL on the first request, so it is in the browser
-history and in the logs of anything in between. On a network you trust that is a
-bounded exposure. Across the internet it is not acceptable without TLS in front.
+The interface serves plain HTTP. The token is in the URL on the first request, so it
+appears in browser history and in the logs of anything in between. On a private network
+that is a bounded exposure; across the internet it requires TLS in front.
 
-**Ten random characters is about sixty bits.** At ten guesses per five minutes, working
-through that takes longer than the sun has left. A token you thought up rather than
-generated is a different sum, and the doorman is what makes even that impractical from
-outside. The driver refuses to start with fewer than ten characters, because an
-interface that can change the field map should not be open because somebody left the
-setting blank.
+Ten random characters is approximately sixty bits. At ten attempts per five minutes,
+exhausting that takes longer than the remaining lifetime of the sun. A token chosen by
+hand is weaker, and the rate limiter is what makes even that impractical from outside.
+The driver refuses to start with fewer than ten characters.
 
-**The token is checked by the driver, not by the listener.** The listener would do it
-first, which sounds better and is not: its check runs before anything of ours, so a
-wrong token would be answered and forgotten and there would be nothing to count.
+The token is checked by the driver rather than by the listener. The listener would check
+it first, which sounds preferable but is not: its check runs before any of this driver's
+code, so a wrong token would be answered and forgotten, and there would be nothing to
+count.
 
-**Anybody with the token can change the field map.** There are no roles.
+Anyone with the token can change the field map. There are no roles.
 
-**A page on another site cannot drive it.** The API takes JSON with a token header,
-which a browser will not send cross-origin without a preflight, and the listener
-answers no `OPTIONS`. Worth having, and not something to lean on.
+A page on another site cannot drive the API, which takes JSON with a token header. A
+browser will not send that cross-origin without a preflight, and the listener answers no
+`OPTIONS` request.
 
 ### One secret, not two
 
-The token is the secret. If you put a reverse proxy in front, there is no reason to
-give it a secret path as well: both are strings in the same address, both end up in
-the same browser history, and two of the same thing is not twice the protection. Use a
-plain path and let the token do the work. It is the one the doorman counts against.
+If you put a reverse proxy in front, there is no reason to give it a secret path as
+well. Both are strings in the same address and both appear in the same browser history.
+Use a plain path and let the token do the work; it is the one the rate limiter counts
+against.
 
-### On a network you do not trust
+### On an untrusted network
 
-Bind it to localhost and reach it through a tunnel:
+Bind the interface to localhost and reach it through a tunnel:
 
 ```ini
     [[web]]
@@ -264,51 +266,80 @@ Bind it to localhost and reach it through a tunnel:
 ssh -L 8080:localhost:8080 you@your-weewx-machine
 ```
 
-Then `http://localhost:8080/?token=...` on your own machine.
+Then open `http://localhost:8080/?token=...` locally.
 
-Or put a reverse proxy with a certificate in front, and let it do the TLS and, if you
-want one, a second layer of authentication.
+Alternatively, put a reverse proxy with a certificate in front and let it handle TLS
+and, if required, a second layer of authentication.
 
-You can also narrow it to known addresses:
+The interface can also be restricted to known addresses:
 
 ```ini
         allowed_hosts = 192.168.1.20, 192.168.1.21
 ```
 
-## Why it is a second port
+## Why the interface uses a second port
 
-The listener can require a token, and that check happens before anything else. But it
-would then apply to the readings as well, and most of this hardware cannot send a
-token at all. One port cannot both demand a token and accept a console that has none.
+The listener can require a token, and that check runs before anything else. It would
+then apply to the readings as well, and most of this hardware cannot send a token. One
+port cannot both require a token and accept a console that has none.
 
-So the interface gets its own listener, its own port, and the token. The data port is
-unchanged.
+The interface therefore has its own listener, its own port and the token. The data port
+is unchanged.
 
 ## Options
 
-| Option | Default | Meaning |
-|---|---|---|
-| `enable` | `true` | Whether to open the port at all. Set by the installer. |
-| `port` | 8080 | Which port. |
-| `address` | every interface | Bind to one address. `localhost` makes it unreachable from the network. |
-| `token` | made at install | Required. At least 10 characters. Change it here and restart. |
-| `tries` | 10 | Wrong tokens from one address before it stops being answered. |
-| `window` | 300 | Over how many seconds, and how long the silence lasts. |
-| `allowed_hosts` | anywhere | Comma-separated addresses to accept from. |
-| `trust_proxy` | `false` | Take the client address from `X-Forwarded-For`. Only with a proxy you control. |
-| `override_file` | beside the console list | Where the settings the interface writes are kept. |
+These are a subsection of `[UltimatePush]`.
 
-## What it does not do
+#### enable
 
-**Restart WeeWX.** It cannot, and a driver that tried would be a driver restarting the
-engine it is part of.
+Whether to open the port. Set to `true` by the installer. Default is `true`.
 
-**Run `weectl`.** Adding a column rewrites the archive table. The commands are printed
-and running them is yours.
+#### port
+
+Which port the interface listens on. Default is `8080`.
+
+#### address
+
+Bind to one address. `localhost` makes the interface unreachable from the network.
+Default is every interface.
+
+#### token
+
+Required, at least 10 characters. Generated by the installer. Change it here and
+restart. No default.
+
+#### tries
+
+How many wrong tokens from one address before it stops being answered. Default is `10`.
+
+#### window
+
+Over how many seconds those attempts are counted, and how long the silence lasts.
+Default is `300`.
+
+#### allowed_hosts
+
+Comma-separated addresses to accept requests from. Default is anywhere.
+
+#### trust_proxy
+
+Take the client address from `X-Forwarded-For`. Use only with a proxy you control.
+Default is `false`.
+
+#### override_file
+
+Where the settings the interface writes are kept. Default is beside the console list.
+
+## What the interface does not do
+
+**Restart WeeWX.** A driver cannot restart the engine it is part of.
+
+**Run `weectl`.** Adding a column rewrites the archive table. The commands are
+displayed; running them is yours.
 
 **Show anything from before the driver started.** The activity it shows is held in
-memory and is gone on restart. The database has the readings; this has what happened
+memory and is lost on restart. The database holds the readings; this holds what happened
 to them on the way in.
 
-**Change the port, the protocols or the path.** Those are the socket, and the socket
-is made once at startup. The interface shows the block to paste.
+**Change the port, the protocols or the path.** Those define the socket, which is
+created once at startup. The interface displays the block to paste.

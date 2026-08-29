@@ -7,8 +7,8 @@ station  ──►  protocol   ──►  raw field  ──►  WeeWX field  ─
               ecowitt        tf_ch1          extraTemp9        extraTemp9
 ```
 
-The protocol comes first, and it is not a formality: the same raw name means different
-things in different catalogs. `UV` is an index in one and microwatts per square
+The protocol is determined first, because the same raw name means different things in
+different catalogs. `UV` is an index in one and microwatts per square
 centimetre in another. See [Protocols](Protocols) for how an upload is recognised, and
 check the log line that says which catalog was used before reading anything below as a
 bug.
@@ -28,8 +28,8 @@ reading goes.
 ```
 
 The left side is the raw name as the console sends it. The right side is any WeeWX
-field name. Nothing checks whether the field makes sense, which is deliberate: you
-know where your sensors are.
+field name. The driver does not check whether the field is a sensible destination,
+because only the person who installed the sensor knows where it is.
 
 ## 2. The catalog
 

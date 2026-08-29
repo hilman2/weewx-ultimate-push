@@ -372,17 +372,80 @@ def test_a_station_named_in_weewx_conf_still_keeps_its_field_map(tmp_path):
 
 
 def test_a_refused_station_can_be_let_in(station):
-    """And records from its next upload, without a restart."""
+    """And records from its next upload, without a restart.
+
+    As an extra sensor, because this driver already has a main station: the console
+    it was configured with. Letting a second one write outTemp is the mixture the
+    refusal was protecting in the first place, so being let in cannot mean that.
+    """
     other = 'C' * 32
     upload(station, 'PASSKEY=%s&stationtype=GW2000A&tempf=61.0' % other)
     station._packet_from(_last_request(station))
 
     _, _, answer = web(station, '/api/accept', {'ident': other, 'name': 'roof'})
     assert answer['ok'] is True
+    assert 'channel 1' in answer['message']
 
+    # The main station first. Until it has been heard, nothing is known about the
+    # columns it fills, and the extra one is held back rather than guessed about.
+    send(station, 'PASSKEY=%s&stationtype=GW2000A&tempf=59.0' % PASSKEY)
     packet = send(station, 'PASSKEY=%s&stationtype=GW2000A&tempf=61.0' % other)
-    assert packet['outTemp'] == 61.0
+
+    assert packet['extraTemp1'] == 61.0
+    assert 'outTemp' not in packet
     assert packet['station'] == 'roof'
+
+
+def test_the_stations_route_lists_what_can_be_changed(station, payload):
+    """Every station, whether or not it has ever uploaded. The tab is a list to find
+    one in, and one that only showed the ones that had uploaded would leave somebody
+    who just set a station up looking at nothing."""
+    send(station, payload('hp2561ae_pro'))
+    _, _, answer = web(station, '/api/create',
+                       {'protocol': 'ecowitt', 'name': 'roof'})
+    assert answer['ok'] is True
+
+    _, _, found = web(station, '/api/stations')
+
+    assert found['ok'] is True
+    names = {s['name']: s for s in found['stations']}
+    assert 'roof' in names
+    assert names['roof']['heard'] is False
+    assert names['roof']['role'] == 'extra'
+    # The console settings, with this station's own path in them, so that the tab can
+    # show them again long after the checklist has stopped.
+    assert dict(names['roof']['settings']['settings'])['Path'] == names['roof']['path']
+    assert sum(1 for s in found['stations'] if s['is_main']) == 1
+
+
+def test_the_edit_route_changes_a_station(station):
+    _, _, made = web(station, '/api/create', {'protocol': 'ecowitt', 'name': 'roof'})
+    ident = 'path:' + made['station']['path']
+
+    _, _, answer = web(station, '/api/edit',
+                       {'ident': ident, 'name': 'the_roof', 'role': 'extra',
+                        'channel': 3})
+
+    assert answer['ok'] is True
+    assert station.web_stations[ident].name == 'the_roof'
+    assert station.web_stations[ident].channel == 3
+
+
+def test_the_edit_route_will_not_hand_over_the_main_station_by_accident(station,
+                                                                       payload):
+    """The interface says what it costs and asks again. Something posting straight at
+    the route has said neither, so the route says no."""
+    send(station, payload('hp2561ae_pro'))
+    _, _, made = web(station, '/api/create', {'protocol': 'ecowitt', 'name': 'roof'})
+    ident = 'path:' + made['station']['path']
+
+    _, _, refused = web(station, '/api/edit', {'ident': ident, 'role': 'main'})
+    assert refused['ok'] is False
+
+    _, _, agreed = web(station, '/api/edit',
+                       {'ident': ident, 'role': 'main', 'force': True})
+    assert agreed['ok'] is True
+    assert station.web_stations[ident].role == 'main'
 
 
 def test_a_name_that_would_not_survive_a_config_file_is_refused(station):
@@ -681,3 +744,28 @@ def test_every_tab_has_something_to_draw():
         renderer = 'draw' + tab.capitalize()
         assert renderer in dispatcher, "the %s tab draws nothing" % tab
         assert 'function %s(' % renderer in script, "%s does not exist" % renderer
+
+
+def test_the_before_route_takes_a_channel_out_of_a_query_string(station):
+    """It arrives as text, because a query string has nothing else to offer."""
+    _, _, answer = web(station, '/api/before?protocol=ecowitt&role=extra&channel=3')
+
+    assert answer['ok'] is True
+    assert answer['channel'] == 3
+
+
+def test_a_station_can_give_up_the_columns_it_fills(station, payload):
+    """For a sensor that was taken down. Its column is held until somebody says
+    otherwise, which is right while a console is offline for a week and wrong once
+    it is gone."""
+    send(station, payload('hp2561ae_pro'))
+
+    _, _, found = web(station, '/api/stations')
+    mine = found['stations'][0]
+    assert 'outTemp' in mine['columns']
+
+    _, _, answer = web(station, '/api/release', {'ident': mine['ident']})
+
+    assert answer['ok'] is True
+    assert 'outTemp' in answer['message']
+    assert station.owners.owner('outTemp') is None

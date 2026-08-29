@@ -108,6 +108,15 @@ class Doorman:
 
     A right token clears that address's tally, so the one person who mistyped it four
     times and then got it right is not left waiting.
+
+    Args:
+        token (str): The token to check against.
+        tries (int): How many wrong tokens from one address before it stops
+            being answered.
+        window (int): Over how many seconds those are counted, and how long
+            the silence lasts.
+        remember (int): How many addresses to keep a record of. Somebody
+            knocking from a new address every time must not make this grow.
     """
 
     def __init__(self, token, tries=TRIES, window=WINDOW, remember=REMEMBER):
@@ -130,7 +139,18 @@ class Doorman:
         self.refused = 0
 
     def check(self, client, presented, now=None):
-        """'ok', 'wrong' or 'blocked' for one attempt."""
+        """Judge one attempt at the token.
+
+        Args:
+            client (str): The address it came from.
+            presented (str): The token the request carried.
+            now (float): The time to measure the window against. Defaults to the
+                current time, and is passed in by tests.
+
+        Returns:
+            str: 'ok', 'wrong', or 'blocked' when this address has had its attempts
+            and is not being answered at all.
+        """
         now = time.time() if now is None else now
         with self.lock:
             recent = self._recent(client, now)
@@ -157,7 +177,17 @@ class Doorman:
         return 'wrong'
 
     def _recent(self, client, now):
-        """This address's wrong tokens inside the window. Caller holds the lock."""
+        """How many wrong tokens this address has had inside the window.
+
+        The caller holds the lock.
+
+        Args:
+            client (str): The address.
+            now (float): The time to measure the window against.
+
+        Returns:
+            int: The count.
+        """
         recent = self.wrong.get(client) or collections.deque()
         while recent and now - recent[0] > self.window:
             recent.popleft()
@@ -169,6 +199,10 @@ class Doorman:
         Bounded the same way the tally is, and by the same reasoning: somebody
         knocking from a new address every time must not be able to make this grow.
         The one still trying is the one kept.
+
+        Args:
+            client (str): The address that got it wrong.
+            now (float): When.
         """
         seen = self.knocking.get(client) or [0, now]
         seen[0] += 1
@@ -185,6 +219,14 @@ class Doorman:
 
         Takes the clock the same way check() does, so that a test can say when
         without waiting for it.
+
+        Args:
+            now (float): The time to measure the window against. Defaults to the
+                current time.
+
+        Returns:
+            dict: How many requests got the token wrong, and which addresses, with
+            whether each one is currently being answered.
         """
         now = time.time() if now is None else now
         with self.lock:
@@ -208,6 +250,10 @@ class Site:
     `web_overview`, `web_station`, `web_accept`, `web_set_field`, `web_forget` and
     `web_columns`. Everything that needs a lock takes it there, on the driver's side,
     because that is where the state is.
+
+    Args:
+        driver: The running driver, which is where every answer comes from.
+        doorman (Doorman): The token check, or None when there is none.
     """
 
     def __init__(self, driver, doorman):
@@ -215,7 +261,17 @@ class Site:
         self.doorman = doorman
 
     def answer(self, request):
-        """(body, content type) for one request. Never raises."""
+        """Answer one request.
+
+        Never raises: a driver whose web interface throws would take the readings
+        down with it.
+
+        Args:
+            request: The request, as the listener hands it over.
+
+        Returns:
+            tuple: (body, content_type).
+        """
         try:
             standing = self.doorman.check(request.client_address,
                                           _presented(request))
@@ -234,6 +290,14 @@ class Site:
             return _json({'ok': False, 'error': str(e)})
 
     def _route(self, request):
+        """Work out which route a request is for, and answer it.
+
+        Args:
+            request: The request.
+
+        Returns:
+            tuple: (body, content_type).
+        """
         path = (request.path or '/').rstrip('/') or '/'
         if not path.startswith(API.rstrip('/')):
             from .page import PAGE
@@ -252,6 +316,15 @@ class Site:
     # ---- reading -------------------------------------------------------------
 
     def _get(self, route, query):
+        """Answer a request that only reads.
+
+        Args:
+            route (str): The part of the path after /api/.
+            query (dict): The query string, already parsed.
+
+        Returns:
+            tuple: (body, content_type).
+        """
         if route == 'state':
             return _json(self.driver.web_overview())
         if route == 'setup':
@@ -260,6 +333,12 @@ class Site:
             return _json(self.driver.web_candidates())
         if route == 'fields':
             return _json(self.driver.web_fields())
+        if route == 'stations':
+            return _json(self.driver.web_stations_view())
+        if route == 'before':
+            return _json(self.driver.web_before(
+                query.get('protocol', ''), query.get('role') or None,
+                query.get('channel') or None, query.get('ident') or None))
         if route == 'station':
             found = self.driver.web_station(query.get('ident', ''))
             if found is None:
@@ -283,9 +362,21 @@ class Site:
     # ---- writing -------------------------------------------------------------
 
     def _post(self, route, body):
+        """Answer a request that changes something.
+
+        Args:
+            route (str): The part of the path after /api/.
+            body (dict): The JSON the request carried.
+
+        Returns:
+            tuple: (body, content_type).
+        """
         if route == 'create':
             ok, answer = self.driver.web_create(body.get('protocol', ''),
-                                                body.get('name', ''))
+                                                body.get('name', ''),
+                                                role=body.get('role') or None,
+                                                channel=body.get('channel') or None,
+                                                force=bool(body.get('force')))
             return _json({'ok': ok, 'station': answer} if ok
                          else {'ok': False, 'message': answer})
         if route == 'accept':
@@ -301,7 +392,19 @@ class Site:
                                                     body.get('type')))
         if route == 'role':
             ok, message = self.driver.web_role(body.get('ident', ''),
-                                               body.get('role', ''))
+                                               body.get('role', ''),
+                                               force=bool(body.get('force')))
+            return _json({'ok': ok, 'message': message})
+        if route == 'edit':
+            ok, message = self.driver.web_edit(body.get('ident', ''),
+                                               name=body.get('name'),
+                                               role=body.get('role') or None,
+                                               channel=body.get('channel') or None,
+                                               force=bool(body.get('force')))
+            return _json({'ok': ok, 'message': message})
+        if route == 'release':
+            ok, message = self.driver.web_release(body.get('ident', ''),
+                                                  body.get('field', ''))
             return _json({'ok': ok, 'message': message})
         if route == 'forget':
             ok, message = self.driver.web_forget(body.get('ident', ''))
@@ -314,6 +417,13 @@ def _presented(request):
 
     A browser can only manage the query string on the first request, so the page is
     opened with one there and its own calls send the header afterwards.
+
+    Args:
+        request: The request, as the listener hands it over.
+
+    Returns:
+        str: The token, from the header, the Authorization header or the query
+        string, or an empty string when it carried none.
     """
     headers = getattr(request, 'headers', None) or {}
     token = headers.get('x-auth-token', '')
@@ -327,7 +437,15 @@ def _presented(request):
 
 
 def _wants_html(request):
-    """Whether a person is looking at this, rather than the page's own script."""
+    """Whether a person is looking at this, rather than the page's own script.
+
+    Args:
+        request: The request.
+
+    Returns:
+        bool: True for anything that is not an API call, which gets a page rather
+        than a line of JSON when something is wrong.
+    """
     return not (request.path or '').startswith(API.rstrip('/'))
 
 
@@ -342,7 +460,14 @@ REFUSED_PAGE = ("<!doctype html><meta charset=utf-8>"
 
 
 def _body(request):
-    """The JSON a POST carried, or {}."""
+    """The JSON a POST carried.
+
+    Args:
+        request: The request.
+
+    Returns:
+        dict: What it carried, or an empty dict when it carried nothing readable.
+    """
     try:
         decoded = json.loads(request.text or '{}')
     except ValueError:
@@ -351,11 +476,27 @@ def _body(request):
 
 
 def _json(payload):
+    """One answer, as the page expects it.
+
+    Args:
+        payload (dict): What to send.
+
+    Returns:
+        tuple: (body, content_type).
+    """
     return json.dumps(payload, default=str), JSON
 
 
 def _catalog_of(name):
-    """Every raw name a protocol knows, for the box that offers completions."""
+    """Every raw name a protocol knows, for the selector that offers completions.
+
+    Args:
+        name (str): The protocol's name.
+
+    Returns:
+        dict: The raw names and what they map to, or an error when there is no such
+        protocol.
+    """
     protocol = protocols.by_name(name)
     if protocol is None:
         return {'ok': False, 'error': "No protocol called '%s'." % name}
@@ -373,6 +514,14 @@ def schema_fields():
 
 
 def uptime(since):
+    """How long the driver has been running.
+
+    Args:
+        since (float): When it started.
+
+    Returns:
+        float: Seconds since then.
+    """
     return max(0, int(time.time() - since))
 
 
@@ -404,6 +553,14 @@ def url(address, port, token):
     Printed at startup so that nobody has to work out which of their addresses the
     driver ended up on. A listener bound to every interface reports itself as '*',
     which is true and useless.
+
+    Args:
+        address (str): What the listener is bound to.
+        port (int): The port the interface is on.
+        token (str): The token, which is part of the address on the first request.
+
+    Returns:
+        str: The whole address, ready to paste into a browser.
     """
     host = address if address and address not in ('0.0.0.0', '::', '*') else None
     return 'http://%s:%d/?token=%s' % (host or lan_address() or 'this-machine',

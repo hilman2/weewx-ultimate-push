@@ -92,6 +92,10 @@ class Mapper:
 
         The user still outranks the firmware: a field named in field_map_extensions
         is not moved, because that was somebody's decision rather than a default.
+
+        Args:
+            settled (dict): Raw field name to the WeeWX field this firmware puts it
+                in, from the protocol that recognised the payload.
         """
         for raw, field in (settled or {}).items():
             if raw in self.extensions or self.fields.get(raw) == field:
@@ -115,6 +119,17 @@ class Mapper:
         sets from the dialect, because that is one decision about the whole packet
         rather than one per reading. Guesses are the fields that were not in the
         mapping, whether or not they made it into the packet.
+
+        Args:
+            raw (dict or str): The name/value pairs, or a captured payload as text,
+                which is parsed here. A diagnostic run and a test both start from a
+                file rather than from a request.
+            now (float): The time to measure the console's own timestamp against.
+                Defaults to the current time.
+
+        Returns:
+            tuple: (packet, guesses). The packet is ready for WeeWX apart from its
+            unit system.
         """
         if isinstance(raw, str):
             raw = transport.parse(raw)
@@ -151,7 +166,11 @@ class Mapper:
         return packet, fresh
 
     def _say_undecided(self, name):
-        """Say once that a field is waiting for a decision, and what settles it."""
+        """Say once that a field is waiting for a decision, and what settles it.
+
+        Args:
+            name (str): The raw field name.
+        """
         if name in self.warned:
             return
         self.warned.add(name)
@@ -171,6 +190,9 @@ class Mapper:
         compatibility table gives them one pool of sixteen between them, so the same
         channel number should never arrive from both. If it does, the assumption is
         wrong and one of the readings is about to overwrite the other.
+
+        Args:
+            readings (dict): The numeric readings from one upload.
         """
         for first, second in self.dialect.shared_channels:
             for name in readings:
@@ -185,7 +207,16 @@ class Mapper:
                                 name, twin)
 
     def _unmapped(self, name, fresh):
-        """Decide what happens to a field that is not in the mapping."""
+        """Decide what happens to a field that is not in the mapping.
+
+        Args:
+            name (str): The raw field name.
+            fresh (dict): Guesses made during this upload, added to as fields are
+                worked out.
+
+        Returns:
+            str: The WeeWX field to write it to, or None to leave it out.
+        """
         if name in self.ignored:
             return None
         if name in self.seen:
@@ -229,6 +260,13 @@ class Mapper:
         A WN34 reports on tf_chN whether it is a probe in a bed or a lead in a pool,
         and the catalog has to call it something. Whoever installed it is the only one
         who knows, so the moment a new channel turns up is the moment to say that.
+
+        Args:
+            raw (str): The raw field name.
+
+        Returns:
+            str: What to tell somebody about it, or an empty string when the field
+            name settles the question on its own.
         """
         for prefix, note in self.dialect.placement_unknown.items():
             if re.match(re.escape(prefix) + r'\d', raw):
