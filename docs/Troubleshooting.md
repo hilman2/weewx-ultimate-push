@@ -267,3 +267,66 @@ times too small:
 ```
 
 Consistently 3.6 times too large means the opposite, and the default is right for you.
+
+## A second station records nothing but its temperature
+
+This is what an extra sensor is. Its temperature and humidity go to `extraTempN` and
+`extraHumidN`; readings that another station already writes are dropped rather than
+written over that station's.
+
+```
+WARNING user.ultimatepush.driver: 15 reading(s) from station 'roof' are not being
+written, because garden already fill(s) those columns and two sensors in one column
+cannot be separated afterwards: UV, barometer, dayRain, ...
+```
+
+The checklist lists them, with the station that holds each column. To keep a reading,
+give it a field of its own on the Fields tab and add the column if the database has
+none. See [Stations](Stations.md).
+
+## A station records nothing at all after a restart
+
+Once, and only until the main station's next upload:
+
+```
+INFO user.ultimatepush.driver: Holding back station 'roof' until the main station has
+been heard once, so that its readings cannot land in the main station's columns.
+```
+
+The driver writes down which station fills which column, so this happens on the first
+run and not again. Seeing it after every restart means the settings file cannot be
+written; the log says so separately.
+
+## Two stations are set up as the main one
+
+Only a configuration file written by hand can produce this. The interface does not.
+
+```
+ERROR user.ultimatepush.driver: Station 'roof' is set up as the main station, and so
+is 'garden'. Two of them write the same columns, and afterwards nothing can tell one
+sensor's readings from the other's.
+```
+
+The first station declared is the one that writes. The second fills only the columns
+nobody else has. Give it `role = extra` and a `channel`, in `weewx.conf` or in the web
+interface.
+
+## A console that was let in is still being refused
+
+Check that the identity in the settings file is the one the console sends. The
+interface takes it from the upload, so this only happens to a station written by hand.
+
+```
+WARNING user.ultimatepush.driver: An ecowitt upload from 192.168.1.51 names station
+'9A2B...', which is not one of this driver's consoles.
+```
+
+## Setting up a station asks about columns that already hold readings
+
+That is the check working. Those readings came from an older console, another driver
+or an import. Continuing the series is right when it is the same weather station in
+the same place, and mixes two sensors when it is not.
+
+Where a channel is being handed out, one whose columns are empty is chosen first, so
+this only appears when every free channel has history, or for the main station's own
+columns.

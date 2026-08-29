@@ -261,6 +261,9 @@ class _Nothing:
     web_stations = {}
     overrides = type('O', (), {'stations': lambda self: {}})()
 
+    def web_waiting(self):
+        return []
+
     def web_address(self):
         return '192.168.1.50'
 

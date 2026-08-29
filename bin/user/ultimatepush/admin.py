@@ -349,9 +349,7 @@ class Site:
                           'uploads': self.driver.activity.recent(
                               query.get('ident', ''), transport.redact)})
         if route == 'waiting':
-            return _json({'ok': True,
-                          'stations': self.driver.activity.unknown_stations(
-                              transport.redact)})
+            return _json({'ok': True, 'stations': self.driver.web_waiting()})
         if route == 'columns':
             return _json(self.driver.web_columns(
                 query.get('ident', ''), refresh=query.get('refresh') == 'yes'))

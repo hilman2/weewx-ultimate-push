@@ -769,3 +769,18 @@ def test_a_station_can_give_up_the_columns_it_fills(station, payload):
     assert answer['ok'] is True
     assert 'outTemp' in answer['message']
     assert station.owners.owner('outTemp') is None
+
+
+def test_a_station_that_has_been_let_in_stops_waiting(station):
+    """It was refused an hour ago and is not waiting for anything now. Leaving it
+    under 'waiting to be let in' reads as the button not having worked."""
+    other = 'C' * 32
+    upload(station, 'PASSKEY=%s&stationtype=GW2000A&tempf=61.0' % other)
+    station._packet_from(_last_request(station))
+    assert [w['ident'] for w in station.web_waiting()] == [other]
+
+    web(station, '/api/accept', {'ident': other, 'name': 'roof'})
+
+    assert station.web_waiting() == []
+    _, _, state = web(station, '/api/state')
+    assert state['waiting'] == []

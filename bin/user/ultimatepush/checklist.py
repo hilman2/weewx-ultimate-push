@@ -46,11 +46,8 @@ def steps(driver):
     found = driver.activity.snapshot()
     # The activity log keeps what was refused, which is history. Whether a console is
     # still being refused is a question about now, and the answer is whether the
-    # driver has since been told to accept it. Without this, letting a station in
-    # would leave the step outstanding until twenty more refusals had pushed the old
-    # ones out of the ring.
-    waiting = [w for w in driver.activity.unknown_stations(_nothing)
-               if w['ident'] not in driver.known]
+    # driver has since been told to accept it.
+    waiting = driver.web_waiting()
     return [
         _hardware(driver, found),
         _refused(driver, waiting),
