@@ -79,6 +79,15 @@ class Guess:
             derived rather than guessed. False if it came from a rule.
         why (str): One line saying how this was arrived at, for the log and for
             whoever has to decide whether to keep it.
+
+    Args:
+        raw (str): The raw field name.
+        field (str): Where it would go.
+        group (str): Its unit group.
+        unit (str): The unit it arrives in.
+        certain (bool): Whether this continues a known series, as opposed to
+            being recognised only by its name.
+        why (str): How it was worked out, for showing somebody.
     """
 
     __slots__ = ('raw', 'field', 'group', 'unit', 'certain', 'why')
@@ -100,6 +109,15 @@ class Guess:
 
 
 def _split(name):
+    """Split a field name into its stem, its number and its tail.
+
+    Args:
+        name (str): A raw or WeeWX field name.
+
+    Returns:
+        tuple: (stem, number, tail), with the number as an int, or None when
+        the name carries no number.
+    """
     match = INDEXED.match(name)
     if not match:
         return None
@@ -135,6 +153,13 @@ class Inferrer:
         stem and tail, with the index offset holding across every member. Anything
         less consistent than that is not a series, and is left out rather than
         smoothed over.
+
+        Args:
+            fields (dict): The catalog, as raw field name to WeeWX field.
+
+        Returns:
+            dict: One entry per family the catalog holds, describing how to continue
+            it for a channel the catalog does not have yet.
         """
         seen = {}
         for raw, target in fields.items():
@@ -159,10 +184,26 @@ class Inferrer:
         return series
 
     def guess(self, raw):
-        """Return a Guess for an unmapped field, or None if nothing can be said."""
+        """Work out where an unmapped field belongs.
+
+    Args:
+        raw (str): The raw field name the console sent.
+
+    Returns:
+        Guess: What the field looks like and why, or None when nothing can be said
+        about it. A Guess is not applied on its own; `infer_unknown` decides that.
+    """
         return self._from_series(raw) or self._from_rules(raw)
 
     def _from_series(self, raw):
+        """Continue a numbered family the catalog already describes.
+
+        Args:
+            raw (str): The raw field name.
+
+        Returns:
+            Guess: Where it goes, or None when it continues nothing.
+        """
         parts = _split(raw)
         if not parts:
             return None
@@ -187,6 +228,14 @@ class Inferrer:
                      "continues %s, e.g. %s" % (stem + tail, members[0]))
 
     def _from_rules(self, raw):
+        """Read a field name for what it says it measures.
+
+        Args:
+            raw (str): The raw field name.
+
+        Returns:
+            Guess: What it looks like, or None when the name says nothing.
+        """
         for pattern, group, unit in RULES:
             if pattern.search(raw):
                 return Guess(raw, self.prefix + raw, group, unit, False,
@@ -195,7 +244,15 @@ class Inferrer:
 
 
 def report(guesses):
-    """Render guesses as the lines a person needs in order to act on them."""
+    """Render guesses as the lines a person needs in order to act on them.
+
+    Args:
+        guesses (dict): Raw field name to Guess, from a mapper.
+
+    Returns:
+        list: One line per guess, saying what was worked out and what to add to
+        field_map_extensions to accept or override it.
+    """
     lines = []
     for guess in sorted(guesses, key=lambda g: (not g.certain, g.raw)):
         lines.append("%-24s -> %-22s %-26s %s"

@@ -43,6 +43,13 @@ def families(names, least=2):
     extraTemp1 to extraTemp8 is a family. appTemp1, co2 and pm2_5 are not, which is
     what `least` is for. A family is a series hardware can have more of than the
     schema does.
+
+    Args:
+        names (iterable): WeeWX field names.
+        least (int): How many members a series needs before it counts as a family.
+
+    Returns:
+        dict: The base name of each family, to the highest number found in it.
     """
     import re
     found = {}
@@ -55,8 +62,8 @@ def families(names, least=2):
 
 
 def by_group(upto=UPTO):
-    """Fields grouped by what they measure, for the box that asks where a reading
-    should go.
+    """Fields grouped by what they measure, for the selector that asks where a
+    reading should go.
 
     Offering a wind speed as a place to put a temperature is noise, and worse than
     noise: somebody will pick it. So the answer is grouped, and the group that suits
@@ -67,8 +74,14 @@ def by_group(upto=UPTO):
     this the box simply has no answer for it, and the way people deal with that today
     is to write extraTemp9 into a configuration file by hand.
 
-    Returns (groups, ungrouped). WeeWX knows no group for a few of its own columns,
-    forecast among them, and those are still perfectly good places to put something.
+    Args:
+        upto (int): How far to run a numbered family past the end of the schema.
+
+    Returns:
+        tuple: (groups, ungrouped), where `groups` is unit group to field names and
+        `ungrouped` is the fields WeeWX knows no group for. A few of its own columns
+        are in the second list, forecast among them, and those are still perfectly
+        good places to put something.
     """
     import weewx.units
     known = {name for name in schema_fields()
@@ -94,7 +107,15 @@ def by_group(upto=UPTO):
 
 
 def in_family_order(name):
-    """Sort extraTemp9 after extraTemp8 rather than after extraTemp10."""
+    """A sort key that puts extraTemp9 after extraTemp8 rather than extraTemp10.
+
+    Args:
+        name (str): A WeeWX field name.
+
+    Returns:
+        tuple: The name with any trailing number removed, and that number, so that
+        sorting is by family and then numerically within it.
+    """
     import re
     match = re.match(r'^(.*?[A-Za-z_])([0-9]+)$', name)
     if match:
@@ -111,7 +132,7 @@ def missing(packet, groups, known=None):
         known (set): Fields the database already has. Defaults to the standard schema.
 
     Returns:
-        A list of (field, sql_type), sorted, without the bookkeeping fields.
+        list: (field, sql_type) pairs, sorted, without the bookkeeping fields.
     """
     if known is None:
         known = schema_fields()
@@ -125,7 +146,15 @@ def missing(packet, groups, known=None):
 
 
 def commands(wanted, config='/etc/weewx/weewx.conf'):
-    """Render the columns as the commands that create them."""
+    """Render columns as the weectl commands that create them.
+
+    Args:
+        wanted (list): (field, sql_type) pairs, as returned by `missing`.
+        config (str): The path to weewx.conf, for the --config argument.
+
+    Returns:
+        list: One command line per column.
+    """
     return ["weectl database add-column %s --type %s --config=%s -y" % (field, sql, config)
             for field, sql in wanted]
 
@@ -137,6 +166,13 @@ def existing(config_path, binding='wx_binding'):
     given; this says what is in front of us. A database made by an older WeeWX, or
     with a schema of somebody's own, has just as much right to exist, and telling
     somebody a column is ready when it is not is worse than saying nothing.
+
+    Args:
+        config_path (str): The path to weewx.conf.
+        binding (str): The data binding to read.
+
+    Returns:
+        set: The column names the archive table has.
     """
     with _manager(config_path, binding) as manager:
         return set(manager.sqlkeys)
@@ -152,6 +188,16 @@ def add(config_path, field, sql_type='REAL', binding='wx_binding'):
     There is deliberately no way here to take a column away. Dropping one in SQLite
     means rebuilding the table around it, and a mistake there is not a mistake
     anybody recovers from without a backup.
+
+    Args:
+        config_path (str): The path to weewx.conf.
+        field (str): The column to add.
+        sql_type (str): REAL or INTEGER. Anything else is refused.
+        binding (str): The data binding to write to.
+
+    Returns:
+        tuple: (ok, message), where the message is fit to show somebody whether or
+        not it worked.
     """
     field = str(field or '').strip()
     if not field:
@@ -169,6 +215,15 @@ def add(config_path, field, sql_type='REAL', binding='wx_binding'):
 
 
 def _manager(config_path, binding):
+    """A WeeWX database manager, opened from a configuration file.
+
+    Args:
+        config_path (str): The path to weewx.conf.
+        binding (str): The data binding to open.
+
+    Returns:
+        A manager, to be used as a context manager.
+    """
     import weecfg
     import weewx.manager
 
@@ -177,13 +232,21 @@ def _manager(config_path, binding):
 
 
 def occupied(config_path, binding='wx_binding'):
-    """Return {field: (count, last timestamp)} for archive columns that hold data.
+    """Which archive columns already hold data, and how much.
 
     This is what stands between a driver change and a ruined series. If a field this
     driver writes to already has history, that history came from somewhere else, and
     the two are about to be mixed in one column.
 
     One pass over the table, so it takes a moment on a large database.
+
+    Args:
+        config_path (str): The path to weewx.conf.
+        binding (str): The data binding to read.
+
+    Returns:
+        dict: Each column that holds data, to (number of rows, timestamp of the most
+        recent one). Columns that hold nothing are left out.
     """
     with _manager(config_path, binding) as manager:
         fields = [f for f in manager.sqlkeys if f not in ('dateTime', 'usUnits', 'interval')]

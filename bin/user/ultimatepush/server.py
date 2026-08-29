@@ -48,6 +48,11 @@ def http_listener(base, answer, queue=True, **options):
             False for the web interface, where the answer is the whole point and a
             request nobody drains would fill the queue and start dropping the oldest
             with a warning each time.
+        **options: Passed through to the base class.
+
+    Returns:
+        type: A listener class, ready to be instantiated with the usual listener
+        options.
     """
 
     class Server(base):
@@ -61,12 +66,25 @@ def http_listener(base, answer, queue=True, **options):
             super().__init__(**kwargs)
 
         def put(self, request):
+            """Hand a request on to whoever is iterating, where anybody is.
+
+            Args:
+                request: The request the base class has just answered.
+            """
             # The base class calls this after the answer has gone out. A listener
             # that exists to answer has nothing to hand on.
             if self._queue:
                 super().put(request)
 
         def get_response(self, request):
+            """The body to send back, remembering the content type it wants.
+
+            Args:
+                request: The request to answer.
+
+            Returns:
+                The body, as the base class expects it.
+            """
             body, content_type = self._answer(request)
             # Read back by the handler immediately after this returns, on this same
             # thread. Per thread rather than per listener, because the server is a
@@ -81,6 +99,13 @@ def http_listener(base, answer, queue=True, **options):
 
         @content_type.setter
         def content_type(self, value):
+            """Set the content type to fall back on.
+
+            Args:
+                value (str): The content type. The base class sets this in its
+                    constructor, and it is kept as the answer for a response that
+                    named none of its own.
+            """
             # The base class sets this in its constructor. Keep it as the fallback
             # for a response nobody claimed.
             self._default_content_type = value
@@ -94,6 +119,15 @@ class Fan:
     Takes a turn on each in order. A listener that has stopped raises out of its own
     get(), which is what the driver needs to hear: nothing restarts a listener, and an
     iterator waiting on a dead one waits for good.
+
+    Args:
+        listeners (iterable): The listeners to take turns on. None entries are
+            ignored, so that a caller can pass an optional listener without checking
+            first.
+
+    Raises:
+        ValueError: If no listener is left, because a driver with none would wait for
+            ever.
     """
 
     def __init__(self, listeners):

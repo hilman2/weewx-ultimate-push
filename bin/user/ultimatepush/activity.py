@@ -34,7 +34,24 @@ LONGEST = 8192
 
 
 class Upload:
-    """One arrival, and what came of it."""
+    """One arrival, and what came of it.
+
+    Args:
+        at (float): When it arrived.
+        client (str): The address it came from.
+        path (str): The path it was sent to.
+        method (str): GET or POST.
+        text (str): The body, kept only as far as LONGEST.
+        ident (str): Whatever named the station, or '' when nothing did. Kept
+            here rather than dug out of the payload again, because which field
+            that is depends on the protocol.
+        protocol (str): The protocol that claimed it.
+        dialect (str): The catalog it was read with.
+        packet (dict): The loop packet it became, or None.
+        readings (iterable): A few readings in plain sight, for an upload
+            nobody has claimed yet.
+        note (str): Why it was refused, for one that was.
+    """
 
     __slots__ = ('at', 'client', 'path', 'method', 'ident', 'protocol', 'dialect',
                  'text', 'packet', 'readings', 'note')
@@ -61,7 +78,16 @@ class Upload:
 
     def as_dict(self, redact):
         """For the web interface. `redact` is passed in so this module needs no
-        opinion about what a secret is; transport has that."""
+        opinion about what a secret is; transport has that.
+
+        Args:
+            redact (callable): Given the upload text, returns it with anything that
+                names the station replaced.
+
+        Returns:
+            dict: The upload as plain data, safe to hand to another thread and safe
+            to show somebody.
+        """
         return {
             'at': self.at,
             'client': self.client,
@@ -78,7 +104,11 @@ class Upload:
 
 
 class Station:
-    """The running total for one station."""
+    """The running total for one station.
+
+    Args:
+        ident (str): The station's identity.
+    """
 
     def __init__(self, ident):
         self.ident = ident
@@ -113,7 +143,12 @@ class Station:
 
 
 class Log:
-    """Every station's activity, and the uploads that belonged to none of them."""
+    """Every station's activity, and the uploads that belonged to none of them.
+
+    Args:
+        keep (int): How many uploads to keep per station, and how many
+            unclaimed ones to keep in all.
+    """
 
     def __init__(self, keep=KEEP):
         self.lock = threading.Lock()
@@ -125,7 +160,12 @@ class Log:
     # ---- writing, from the driver's loop -------------------------------------
 
     def arrived(self, ident, upload):
-        """An upload that belongs to a station this driver answers to."""
+        """Record an upload that belongs to a station this driver answers to.
+
+        Args:
+            ident (str): The station's identity.
+            upload (Upload): What arrived, and what became of it.
+        """
         with self.lock:
             station = self.stations.get(ident)
             if station is None:
@@ -143,20 +183,36 @@ class Log:
             station.recent.append(upload)
 
     def refused(self, upload):
-        """An upload from a station this driver does not answer to, or from nothing
-        it recognised. This is what somebody looks at when a console they just set up
-        is not appearing."""
+        """Record an upload from a station this driver does not answer to.
+
+        This is what somebody looks at when a console they have just set up is not
+        appearing.
+
+        Args:
+            upload (Upload): What arrived, and why it was refused.
+        """
         with self.lock:
             self.unclaimed.append(upload)
 
     def kept_apart(self, ident, fields):
-        """Readings this station is not writing because another station has them."""
+        """Record readings a station is not writing because another station has them.
+
+        Args:
+            ident (str): The station whose readings were dropped.
+            fields (iterable): The WeeWX fields it did not get to write.
+        """
         with self.lock:
             station = self.stations.get(ident)
             if station is not None:
                 station.dropped_fields = sorted(fields)
 
     def named(self, ident, name):
+        """Give a station a name, for showing rather than for identifying it.
+
+        Args:
+            ident (str): The station's identity.
+            name (str): What to call it.
+        """
         with self.lock:
             station = self.stations.get(ident)
             if station is not None:
@@ -167,6 +223,14 @@ class Log:
 
         Copied rather than referenced: the mapper keeps changing these and the web
         server reads them from another thread.
+
+        Args:
+            ident (str): The station's identity.
+            raw_names (iterable): The raw names this upload carried, less the ones
+                that identify the device rather than measure anything.
+            fields (dict): Raw name to WeeWX field, as the mapper has it now.
+            guesses (dict): What the mapper worked out for itself, and how.
+            undecided (dict): Fields it would not place without being told.
         """
         with self.lock:
             station = self.stations.get(ident)
@@ -186,11 +250,27 @@ class Log:
             return [self._station_dict(s) for s in self.stations.values()]
 
     def one(self, ident):
+        """One station, as plain data.
+
+        Args:
+            ident (str): The station's identity.
+
+        Returns:
+            dict: What is known about it, or None if it has never uploaded.
+        """
         with self.lock:
             station = self.stations.get(ident)
             return self._station_dict(station) if station else None
 
     def _station_dict(self, station):
+        """One station as plain data. The caller holds the lock.
+
+        Args:
+            station (Station): The running total for one station.
+
+        Returns:
+            dict: A copy, safe to hand to another thread.
+        """
         return {
             'ident': station.ident,
             'name': station.name,
@@ -210,7 +290,17 @@ class Log:
         }
 
     def recent(self, ident, redact, limit=KEEP):
-        """The last few uploads from one station, redacted."""
+        """The last few uploads from one station, redacted.
+
+        Args:
+            ident (str): The station's identity.
+            redact (callable): Given the upload text, returns it with anything that
+                names the station replaced.
+            limit (int): How many to return, newest last.
+
+        Returns:
+            list: The uploads as plain data. Empty if the station is not known.
+        """
         with self.lock:
             station = self.stations.get(ident)
             if station is None:
@@ -219,9 +309,18 @@ class Log:
         return [u.as_dict(redact) for u in reversed(uploads)]
 
     def waiting(self, redact, limit=KEEP):
-        """Uploads nobody claimed, newest first. A console that is being refused
-        shows up here with its readings, which is what somebody needs in order to
-        decide whether to let it in."""
+        """Uploads nobody claimed, newest first.
+
+        A console that is being refused shows up here with its readings, which is
+        what somebody needs in order to decide whether to let it in.
+
+        Args:
+            redact (callable): Given the upload text, returns it redacted.
+            limit (int): How many to return.
+
+        Returns:
+            list: The uploads as plain data, newest first.
+        """
         with self.lock:
             uploads = list(self.unclaimed)[-limit:]
         return [u.as_dict(redact) for u in reversed(uploads)]
@@ -232,6 +331,13 @@ class Log:
         One row per console rather than one per upload, because a console that is
         being refused sends one every sixteen seconds and the list is otherwise all
         the same console.
+
+        Args:
+            redact (callable): Given the upload text, returns it redacted.
+
+        Returns:
+            list: One entry per console, each with what named it, how many uploads
+            have been refused, when the last one arrived, and a sample of readings.
         """
         seen = {}
         for upload in self.waiting(redact, limit=self.keep):

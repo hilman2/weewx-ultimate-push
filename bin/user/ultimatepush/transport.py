@@ -59,6 +59,12 @@ def parse(text):
     protocols share a line of code. A datagram is JSON, and a JSON object is already
     name/value pairs; the arrays inside it are unpacked later, by the protocol that
     knows what position means what.
+
+    Args:
+        text (str): The body of the upload, as it arrived.
+
+    Returns:
+        dict: Raw name to raw value, both as sent. Empty when there is nothing in it.
     """
     if not text:
         return {}
@@ -94,6 +100,17 @@ def device_time(raw, now=None, max_behind=MAX_BEHIND, max_ahead=MAX_AHEAD):
     stamped in 2015 is worse than no record at all. But one that is merely late is
     worth keeping, and the window is asymmetric for that reason: a reading can be
     delayed, it cannot arrive early.
+
+    Args:
+        raw (dict): The upload, which may or may not carry `dateutc`.
+        now (float): The time to measure against. Defaults to the current time.
+        max_behind (int): How many seconds behind `now` the console's time may be
+            and still be used.
+        max_ahead (int): The same, for a console whose clock runs fast.
+
+    Returns:
+        float: Seconds since the epoch, or None when the console sent no time or
+        sent one outside the window. The caller then uses its own clock.
     """
     stamp = raw.get('dateutc')
     if not stamp or stamp == 'now':
@@ -119,7 +136,14 @@ def device_time(raw, now=None, max_behind=MAX_BEHIND, max_ahead=MAX_AHEAD):
 
 
 def _how_far(seconds):
-    """A span of time in whatever unit reads best."""
+    """A span of time in whatever unit reads best.
+
+    Args:
+        seconds (float): How long, in seconds.
+
+    Returns:
+        str: The span in seconds, minutes, hours or days, for a log line.
+    """
     if seconds < 120:
         return "%.0f seconds" % seconds
     if seconds < 7200:
@@ -130,7 +154,15 @@ def _how_far(seconds):
 
 
 def _timegm(parsed):
-    """Seconds since the epoch for a struct_time that is already UTC."""
+    """Seconds since the epoch for a struct_time that is already UTC.
+
+    Args:
+        parsed (struct_time): A time already known to be UTC, so that the local
+            timezone is not applied to it.
+
+    Returns:
+        float: Seconds since the epoch.
+    """
     import calendar
     return calendar.timegm(parsed)
 
@@ -146,6 +178,17 @@ def numbers(raw, metadata=METADATA, absent=()):
     fact about the sensor. `absent` is what this protocol says on top of the ones
     every protocol uses: Fine Offset firmwares send -9999, and without that a missing
     outdoor temperature is recorded as nine thousand degrees below freezing.
+
+    Args:
+        raw (dict): Raw name to raw value, from `parse`.
+        metadata (iterable): Raw names that identify the device rather than measure
+            anything. These are kept out of the readings whatever they look like.
+        absent (iterable): Values this protocol uses to mean "no reading".
+
+    Returns:
+        tuple: (readings, text), where `readings` holds everything that could be read
+        as a number and `text` holds identifiers, model names and anything else that
+        could not.
     """
     empty = ABSENT + tuple(absent)
     readings = {}
@@ -180,6 +223,13 @@ def redact(text):
 
     Everything not listed in SECRETS is weather, and weather is the point of sending
     a payload to somebody who can help with it.
+
+    Args:
+        text (str): An upload body.
+
+    Returns:
+        str: The same body with anything that names the station replaced, so that it
+        is safe to attach to an issue.
     """
     for name in SECRETS:
         text = re.sub(r'(^|[?&])%s=[^&]*' % re.escape(name),
@@ -196,6 +246,13 @@ def same_secret(presented, expected):
 
     Constant time, so that somebody who can reach the port cannot find a password one
     character at a time by measuring how long the comparison took.
+
+    Args:
+        presented (str): What the upload carried.
+        expected (str): What the driver was configured with.
+
+    Returns:
+        bool: Whether they match.
     """
     return hmac.compare_digest(str(presented).encode('utf-8'),
                                str(expected).encode('utf-8'))

@@ -45,7 +45,19 @@ Everything that names the station has been replaced already. The rest is weather
 
 
 def write(payload, guesses, waiting, path=DEFAULT_PATH, protocol='unknown'):
-    """Write a report, and return the path. Returns None if it could not be written."""
+    """Write a report about an upload the driver could not fully place.
+
+    Args:
+        payload (str): The upload as it arrived, redacted before it is written.
+        guesses (dict): Fields the driver worked out for itself, and how.
+        waiting (dict): Fields it would not place without being told.
+        path (str): Where to write. An empty value disables the report.
+        protocol (str): Which protocol the upload was read as.
+
+    Returns:
+        str: The path written, or None when there was nowhere to write or the write
+        failed. A report is a convenience, so a failure here is not an error.
+    """
     lines = infer.report(guesses)
     for raw, elsewhere in sorted(waiting.items()):
         lines.append("%-24s waiting for a placement (would be %s)" % (raw, elsewhere))

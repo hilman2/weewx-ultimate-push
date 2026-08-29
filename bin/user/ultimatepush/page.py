@@ -100,6 +100,9 @@ pre { background: var(--code); border: 1px solid var(--line); border-radius: 6px
 .step .what { font-weight: 600; }
 .step .body { padding: 0 14px 14px 38px; }
 .step .body p { margin: 0 0 10px; }
+.step > .head.shut { cursor: pointer; user-select: none; }
+.step > .head.shut:hover .caret { color: var(--accent); }
+.step > .head .caret { color: var(--dim); width: 12px; flex: none; }
 .pick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
 .pick button { background: var(--bg); color: var(--ink); border: 1px solid var(--line);
   border-radius: 6px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
@@ -129,6 +132,11 @@ select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .fold:hover .caret { color: var(--accent); }
 .caret { color: var(--dim); width: 12px; }
 .fold .dim { font-size: 12px; }
+.agree { display: flex; gap: 8px; align-items: center; margin: 10px 0 4px;
+  font-size: 13px; cursor: pointer; }
+.agree input { accent-color: var(--accent); }
+button.act[disabled] { opacity: .5; cursor: not-allowed; }
+button.act[disabled]:hover { border-color: var(--line); }
 .waiting { color: var(--dim); font-size: 13px; }
 .waiting b { color: var(--warn); }
 #flash { position: fixed; right: 16px; bottom: 16px; background: var(--panel);
@@ -155,6 +163,7 @@ select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   <section>
     <div class="tabs">
       <button data-tab="setup">Setup</button>
+      <button data-tab="stations">Stations</button>
       <button data-tab="fields" class="on">Fields</button>
       <button data-tab="raw">Raw uploads</button>
       <button data-tab="columns">Database columns</button>
@@ -178,6 +187,27 @@ if (BASE.charAt(BASE.length - 1) !== '/') BASE += '/';
 var chosen = null, tab = 'fields', state = null, detail = null;
 var fieldsView = null, folded = {}, adding = false;
 var setup = null, picked = null, watching = null, candidates = null;
+/* Every station this driver knows, including the ones that have never uploaded.
+   Read for the Stations tab, and for the one question the setup form cannot answer
+   on its own: whether there is already a main station to be moved aside. */
+var stationList = null;
+/* A main station about to be taken over, while the page explains what that does.
+   Held here rather than in the DOM so that a redraw does not lose the question. */
+var pending = null, editing = null, pendingDraw = false, unfolded = {};
+
+function busy() {
+  /* Somebody is in the middle of something on this page. A redraw would empty the
+     field they are typing a name into, or clear the box they ticked to arm a change
+     that cannot be taken back. Whatever the poll found can wait for a tick or two:
+     nothing here is news that goes stale. */
+  if (pending) return true;
+  var focused = document.activeElement;
+  if (!focused || (focused.tagName !== 'INPUT' && focused.tagName !== 'SELECT')) {
+    return false;
+  }
+  var body = document.getElementById('body');
+  return !!(body && body.contains(focused));
+}
 
 function api(route, body) {
   var opts = { headers: { 'X-Auth-Token': TOKEN } };
@@ -229,7 +259,7 @@ function loadState() {
       ' \\u00b7 listening on ' + s.ports.join(', ') +
       ' \\u00b7 ' + s.protocols.join(', ');
     drawDoor(s.door);
-    drawStations();
+    drawSidebar();
   });
 }
 
@@ -245,7 +275,7 @@ function drawDoor(door) {
     }).join('<br>') + '</div>';
 }
 
-function drawStations() {
+function drawSidebar() {
   var box = document.getElementById('stations');
   if (!state.stations.length) {
     box.innerHTML = '<div class="dim" style="font-size:13px">Nothing has uploaded yet.</div>';
@@ -257,7 +287,7 @@ function drawStations() {
         '<div class="sub">' + esc(s.protocol || '?') +
         (s.dialect && s.dialect !== s.protocol ? ' \\u00b7 ' + esc(s.dialect) : '') +
         (s.role === 'extra' ? ' \\u00b7 extra ' + (s.channel || '?')
-                            : ' \\u00b7 the station') +
+                            : ' \\u00b7 main station') +
         ' \\u00b7 ' + s.field_count + ' fields \\u00b7 ' + ago(s.last_seen) +
         '</div>' +
         (s.undecided_count ? '<div class="sub warn">' + s.undecided_count +
@@ -305,6 +335,32 @@ function loadCandidates() {
   return api('candidates').then(function (c) { candidates = c; return c; });
 }
 
+function loadStations() {
+  return api('stations').then(function (d) { stationList = d; return d; });
+}
+
+function mainStation() {
+  /* The one station whose readings go where they belong, or null while nothing has
+     said yet. The whole of what the setup form needs to know before it offers to
+     make something else the main one. */
+  if (!stationList) return null;
+  var found = stationList.stations.filter(function (s) { return s.is_main; });
+  return found.length ? found[0] : null;
+}
+
+function stationName(s) {
+  return s.name || s.ident;
+}
+
+function freeChannel() {
+  var taken = (stationList && stationList.taken) || [];
+  var limit = (stationList && stationList.channels) || 8;
+  for (var n = 1; n <= limit; n++) {
+    if (taken.indexOf(n) < 0) return n;
+  }
+  return null;
+}
+
 /* ---------------------------------------------------------------- setting up */
 
 function loadSetup(then) {
@@ -316,8 +372,10 @@ function loadSetup(then) {
         return !x.done && !x.optional; }).length;
     /* The first visit lands on what there is to do, not on an empty field table. */
     if (!s.done && was === undefined) tab = 'setup';
-    /* Something arrived while we were waiting. Show it. */
-    if (was && was !== s.next) { drawStations(); draw(); }
+    /* Something arrived while we were waiting. Show it, once the page is not in
+       the middle of being used. */
+    if (was && was !== s.next) pendingDraw = true;
+    if (pendingDraw && !busy()) { pendingDraw = false; drawSidebar(); draw(); }
     if (then) then();
   });
 }
@@ -376,10 +434,13 @@ function stepBody(s) {
     return html + '<button class="act" data-goto="fields">Place them</button>';
   }
   if (s.id === 'sharing') {
-    return html + '<table><thead><tr><th>Column</th><th>Wanted by</th></tr></thead>' +
+    return html + '<table><thead><tr><th>Reading</th><th>Wanted by</th>' +
+      '<th>Held by</th></tr></thead>' +
       '<tbody>' + s.fields.map(function (f) {
         return '<tr><td class="mono">' + esc(f.field) + '</td><td>' +
-          esc(f.stations.join(', ')) + '</td></tr>';
+          esc(f.stations.join(', ')) + '</td><td>' +
+          (f.owner ? esc(f.owner) : '<span class="dim">nobody</span>') +
+          '</td></tr>';
       }).join('') + '</tbody></table>' +
       '<button class="act" data-goto="fields">Give them fields of their own</button>';
   }
@@ -392,22 +453,129 @@ function stepBody(s) {
   return html;
 }
 
-function createBox(protocols) {
+function createBox(one) {
   /* Only hardware whose upload path is yours to choose can be set up in advance.
-     The rest has to be heard first, and says so. */
-  var canBeNamed = protocols.filter(function (p) { return p.can_create; });
-  if (!canBeNamed.length) return '';
+     The rest has to be heard first, and says so. The protocol is the one picked
+     above: naming a station here and picking a kind there are one choice, and two
+     places to make it is one too many. */
+  if (!one.can_create) {
+    return '<p class="dim" style="margin-top:8px">Nothing to name here. This ' +
+      'hardware picks its own upload path, so the driver only hears of a station ' +
+      'when it uploads. It shows up as something to let in once it does.</p>';
+  }
+  if (pending && pending.what === 'create') return confirmBox();
   return '<div class="add">' +
     '<input type="text" id="newname" placeholder="name this station">' +
-    '<select id="newproto">' + canBeNamed.map(function (p) {
-      return '<option value="' + esc(p.name) + '"' +
-        (p.name === picked ? ' selected' : '') + '>' + esc(p.label) + '</option>';
-    }).join('') + '</select>' +
-    '<button class="act" id="create">Set it up</button></div>' +
+    roleSelect('newrole', mainStation() ? 'extra' : 'main') +
+    '<button class="act" id="create" data-proto="' + esc(one.name) +
+    '">Set it up</button></div>' +
     '<p class="dim" style="margin-top:8px">Naming it here gives it an upload path of ' +
     'its own. That path is how the driver knows which station an upload is from, and ' +
-    'it is a secret: a PASSKEY can be read off anybody\u2019s upload and repeated.</p>';
+    'it is a secret: a PASSKEY can be read off anybody\\u2019s upload and repeated.</p>' +
+    roleNote();
 }
+
+function roleSelect(id, chosenRole) {
+  /* Two answers, so a picker. The main station's readings go to outTemp and the
+     rest, which is what a report reads. Everything else is a sensor beside it, and
+     gets a channel of its own. */
+  return '<select id="' + id + '">' +
+    '<option value="main"' + (chosenRole === 'main' ? ' selected' : '') +
+    '>main station</option>' +
+    '<option value="extra"' + (chosenRole === 'extra' ? ' selected' : '') +
+    '>extra sensor</option></select>';
+}
+
+function roleNote() {
+  var main = mainStation();
+  if (!main) {
+    return '<p class="dim">Nothing is the main station yet, so this one is it: its ' +
+      'readings go to outTemp, barometer and the rest.</p>';
+  }
+  var channel = freeChannel();
+  return '<p class="dim"><b>' + esc(stationName(main)) + '</b> is the main station. ' +
+    'An extra sensor beside it gives its temperature and humidity to ' +
+    (channel ? 'extraTemp' + channel + ' and extraHumid' + channel
+             : 'a channel of its own') +
+    ', and its wind, rain and pressure have nowhere to go and are dropped.</p>';
+}
+
+function confirmBox() {
+  /* The two things on this page that reach backwards rather than forwards.
+     Everything else takes effect from the next upload and can be put back; these
+     leave a column holding one sensor before a moment and something else after it,
+     and no later click separates them again. So both are said in full, with the
+     numbers out of the archive rather than a general warning, and asked for twice. */
+  var found = pending.found || {};
+  var taking = found.taking_from;
+  var columns = found.columns || [];
+  var html = '<div class="note bad">';
+
+  if (taking) {
+    html += '<p><b>' + esc(pending.name) + '</b> would become the main station, and ' +
+      '<b>' + esc(taking.name) + '</b> would stop being it.</p>' +
+      '<p>From its next upload, <b>' + esc(taking.name) + '</b> is an extra sensor' +
+      (taking.channel
+        ? ' on channel ' + taking.channel + ': its temperature and humidity go to ' +
+          'extraTemp' + taking.channel + ' and extraHumid' + taking.channel +
+          ' instead of outTemp and outHumidity'
+        : '') +
+      '. Its wind, rain and pressure have nowhere of their own to go, and are not ' +
+      'recorded at all from then on.</p>';
+  }
+
+  if (columns.length) {
+    html += '<p>These columns already hold readings, and this station would write ' +
+      'into them:</p><table class="settings"><tbody>' +
+      columns.slice(0, 8).map(function (c) {
+        return '<tr><td class="mono">' + esc(c.field) + '</td><td>' +
+          c.count + ' reading' + (c.count === 1 ? '' : 's') +
+          ', last on ' + esc(c.last) + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      (columns.length > 8
+        ? '<p class="dim">and ' + (columns.length - 8) + ' more.</p>' : '') +
+      '<p>Those readings came from somewhere: an older console, another driver, an ' +
+      'import. If this is the same weather station in the same place, writing on is ' +
+      'exactly right and the series carries on. If it is a different sensor, the ' +
+      'column ends up holding two of them, and afterwards nothing can say which ' +
+      'reading came from which.</p>';
+  } else if (found.checked === false) {
+    html += '<p>The archive database could not be read, so whether these columns ' +
+      'already hold readings is not known here. It is worth looking before saying ' +
+      'yes.</p>';
+  }
+
+  html += '<p>What is already in the archive stays exactly where it is. Nothing ' +
+    'here rewrites a row, and nothing here can separate two sensors that have ' +
+    'shared a column.</p>' +
+    '<p><b>Copy your archive database first.</b> For SQLite that is the .sdb file, ' +
+    'with WeeWX stopped. For MySQL, a mysqldump.</p>' +
+    '<label class="agree"><input type="checkbox" id="agreed"> ' +
+    'I have a copy of the archive database.</label>' +
+    '<div class="add"><button class="act" id="doconfirm" disabled>' +
+    esc(pending.button) + '</button>' +
+    '<button class="act" id="noconfirm">Leave it alone</button></div></div>';
+  return html;
+}
+
+function inTheWay(found) {
+  /* Whether there is anything here somebody has to answer for. Both halves reach
+     the archive rather than only the settings file, so either one is enough. */
+  return !!(found && found.ok &&
+            (found.taking_from || (found.columns && found.columns.length)));
+}
+
+function askFirst(what) {
+  /* What this would land on, from the driver, before anything is written. The page
+     could work some of it out on its own and cannot work out the archive, so it asks
+     for all of it in one place: two answers to the same question is one too many. */
+  var query = 'before?protocol=' + encodeURIComponent(what.protocol || '') +
+    '&role=' + encodeURIComponent(what.role || '') +
+    (what.channel ? '&channel=' + what.channel : '') +
+    (what.ident ? '&ident=' + encodeURIComponent(what.ident) : '');
+  return api(query);
+}
+
 
 function settingsTable(one) {
   return (one.settings.length
@@ -425,15 +593,18 @@ function settingsTable(one) {
 }
 
 function createdBody(made) {
-  /* A station set up here has a path of its own, and that path is the whole point:
-     it is how the driver knows which station an upload is from, and it is a secret.
-     It comes from the driver on every load rather than being held here, so closing
-     the tab does not lose it. */
+  /* Which stations are waiting, and nothing else. Each one's path and console
+     settings live on the Stations tab, where they stay after this step is
+     ticked off; saying them twice means two places to keep right, and the one
+     inside a checklist is the one that disappears. */
   if (!made || !made.length) return '';
-  return made.map(function (m) {
-    return '<div class="made"><p><b>' + esc(m.name) + '</b> is set up. Put this into ' +
-      'the console:</p>' + settingsTable(m.settings) + '</div>';
-  }).join('');
+  return '<div class="made"><p>' + made.map(function (m) {
+      return '<b>' + esc(m.name) + '</b>';
+    }).join(', ') + ' ' + (made.length > 1 ? 'are' : 'is') +
+    ' set up and waiting for a first upload. The Stations tab has what to put ' +
+    'into the console.</p>' +
+    '<button class="act" data-goto="stations">Show the stations</button>' +
+    '</div>';
 }
 
 function hardwareBody(s) {
@@ -449,17 +620,21 @@ function hardwareBody(s) {
     settingsTable(one) +
     '<p class="waiting"><b>Waiting for the first upload.</b> This page notices by ' +
     'itself, so you can leave it open.</p>' +
-    createBox(s.protocols);
+    createBox(one);
 }
 
 function watch() {
   /* While anything is outstanding, look more often than the fifteen seconds the
-     rest of the page settles for. Somebody is standing at their console. */
+     rest of the page settles for. Somebody is standing at their console.
+
+     Looking is all it does. Redrawing on every tick would take a half-typed station
+     name out of the field somebody is typing it into, and the tick out of the box
+     that arms a change nothing can undo. loadSetup redraws when something actually
+     changed, and waits until the field is free. */
   if (watching) return;
   watching = setInterval(function () {
     if (setup && setup.done) { clearInterval(watching); watching = null; return; }
     loadSetup();
-    if (tab === 'setup') drawSetup(document.getElementById('body'));
   }, 5000);
 }
 
@@ -467,13 +642,14 @@ function watch() {
 
 function choose(ident) {
   chosen = ident;
-  drawStations();
+  drawSidebar();
   draw();
 }
 
 function draw() {
   var box = document.getElementById('body');
   if (tab === 'setup') return drawSetup(box);
+  if (tab === 'stations') return drawStations(box);
   if (tab === 'fields') {
     box.innerHTML = '<p class="dim">Loading.</p>';
     return drawFields(box);
@@ -597,7 +773,7 @@ function stationFields(s, several) {
   var open = !folded[s.ident];
   var role = s.role === 'extra'
     ? 'extra sensor on channel ' + (s.channel || '?')
-    : 'the station';
+    : 'the main station';
   var head = '<div class="fold" data-fold="' + esc(s.ident) + '">' +
     '<span class="caret">' + (open ? '\\u25be' : '\\u25b8') + '</span>' +
     '<b>' + esc(s.name || s.ident) + '</b>' +
@@ -609,7 +785,8 @@ function stationFields(s, several) {
   if (several && !s.declared) {
     swap = '<div class="add"><button class="act" data-role="' +
       (s.role === 'main' ? 'extra' : 'main') + '" data-ident="' + esc(s.ident) +
-      '">Make it ' + (s.role === 'main' ? 'an extra sensor' : 'the station') +
+      '">Make it ' + (s.role === 'main' ? 'an extra sensor'
+                                            : 'the main station') +
       '</button></div>';
   }
   return '<div class="block">' + head + swap +
@@ -617,6 +794,116 @@ function stationFields(s, several) {
     '<th>Group</th><th>Column</th><th>How</th></tr></thead><tbody>' +
     s.rows.map(function (f) { return fieldRow(s, f); }).join('') +
     '</tbody></table></div>';
+}
+
+/* ---------------------------------------------------------------- stations */
+
+function drawStations(box) {
+  loadStations().then(function (d) {
+    if (!d.ok) { box.innerHTML = '<p class="bad">' + esc(d.error || '') + '</p>'; return; }
+    box.innerHTML = '<div class="setup">' +
+      (pending && pending.what === 'edit' ? confirmBox() : '') +
+      d.stations.map(stationCard).join('') +
+      '<p class="dim">One station is the main station. Its readings go to ' +
+      'outTemp, ' +
+      'barometer and the rest, which is what a WeeWX report reads. Every other ' +
+      'station is a sensor beside it: temperature and humidity go to a channel of ' +
+      'their own, and what has nowhere to go is dropped rather than written over ' +
+      'the main station\\u2019s.</p>' +
+      '<p class="dim">Changed here, kept in ' + esc(d.settings_file) + '.</p></div>';
+  });
+}
+
+function stationCard(s) {
+  /* Shut, until somebody wants this one. A list of stations is a list to find
+     something in, and five consoles' worth of console settings unrolled at
+     once is not a list any more. */
+  var open = !!unfolded[s.ident];
+  var what = s.role === 'extra'
+    ? 'extra sensor on channel ' + (s.channel || '?')
+    : (s.is_main ? 'the main station' : 'main, and not the one that writes');
+  return '<div class="step ' + (s.is_main ? 'done' : 'todo') + '">' +
+    '<div class="head shut" data-open="' + esc(s.ident) + '">' +
+    '<span class="mark">' + (s.is_main ? '\\u2605' : '\\u25cb') +
+    '</span><span class="caret">' + (open ? '\\u25be' : '\\u25b8') +
+    '</span><span class="what">' + esc(s.name || s.ident) + '</span>' +
+    '<span class="dim">' + esc(s.protocol || '?') + ' \\u00b7 ' + esc(what) +
+    ' \\u00b7 ' + (s.heard
+      ? s.uploads + (s.uploads === 1 ? ' upload ' : ' uploads ') + '\\u00b7 ' +
+        ago(s.last_seen)
+      : 'never heard from') + '</span></div>' +
+    (open ? '<div class="body">' + stationBody(s, editing === s.ident) +
+            '</div>' : '') +
+    '</div>';
+}
+
+function stationBody(s, open) {
+  /* The console settings, every time. The checklist shows them once and then
+     stops, because it is a checklist; a console reset a year later needs them
+     again, and this is where somebody would come looking. */
+  var html = s.settings ? settingsTable(s.settings) : '';
+  if (s.path) {
+    html += '<p class="dim">The path is what tells this station apart from the ' +
+      'others, so it is a secret: anybody who can post to it can write into this ' +
+      'station\\u2019s columns.</p>';
+  }
+  if (s.declared) {
+    return html + '<p class="dim">weewx.conf declares this station, so its name, its ' +
+      'role and its channel are set there. One owner per setting.</p>';
+  }
+  if (s.adopted) {
+    return html + '<p class="dim">The first console this driver ever heard, adopted ' +
+      'so that it would record rather than be turned away. It is named in no file, ' +
+      'which is why there is nothing here to change: what it wants is a name, and ' +
+      'the Setup tab gives it one.</p>';
+  }
+  html += columnsHeld(s);
+  if (!open) {
+    return html + '<div class="add"><button class="act" data-edit="' + esc(s.ident) +
+      '">Change it</button></div>';
+  }
+  return html + '<div class="add">' +
+    '<input type="text" id="editname" value="' + esc(s.name || '') +
+    '" placeholder="name this station">' +
+    roleSelect('editrole', s.role) +
+    channelSelect(s) +
+    '<button class="act" id="save" data-ident="' + esc(s.ident) + '">Save</button>' +
+    '<button class="act" id="cancel">Cancel</button></div>' +
+    '<div class="add" style="margin-top:14px">' +
+    '<button class="act" data-forget="' + esc(s.ident) + '">Take it out</button>' +
+    '<span class="dim" style="font-size:12px;align-self:center">Its upload path goes ' +
+    'with it, and the console using that path is turned away from then on.</span>' +
+    '</div>';
+}
+
+function columnsHeld(s) {
+  /* Which columns are this station's. A column belongs to whoever filled it first,
+     so a sensor that has been taken down goes on holding one until somebody says
+     otherwise: better than losing it while the console is offline for a week, but
+     only if there is a way to say so. */
+  if (!s.columns || !s.columns.length) return '';
+  return '<p class="dim">Fills ' + s.columns.length + ' column' +
+    (s.columns.length === 1 ? '' : 's') + ': <span class="mono">' +
+    s.columns.map(esc).join(', ') + '</span>. No other station writes them.' +
+    (s.editable
+      ? ' <button class="act" data-release="' + esc(s.ident) +
+        '">Give them up</button>'
+      : '') + '</p>';
+}
+
+function channelSelect(s) {
+  /* Only the channels nothing else is on, plus the one this station already has.
+     A channel two stations share is two sensors in one column, which is the thing
+     none of this is allowed to produce. */
+  var taken = (stationList && stationList.taken) || [];
+  var limit = (stationList && stationList.channels) || 8;
+  var out = '<select id="editchannel">';
+  for (var n = 1; n <= limit; n++) {
+    if (taken.indexOf(n) >= 0 && n !== s.channel) continue;
+    out += '<option value="' + n + '"' + (n === s.channel ? ' selected' : '') +
+      '>channel ' + n + '</option>';
+  }
+  return out + '</select>';
 }
 
 function drawFields(box) {
@@ -691,6 +978,32 @@ function drawColumns(box) {
   });
 }
 
+function createStation(body) {
+  api('create', body).then(function (r) {
+    if (!r.ok) { flash(r.message, true); return; }
+    flash(r.station.role === 'main'
+      ? 'Set up as the main station. Put the path below into the console.'
+      : 'Set up as an extra sensor on channel ' + r.station.channel +
+        '. Put the path below into the console.');
+    candidates = null;
+    loadState();
+    loadStations();
+    loadSetup(function () { draw(); });
+  });
+}
+
+function saveStation(ident, body) {
+  body.ident = ident;
+  api('edit', body).then(function (r) {
+    flash(r.ok ? 'Changed. It takes effect on the next upload.' : r.message, !r.ok);
+    if (!r.ok) return;
+    editing = null;
+    candidates = null;
+    loadState();
+    loadSetup(function () { draw(); });
+  });
+}
+
 /* ---------------------------------------------------------------- events */
 
 document.addEventListener('click', function (e) {
@@ -732,11 +1045,95 @@ document.addEventListener('click', function (e) {
   if (t.id === 'addstation') { adding = true; show('setup'); return; }
   if (t.id === 'create') {
     var name = (document.getElementById('newname').value || '').trim();
-    var proto = document.getElementById('newproto').value;
+    var proto = t.dataset.proto;
+    var role = document.getElementById('newrole').value;
     if (!name) { flash('Give it a name first.', true); return; }
-    api('create', { protocol: proto, name: name }).then(function (r) {
-      if (!r.ok) { flash(r.message, true); return; }
-      flash('Set up. Put the path below into the console.');
+    askFirst({ protocol: proto, role: role }).then(function (found) {
+      if (!inTheWay(found)) {
+        createStation({ protocol: proto, name: name, role: role });
+        return;
+      }
+      /* Not sent. What this would land on is said in full first, and asked for
+         again afterwards. */
+      pending = { what: 'create', name: name, protocol: proto, role: role,
+                  found: found,
+                  button: role === 'main' ? 'Make ' + name + ' the main station'
+                                          : 'Set ' + name + ' up anyway' };
+      draw();
+    });
+    return;
+  }
+  if (t.id === 'agreed') {
+    document.getElementById('doconfirm').disabled = !t.checked;
+    return;
+  }
+  if (t.id === 'noconfirm') { pending = null; draw(); return; }
+  if (t.id === 'doconfirm') {
+    var asked = pending;
+    pending = null;
+    if (asked.what === 'create') {
+      createStation({ protocol: asked.protocol, name: asked.name, role: asked.role,
+                      force: true });
+    } else {
+      saveStation(asked.ident, { name: asked.name, role: asked.role,
+                                 channel: asked.channel, force: true });
+    }
+    return;
+  }
+  var head = t.closest ? t.closest('[data-open]') : null;
+  if (head) {
+    /* Taken from whatever inside the head was clicked, so that the name and the
+       line under it open the station too rather than only the caret. */
+    var which = head.dataset.open;
+    unfolded[which] = !unfolded[which];
+    if (!unfolded[which] && editing === which) editing = null;
+    draw();
+    return;
+  }
+  if (t.dataset.edit) { editing = t.dataset.edit; draw(); return; }
+  if (t.id === 'cancel') { editing = null; draw(); return; }
+  if (t.id === 'save') {
+    var ident = t.dataset.ident;
+    var wanted = (document.getElementById('editname').value || '').trim();
+    var role = document.getElementById('editrole').value;
+    var channelBox = document.getElementById('editchannel');
+    var channel = channelBox ? Number(channelBox.value) : null;
+    var was = stationList.stations.filter(function (x) { return x.ident === ident; })[0];
+    var asking = { name: wanted, role: role,
+                   channel: role === 'extra' ? channel : null };
+    askFirst({ protocol: was && was.protocol, role: role, channel: asking.channel,
+               ident: ident }).then(function (found) {
+      if (!inTheWay(found)) { saveStation(ident, asking); return; }
+      pending = { what: 'edit', ident: ident, role: role, channel: asking.channel,
+                  name: wanted || (was && was.name) || ident, found: found,
+                  button: role === 'main'
+                    ? 'Make ' + (wanted || ident) + ' the main station'
+                    : 'Save it anyway' };
+      draw();
+    });
+    return;
+  }
+  if (t.dataset.release) {
+    var owner = t.dataset.release;
+    if (!window.confirm('Give up the columns this station fills?' + '\\n\\n' +
+        'The next station to send one of those readings gets that column, and this ' +
+        'one is turned away from it. What is already in the archive stays.')) return;
+    api('release', { ident: owner }).then(function (r) {
+      flash(r.message, !r.ok);
+      if (r.ok) { candidates = null; loadState(); loadSetup(function () { draw(); }); }
+    });
+    return;
+  }
+  if (t.dataset.forget) {
+    var who = t.dataset.forget;
+    if (!window.confirm('Take this station out?\\n\\nIts upload path goes with it. ' +
+        'The console using that path is turned away from then on, and setting it up ' +
+        'again means a new path and typing it into the console again.\\n\\nWhat it ' +
+        'has already recorded stays in the archive.')) return;
+    api('forget', { ident: who }).then(function (r) {
+      flash(r.ok ? 'Taken out.' : r.message, !r.ok);
+      if (!r.ok) return;
+      editing = null;
       candidates = null;
       loadState();
       loadSetup(function () { draw(); });
@@ -818,7 +1215,8 @@ document.addEventListener('change', function (e) {
   placeField(e.target.dataset.ident || chosen, raw, field, false);
 });
 
-loadState().then(function () { return loadSetup(); }).then(function () {
+loadState().then(function () { return loadStations(); })
+  .then(function () { return loadSetup(); }).then(function () {
   /* An installation with something still to do opens on the thing still to do. The
      fields of a station that has not uploaded are an empty table, and an empty table
      reads like a fault rather than like a step not taken yet. */
@@ -827,10 +1225,10 @@ loadState().then(function () { return loadSetup(); }).then(function () {
     b.classList.toggle('on', b.dataset.tab === tab);
   });
   if (!chosen && state.stations.length) chosen = state.stations[0].ident;
-  drawStations();
+  drawSidebar();
   draw();
 });
-setInterval(function () { loadState(); loadSetup(); }, 15000);
+setInterval(function () { loadState(); loadStations(); loadSetup(); }, 15000);
 </script>
 </body>
 </html>

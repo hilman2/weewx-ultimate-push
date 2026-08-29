@@ -41,7 +41,8 @@ import weewx.drivers
 import weewx.units
 
 from . import (VERSION, activity, admin, checklist, columns, consoles,
-               mapping, overrides, protocols, report, roles, server, transport)
+               mapping, overrides, owners, protocols, report, roles, server,
+               transport)
 from .mapping import Mapper
 
 try:
@@ -82,6 +83,15 @@ NOT_FOR_LISTENER = frozenset([
 
 
 def loader(config_dict, _engine):
+    """Build the driver, as WeeWX asks for it.
+
+    Args:
+        config_dict (dict): The whole of weewx.conf.
+        _engine: The WeeWX engine, which this driver does not need.
+
+    Returns:
+        UltimatePushDriver: The driver.
+    """
     options = dict(config_dict[DRIVER_NAME])
     # The console list belongs with the readings it protects, so the driver is given
     # what it needs to reach the database.
@@ -110,6 +120,18 @@ class Station:
 
     def __init__(self, name, ident, extensions, infer_unknown, max_behind,
                  max_ahead, role=roles.MAIN, channel=None):
+        """Set up one station.
+
+        Args:
+            name (str): What to call it, or None.
+            ident (str): What the console sends to name itself.
+            extensions (dict): Raw field to WeeWX field, set by hand.
+            infer_unknown (str): What to do with a field the catalog misses.
+            max_behind (int): How far behind the console's clock may be.
+            max_ahead (int): The same, for a clock that runs fast.
+            role (str): MAIN or EXTRA. See roles.py.
+            channel (int): Which extra channel it writes to.
+        """
         self.name = name
         self.ident = ident
         self.extensions = extensions
@@ -131,6 +153,13 @@ class Station:
         `announce` is off when a rebuilt station is being given back the catalogs the
         one before it had. That is bookkeeping, not news, and somebody clicking
         through a field map would otherwise get a line of log per click.
+
+        Args:
+            dialect (Dialect): The catalog this station's uploads are read with.
+            announce (bool): Whether to log that the catalog is in use.
+
+        Returns:
+            Mapper: The mapper for that dialect.
         """
         mapper = self.mappers.get(dialect.name)
         if mapper is None:
@@ -224,6 +253,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.paths_proven = False
         self.config_path = _config_path(stn_dict.get('config_dict'))
         self.occupied = None
+        # Whether the archive table has been asked what it already holds. Apart from
+        # `occupied` being None, because "not read" and "read, and holds nothing" are
+        # different answers and the interface says which one it got.
+        self.history_read = False
         # The columns the archive table actually has. Not the schema: a database
         # made by an older WeeWX has fewer, and saying 'column ready' about one
         # that is not there sends somebody looking for a fault in the wrong place.
@@ -258,7 +291,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.assumed = False
         # What the main station has been seen to fill, so that an extra one can be
         # kept out of it. Learned rather than declared: it is what actually arrives.
-        self.owned_by_main = set()
+        # Which station fills which archive column. See owners.py. Read from the
+        # settings file, so a restart does not have to learn it again.
+        self.owners = owners.Register(self.overrides.columns())
         self.said_apart = set()
 
         self.listener = server.Fan(self._listeners(stn_dict))
@@ -282,6 +317,13 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
 
         Naming them is also how you settle a payload that says nothing about itself:
         with one protocol configured there is nothing left to guess.
+
+        Args:
+            configured (str): What `protocols` was set to, as a comma-separated list or
+                'auto'.
+
+        Returns:
+            list: The protocol classes to listen for.
         """
         if not configured or configured == 'auto':
             return protocols.posting()
@@ -301,7 +343,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         return chosen
 
     def _apply_protocol_options(self, stn_dict):
-        """Hand a protocol the one or two settings only the user can decide."""
+        """Hand a protocol the one or two settings only the user can decide.
+
+        Args:
+            stn_dict (dict): The driver section of weewx.conf.
+        """
         wind = stn_dict.get('metric_wind')
         if wind:
             from .protocols import wunderground
@@ -342,6 +388,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         from a driver would be worse than the problem. It says which line to change,
         once, at startup, which is where somebody is looking when they have just added
         a protocol.
+
+        Args:
+            config_dict (dict): The whole of weewx.conf, which is where StdWXCalculate
+                lives.
         """
         if not config_dict:
             # Constructed without one, which is a test or a diagnostic run. There is
@@ -382,6 +432,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         applies to every station. The web interface refuses to touch these: two files
         with an answer each would mean one of them is quietly ignored, and which one
         would depend on the order they happened to be read in.
+
+        Args:
+            stn_dict (dict): The driver section of weewx.conf.
+
+        Returns:
+            dict: Station identity, or None for the driver's own map, to the set of raw
+            field names weewx.conf already places. The web interface refuses to write
+            these, so that the two files cannot disagree about one field.
         """
         reserved = {None: set(stn_dict.get('field_map_extensions', {}))}
         for options in (stn_dict.get('stations') or {}).values():
@@ -441,13 +499,27 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.reload_wanted = False
         self.overrides.read()
         self._apply_overrides()
+        # Including who owns which column. Every claim is written as it is made, so
+        # the file is the current answer and this cannot lose one.
+        self.owners = owners.Register(self.overrides.columns())
         for station in self.web_stations.values():
             for mapper in station.mappers.values():
                 self._register_units(mapper.wanted_groups())
         log.info("Took up the settings from %s.", self.overrides.path)
 
     def _read_stations(self, configured):
-        """Return {identity: Station} for an installation with several consoles."""
+        """Return {identity: Station} for an installation with several consoles.
+
+        Args:
+            configured (dict): The [[stations]] subsection, or nothing.
+
+        Returns:
+            dict: Station identity to Station.
+
+        Raises:
+            ValueError: If a station has no identity, or a role that is not one of the
+                two, because a configuration that cannot be read is not one to guess at.
+        """
         if not configured:
             return {}
         stations = {}
@@ -482,6 +554,13 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         From the driver section, from [[stations]], or from the file where the first
         console ever heard was recorded. Empty means nothing has been heard yet, and
         the next console to upload is adopted.
+
+        Args:
+            passkey (str): The identity set in the driver section, where there is one.
+
+        Returns:
+            set: The identities this driver answers to. Empty means nothing has
+            been heard yet, and the next console to upload is adopted.
         """
         known = set(self.stations)
         known.update(self.overrides.stations())
@@ -501,6 +580,13 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         One HTTP listener for the protocols that post, and a UDP one only if a
         protocol that broadcasts is enabled. A port is opened for hardware somebody
         actually has, not for hardware they might buy.
+
+        Args:
+            stn_dict (dict): The driver section of weewx.conf.
+
+        Returns:
+            list: The listeners this configuration needs: one for HTTP, one more for
+            WeatherFlow's broadcasts, and one more for the web interface.
         """
         options = {key: value for key, value in stn_dict.items()
                    if key not in NOT_FOR_LISTENER}
@@ -538,10 +624,27 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         can be set up while WeeWX is running and its path has to work from the next
         upload rather than the next restart.
 
-        Everything is accepted until a station has actually been heard on its own
-        path. A path that has never worked is not yet protecting anything, and
+        The driver's own path is always one of them. It is what the setup page tells
+        people to type in, and it is how every console that cannot be given a path of
+        its own arrives. Closing it because some other station now has a secret path
+        would turn away the console that was here first, which is a station going
+        quiet for a reason nobody would look for on this page.
+
+        That costs nothing a station's own path was protecting. A path is a secret
+        about which station an upload is from; who may upload at all is a separate
+        question, and the answer to it is the list of consoles this driver knows.
+
+        Everything else is accepted until a station has actually been heard on its
+        own path. A path that has never worked is not yet protecting anything, and
         turning it into a 404 before that would break the console somebody is still
         in the middle of configuring.
+
+        Args:
+            path (str): The path the request arrived on.
+
+        Returns:
+            bool: Whether to answer it at all. A path that is not wanted gets a
+            404 from the listener, before this driver sees the body.
         """
         path = (path or '/').rstrip('/')
         if path in self.station_paths:
@@ -551,6 +654,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 return True
         if self.listener_path:
             return path == self.listener_path.rstrip('/')
+        if path == '':
+            return True
         return not self.paths_proven
 
     def _web_listener(self, configured):
@@ -562,6 +667,17 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         Off unless asked for, and refused without a token, because the alternative is
         an interface that can change the field map sitting open on the network for
         anybody who guesses the port.
+
+        Args:
+            configured (dict): The [[web]] subsection, or nothing.
+
+        Returns:
+            A listener for the interface, or None when it is switched off.
+
+        Raises:
+            ValueError: If the token is missing or shorter than ten characters. An
+                interface that can change the field map should not be open because
+                somebody left a setting blank.
         """
         if not configured:
             return None
@@ -615,6 +731,12 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         gets its JSON and a Weather Underground client gets 'success', on the same
         port, in the same second. A device that does not get the answer it expects
         treats the upload as failed and retries until it gives up.
+
+        Args:
+            request: The upload, as the listener hands it over.
+
+        Returns:
+            tuple: (body, content_type), the reply this hardware waits for.
         """
         try:
             raw = transport.parse(request.text)
@@ -644,6 +766,13 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         Separate from _packet_from because "which mapping applies to this" is a
         question worth being able to ask without building a packet, and because it is
         the whole of what a second protocol changes.
+
+        Args:
+            request: The upload, as the listener hands it over.
+
+        Returns:
+            tuple: (protocol, station, mapper, readings). All four are None when
+            this is not an upload the driver keeps.
         """
         if self.reload_wanted:
             self._reload()
@@ -695,7 +824,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         return protocol, station, mapper, raw
 
     def _packet_from(self, request):
-        """Turn one upload into a loop packet, or None if it is not ours to keep."""
+        """Turn one upload into a loop packet, or None if it is not ours to keep.
+
+        Args:
+            request: The upload, as the listener hands it over.
+
+        Returns:
+            dict: A loop packet, or None when nothing of it is to be kept.
+        """
         protocol, station, mapper, raw = self.reading_for(request)
         if mapper is None:
             return None
@@ -726,72 +862,225 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         packet['usUnits'] = dialect.units
         if station.name:
             packet['station'] = station.name
-        if station.role == roles.MAIN:
-            # What the main station fills is what an extra one must keep out of.
-            self.owned_by_main.update(f for f in packet
-                                      if f not in ('dateTime', 'usUnits', 'station'))
         return packet
+
+    def _held_back_now(self):
+        """Whether an extra station's readings are being held rather than written.
+
+        Only until the main station has been heard once, ever. After that the
+        register has its columns on disk and nothing waits again.
+        """
+        if not self._has_a_main_station():
+            return False
+        main = self._main_ident()
+        return not (main is not None and self.owners.owns(main))
 
     def _has_a_main_station(self):
         """Whether any station is set up as the main one.
 
         If none is, there is nothing for an extra one to stay out of and holding it
-        back would hold it back for ever.
+        back would hold it back for ever. The console this driver adopted counts:
+        nobody gave it the role, but it has it, and it fills the columns.
         """
-        everyone = list(self.stations.values()) + list(self.web_stations.values())
-        return any(s.role == roles.MAIN for s in everyone)
+        return bool(self._mains())
 
     def _keep_stations_apart(self, station, packet):
-        """Stop a station that is not the main one from writing over it.
+        """Let this station write only the columns it owns, and claim what is free.
 
-        The role moves what can be moved. What cannot, a second station's wind or
-        rain or pressure, has nowhere to go, and writing it would mean two sensors
-        taking turns in one column every few seconds. Nothing afterwards can separate
-        that, so it is dropped and said once.
+        A column takes one answer. Whoever fills a column first owns it, everybody
+        else is turned away from it, and the main station outranks that: otherwise
+        which console owns outTemp would be settled by whichever one happened to
+        upload first after a restart.
 
-        A field the user named by hand is left alone. Naming it is the decision.
+        Roles alone did not cover this. A role moves an extra station's temperature
+        and humidity aside and drops what has nowhere to go, but "nowhere to go" was
+        measured against the main station only. Three identical consoles set up as
+        extra sensors all send soilmoisture1; if the main station is a console that
+        has no such reading, all three used to write soilMoist1, in turn, every few
+        seconds.
+
+        See owners.py.
+
+        Args:
+            station (Station): Whichever station sent this upload.
+            packet (dict): The loop packet, changed in place: readings this
+                station may not write are taken out of it.
         """
-        if station.role == roles.MAIN:
+        is_main = station is self.the_main_station()
+        ident = station.ident or self._adopted_ident() or ''
+        if self._hold_back(station, packet, is_main):
             return
-        if not self.owned_by_main:
-            # Nothing is known about the main station's columns yet, because it has
-            # not uploaded since this driver started. Writing now would put this
-            # station's wind and pressure into the main station's columns for an
-            # interval, and an interval of two sensors in one column is exactly what
-            # none of this is allowed to produce.
-            #
-            # So it waits. One upload of an extra station is a cheap thing to lose;
-            # the alternative is a stretch of readings nobody can separate afterwards,
-            # once per restart, for ever.
-            if self._has_a_main_station():
-                packet.clear()
-                if 'waiting' not in self.said_apart:
-                    self.said_apart.add('waiting')
-                    log.info("Holding back station '%s' until the main station has "
-                             "been heard, so that its readings cannot land in the "
-                             "main station's columns.",
-                             station.name or station.ident)
-            return
-        wanted = set(station.extensions.values())
-        dropped = sorted(set(packet) & self.owned_by_main - wanted)
-        self.activity.kept_apart(station.ident or '', dropped)
-        if not dropped:
-            return
+
+        taken, dropped = [], []
+        for field in owners.readings(packet):
+            allowed, lost = self.owners.claim(field, ident, is_main)
+            if not allowed:
+                dropped.append(field)
+                continue
+            if lost is not None or self.owners.owner(field) == ident:
+                if field not in self.overrides.columns():
+                    taken.append(field)
+            if lost is not None:
+                self._said_lost(field, lost, station)
+
         for field in dropped:
             packet.pop(field, None)
-        # One line for the lot. A second weather station has thirty readings with
-        # nowhere to go, and thirty copies of the same sentence is not a log anybody
-        # reads. Said once per station per run: after that it is not news.
-        who = station.name or station.ident
+        self.activity.kept_apart(ident, sorted(dropped))
+        if taken:
+            # Written once, when a column changes hands. New claims happen in the
+            # first minutes of a run and then stop, so this is not a write per upload.
+            self._remember_columns(taken, ident)
+        if dropped:
+            self._said_dropped(station, sorted(dropped))
+
+    def _hold_back(self, station, packet, is_main):
+        """Whether nothing of this upload may be written yet.
+
+        Only while the register knows nothing about the main station: that is a fresh
+        installation, or a settings file from before this driver kept a register. An
+        extra station writing then would put its wind and pressure into columns the
+        main station is about to claim, and one interval of two sensors in one column
+        is what none of this is allowed to produce.
+
+        After the main station's first upload this is over for good, because the
+        register is on disk. It used to happen at every restart.
+
+        Args:
+            station (Station): The station that has just uploaded.
+            packet (dict): The loop packet, emptied when the answer is yes.
+            is_main (bool): Whether this is the one main station.
+
+        Returns:
+            bool: Whether nothing of this upload may be written yet.
+        """
+        if is_main or not self._has_a_main_station():
+            return False
+        main = self._main_ident()
+        if main is not None and self.owners.owns(main):
+            return False
+        packet.clear()
+        if 'waiting' not in self.said_apart:
+            self.said_apart.add('waiting')
+            log.info("Holding back station '%s' until the main station has been "
+                     "heard once, so that its readings cannot land in the main "
+                     "station's columns. This happens once, not at every restart.",
+                     station.name or station.ident)
+        return True
+
+    def _remember_columns(self, fields, ident):
+        """Write down who fills these columns, so a restart does not ask again.
+
+        Args:
+            fields (iterable): The columns just claimed.
+            ident (str): The station that claimed them.
+        """
+        for field in fields:
+            ok, message = self.overrides.set_column(field, ident)
+            if not ok:
+                log.warning("Cannot record who fills %s: %s", field, message)
+                return
+
+    def _said_lost(self, field, lost, station):
+        """A column the main station has taken from somebody.
+
+        Args:
+            field (str): The column that changed hands.
+            lost (str): The identity that held it until now.
+            station (Station): The main station, which has just taken it.
+        """
+        was = self.web_stations.get(lost)
+        log.warning(
+            "%s now holds readings from the main station '%s'. It held '%s' before, "
+            "and that station is no longer writing it: two sensors in one column "
+            "cannot be told apart afterwards. Give '%s' a field of its own if its "
+            "reading matters.",
+            field, station.name or station.ident,
+            (was.name if was else None) or lost, (was.name if was else None) or lost)
+
+    def _said_dropped(self, station, dropped):
+        """One line for the lot, once per station per run.
+
+        A second weather station has thirty readings with nowhere to go, and thirty
+        copies of one sentence is not a log anybody reads.
+
+        Args:
+            station (Station): The station whose readings were dropped.
+            dropped (list): The columns it did not get to write.
+        """
+        who = station.name or station.ident or 'an adopted console'
         if who in self.said_apart:
             return
         self.said_apart.add(who)
+        owned = {f: self.owners.owner(f) for f in dropped}
+        others = sorted({self._name_of(i) for i in owned.values() if i})
+        if station.role == roles.MAIN and station is not self.the_main_station():
+            # Two stations set up as the main one. Only a file written by hand can
+            # say that, and naming the columns is more use than repeating the count.
+            log.error(
+                "Station '%s' is set up as the main station, and so is '%s'. Two of "
+                "them write the same columns, and afterwards nothing can tell one "
+                "sensor's readings from the other's. %d reading(s) from '%s' are not "
+                "being written: %s. Give it 'role = extra' and a 'channel', or a "
+                "[[field_map_extensions]] that sends them somewhere of their own.",
+                who, self._main_name(), len(dropped), who, ', '.join(dropped))
+            return
         log.warning(
-            "%d reading(s) from station '%s' are not being written, because the main "
-            "station already fills those columns and two sensors in one column "
-            "cannot be separated afterwards: %s. Give them fields of their own under "
-            "[[field_map_extensions]], or make this the main station.",
-            len(dropped), who, ', '.join(dropped))
+            "%d reading(s) from station '%s' are not being written, because %s "
+            "already fill(s) those columns and two sensors in one column cannot be "
+            "separated afterwards: %s. Give them fields of their own under "
+            "[[field_map_extensions]], or take the column away from its owner on the "
+            "Fields tab.",
+            len(dropped), who, ' and '.join(others) or 'another station',
+            ', '.join(dropped))
+
+    def named_by_hand(self, ident):
+        """The WeeWX fields somebody has set for this station themselves.
+
+        A field named by hand is a decision. If it turns out not to be written after
+        all, that is worth saying out loud, where the same reading dropped because a
+        role moved it is only the role doing its job.
+
+        Args:
+            ident (str): The station's identity.
+
+        Returns:
+            set: The WeeWX fields set for it by hand, in either file.
+        """
+        station = self.stations.get(ident) or self.web_stations.get(ident)
+        named = set(self.overrides.extensions_for(ident).values())
+        if station is not None:
+            named.update(station.extensions.values())
+        return named
+
+    def name_of_owner(self, field):
+        """Who fills one column, by name, for saying so on a page.
+
+        Args:
+            field (str): A WeeWX field.
+
+        Returns:
+            str: The name of the station that fills it, or an empty string.
+        """
+        ident = self.owners.owner(field)
+        return self._name_of(ident) if ident else ''
+
+    def _name_of(self, ident):
+        """One station's name, for saying which one.
+
+        Args:
+            ident (str): A station identity.
+
+        Returns:
+            str: Its name, or the identity itself when it has no name.
+        """
+        station = self.stations.get(ident) or self.web_stations.get(ident)
+        return (station.name if station else None) or ident
+
+    def _main_name(self):
+        main = self.the_main_station()
+        if main is None:
+            return 'nothing'
+        return main.name or main.ident or 'the adopted console'
 
     # ---- what the web interface reads ---------------------------------------
 
@@ -799,6 +1088,15 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         """Keep the upload, so that a question about it can be answered later.
 
         Bounded and in memory only. See activity.py.
+
+        Args:
+            request: The upload as it arrived.
+            protocol: The protocol that claimed it.
+            dialect (Dialect): The catalog it was read with.
+            raw (dict): The raw name/value pairs.
+            packet (dict): The loop packet, or None when nothing was kept.
+            station (Station): Which station it belongs to.
+            mapper (Mapper): The mapper that read it.
         """
         # Under the station's own identity where it has one, not under whatever the
         # payload happens to say. Two consoles of the same model send the same shape
@@ -821,6 +1119,15 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                               mapper.undecided)
 
     def _record_refused(self, request, protocol, ident, note, raw=None):
+        """Keep an upload that was turned away, so the page can show it.
+
+        Args:
+            request: The upload as it arrived.
+            protocol: The protocol that claimed it, where one did.
+            ident (str): Whatever named the station, or an empty string.
+            note (str): Why it was refused, for showing on the page.
+            raw (dict): The raw name/value pairs, where they could be read.
+        """
         self.activity.refused(activity.Upload(
             at=time.time(), client=request.client_address,
             path=request.path or '', method=request.method or '',
@@ -839,6 +1146,15 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         The raw name is kept beside the WeeWX field, because the raw name is what the
         hardware said and carries its own unit: `tempf` is Fahrenheit whatever this
         driver would have done with it.
+
+        Args:
+            request: The upload as it arrived.
+            protocol: The protocol that claimed it, where one did.
+            raw (dict): The raw name/value pairs.
+
+        Returns:
+            list: A few readings in plain sight, so that somebody can tell their
+            own new console from a stranger's.
         """
         if not isinstance(raw, dict):
             return []
@@ -858,6 +1174,15 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         rank = {name: n for n, name in enumerate(TELLING)}
 
         def worth_showing_first(item):
+            """How interesting a reading is, for choosing what to show.
+
+            Args:
+                item (tuple): A (raw name, value) pair.
+
+            Returns:
+                tuple: A sort key that puts the readings somebody can recognise their
+                own console by ahead of the rest.
+            """
             return rank.get(fields.get(item[0]), len(TELLING)), item[0]
 
         rows = []
@@ -905,7 +1230,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             # said "last seen 4s ago" would look like it was working.
             row['held_back'] = bool(
                 known is not None and known.role != roles.MAIN
-                and not self.owned_by_main and self._has_a_main_station())
+                and self._held_back_now())
             seen = set(row.get('raw_seen', ()))
             row['field_count'] = len(seen)
             row['undecided_count'] = len(seen & set(row.get('undecided', {})))
@@ -934,6 +1259,13 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         already holds somebody else's readings. The last of those is the one thing a
         log line cannot tell you and the one thing that makes the decision
         irreversible if it is wrong.
+
+        Args:
+            ident (str): The station's identity.
+
+        Returns:
+            dict: Every raw field it has sent and where each one stands, or None
+            when no such station has uploaded.
         """
         found = self.activity.one(ident)
         if found is None:
@@ -962,6 +1294,17 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         Only what it has actually sent. The catalog is five hundred names long, and
         the answer to "where does my reading go" is not helped by four hundred and
         fifty rows about sensors nobody owns.
+
+        Args:
+            found (dict): What the activity log holds for this station.
+            station (Station): The station itself, where the driver has one.
+            last (dict): Its most recent packet, for the current value.
+            groups (dict): WeeWX field to unit group.
+            reserved (set): Raw names weewx.conf places, which the interface may
+                not change.
+
+        Returns:
+            list: One row per raw field the station has sent.
         """
         present = self.columns_present()
         occupied = self.occupied or {}
@@ -993,11 +1336,52 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             })
         return rows
 
+    def history(self, refresh=False):
+        """{column: (rows, last timestamp)} for archive columns that already hold data.
+
+        Read the first time somebody asks and kept, because it is a pass over the
+        whole table and the answer only changes as slowly as the archive grows. Not
+        read in the constructor: WeeWX is waiting on that, and a database with years
+        in it would make the driver look like it hangs at startup.
+
+        None when there was no database to read or reading it failed, which is not
+        the same as an empty answer: "nothing has history" and "nobody could look"
+        lead somewhere different, and the interface says which one it got.
+
+        Args:
+            refresh (bool): Read the table again rather than using what is kept.
+
+        Returns:
+            dict: Each column that holds data, to (rows, most recent timestamp), or
+            None when there was no database to read or reading it failed.
+        """
+        if refresh:
+            self.occupied = None
+            self.history_read = False
+        if self.occupied is None and not self.history_read:
+            # Tried, whatever comes of it. A database that cannot be read would
+            # otherwise be tried again on every page load.
+            self.history_read = True
+            if self.config_path:
+                try:
+                    self.occupied = columns.occupied(self.config_path)
+                except Exception as e:          # pylint: disable=broad-except
+                    log.warning("Cannot read what the archive table already holds: "
+                                "%s", e)
+        return self.occupied
+
     def columns_present(self, refresh=False):
         """The columns the archive table has, or the schema when it cannot be read.
 
         Read once and kept, because it changes only when somebody adds one, and this
         is asked on every page load.
+
+        Args:
+            refresh (bool): Read the table again rather than using what is kept.
+
+        Returns:
+            set: The columns the archive table has, or the standard schema when
+            there is no database to ask.
         """
         if self.present is None or refresh:
             self.present = None
@@ -1009,6 +1393,223 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         if self.present is not None:
             return self.present
         return admin.schema_fields()
+
+    def web_stations_view(self):
+        """Every station this driver knows, and what can be changed about each.
+
+        One list rather than three. A station set up here and not yet heard from, a
+        station uploading, and a station declared in weewx.conf are all answers to
+        the same question, and somebody looking for the one that is main should not
+        have to know which of the three it is to find it.
+        """
+        heard = {row['ident']: row for row in self.activity.snapshot()}
+        main = self.the_main_station()
+        found = []
+        for ident, station in sorted(self.stations.items()):
+            found.append(self._station_row(ident, station, heard, main,
+                                           declared=True))
+        for ident, station in sorted(self.web_stations.items()):
+            found.append(self._station_row(ident, station, heard, main,
+                                           declared=False))
+        adopted = self._adopted_ident()
+        if adopted is not None:
+            found.append(self._station_row(adopted, self.default_station, heard,
+                                           main, declared=False, adopted=True))
+        taken = sorted(s['channel'] for s in found
+                       if s['role'] == roles.EXTRA and s['channel'])
+        return {
+            'ok': True,
+            'stations': found,
+            'channels': roles.CHANNELS,
+            'taken': taken,
+            'settings_file': self.overrides.path,
+        }
+
+    def _station_row(self, ident, station, heard, main, declared, adopted=False):
+        """One station, as the interface needs to show and change it.
+
+        Args:
+            ident (str): The station's identity.
+            station (Station): The station itself.
+            heard (dict): Identity to what the activity log holds, for the ones
+                that have uploaded.
+            main (Station): Whichever station is the main one, for marking it.
+            declared (bool): Whether weewx.conf declares it, in which case the
+                interface shows it and declines to change it.
+            adopted (bool): Whether this is the console adopted as the first one
+                ever heard, which is named in no file.
+
+        Returns:
+            dict: The station, as the Stations tab needs it.
+        """
+        row = heard.get(ident) or {}
+        named = (self.overrides.station(ident).get('protocol')
+                 or row.get('protocol') or '')
+        return {
+            'ident': ident,
+            'name': station.name or row.get('name') or '',
+            'protocol': named,
+            # What to put into the console, with this station's own path in it. The
+            # setup checklist shows this once and then stops, because it is a
+            # checklist; a console reset a year later needs it again, and this is
+            # where somebody would look for it.
+            'settings': self._pointing_at(named, station.path),
+            'role': station.role,
+            'channel': station.channel,
+            'path': station.path or '',
+            'declared': declared,
+            # A console adopted because it was the first one ever heard. It is named
+            # in neither file, so there is nothing here to edit: what it needs is a
+            # name, and that is what setting it up gives it.
+            'adopted': adopted,
+            'editable': not declared and not adopted,
+            'is_main': station is main,
+            'heard': ident in heard,
+            'last_seen': row.get('last_seen'),
+            'uploads': row.get('uploads', 0),
+            # The archive columns this station fills. A sensor that was taken down
+            # goes on holding its column until somebody says otherwise, because the
+            # alternative is a station losing its columns while it is offline.
+            'columns': self.owners.owns(ident),
+        }
+
+    def _pointing_at(self, protocol_name, path):
+        """What a console of this kind has to be told, to reach this station.
+
+        Args:
+            protocol_name (str): Which protocol the console speaks.
+            path (str): This station's own upload path, or nothing for the
+                driver's general path.
+
+        Returns:
+            dict: What to put into the console, or None for a protocol this driver
+            does not have.
+        """
+        protocol = protocols.by_name(protocol_name) if protocol_name else None
+        if protocol is None:
+            return None
+        return checklist._pointing(protocol, self.web_address(), self.data_port(),
+                                   path or self.data_path())
+
+    def web_before(self, protocol_name='', role=None, channel=None, ident=None):
+        """What setting a station up this way would land on, before it is done.
+
+        Two things somebody would want to know first, and neither of them is visible
+        anywhere else: which station stops being the main one, and which archive
+        columns already hold readings that this station would start writing into.
+
+        The second is the one a driver can normally never see. Columns with history
+        got it from somewhere: an older console, a different driver, an import. If
+        that is the same weather station in the same place, writing on is exactly
+        right and the series carries on. If it is not, the column ends up holding two
+        sensors, and afterwards nothing can say which reading came from which. That
+        is a question with two real answers, so it is asked rather than guessed.
+
+        Args:
+            protocol_name (str): Which protocol the station speaks.
+            role (str): The role being asked for, or None to take the default.
+            channel (int): The channel being asked for, or None to be given one.
+            ident (str): The station this is about, for a station that exists.
+
+        Returns:
+            dict: Which station would stop being the main one, which columns
+            already hold readings, and whether the archive could be read at all.
+        """
+        used = self.history()
+        role = role or (roles.EXTRA if self._mains() else roles.MAIN)
+        # A channel arrives from a query string, so it arrives as text.
+        try:
+            channel = int(channel) if channel else None
+        except (TypeError, ValueError):
+            channel = None
+        if role == roles.EXTRA and not channel:
+            channel = self._free_channel(exclude=ident)
+
+        taking_from = None
+        if role == roles.MAIN:
+            mains = self._mains()
+            others = [i for i in mains if i != ident]
+            if others:
+                station = mains[others[0]]
+                taking_from = {
+                    'name': station.name or others[0],
+                    'channel': self._free_channel(exclude=others[0]),
+                    'declared': others[0] in self.stations,
+                }
+
+        return {
+            'ok': True,
+            'role': role,
+            'channel': channel,
+            'taking_from': taking_from,
+            # None when there is no database to read. Not the same as nothing being
+            # in the way, and the page says which of the two it is.
+            'checked': used is not None,
+            'columns': self._columns_with_history(protocol_name, role, channel,
+                                                  ident, used or {}),
+        }
+
+    def _columns_with_history(self, protocol_name, role, channel, ident, used):
+        """Archive columns this station would write into that already hold readings.
+
+        Sorted by how much is in them: a column with four years of temperature is a
+        different question from one with three rows in it from a Tuesday somebody was
+        testing.
+
+        Args:
+            protocol_name (str): Which protocol the station speaks.
+            role (str): MAIN or EXTRA.
+            channel (int): The channel, for an extra sensor.
+            ident (str): The station this is about, where it exists already.
+            used (dict): What the archive table holds, from history().
+
+        Returns:
+            list: One entry per column, with how many rows it holds and the date
+            of the most recent, most-used first.
+        """
+        if role == roles.EXTRA:
+            wanted = set(roles.columns_for(channel)) if channel else set()
+        else:
+            wanted = self._would_fill(protocol_name, ident)
+        found = []
+        for field in sorted(wanted & set(used)):
+            count, last = used[field]
+            found.append({
+                'field': field,
+                'count': count,
+                'last': (time.strftime('%Y-%m-%d', time.localtime(last))
+                         if last else '?'),
+            })
+        return sorted(found, key=lambda r: -r['count'])
+
+    def _would_fill(self, protocol_name, ident):
+        """Which WeeWX fields a main station of this kind would fill.
+
+        What it has actually sent, where it has sent anything: a catalog holds five
+        hundred names and a console uses forty, and warning about the four hundred
+        and sixty a station does not have would bury the ones it does.
+
+        Args:
+            protocol_name (str): Which protocol the station speaks.
+            ident (str): The station, where it has uploaded before.
+
+        Returns:
+            set: The WeeWX fields it would fill as the main station.
+        """
+        row = self.activity.one(ident) if ident else None
+        if row and row.get('raw_seen'):
+            station = self._station_for_ident(ident)
+            filled = set()
+            for mapper in (station.mappers.values() if station else []):
+                for raw, field in mapper.fields.items():
+                    if raw in row['raw_seen']:
+                        filled.add(field)
+            if filled:
+                return filled
+        protocol = protocols.by_name(protocol_name) if protocol_name else None
+        if protocol is None:
+            return set()
+        return set(protocol.dialect({}).fields.values())
 
     def web_fields(self):
         """Every raw field of every station, and where each one goes.
@@ -1052,6 +1653,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         and between somebody changing a placement and the next upload arriving those
         are two different answers. The interface promises the next upload everywhere
         else, so it has to show the next upload here.
+
+        Args:
+            station (Station): The station, or None when the driver has no record
+                of one.
+
+        Returns:
+            dict: Raw field name to WeeWX field, as the station is set up now
+            rather than as its last upload turned out.
         """
         placed = {}
         for mapper in (station.mappers.values() if station else []):
@@ -1066,13 +1675,22 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
     def _holders(self):
         """Which raw field of which station fills each WeeWX field.
 
-        A column takes one answer. Two stations writing one column take turns every
-        few seconds, and afterwards nothing can tell the two apart, so the interface
-        has to be able to say who has it before somebody picks it again.
+        The register is the answer, not this: a column belongs to whoever filled it
+        first and the data path turns everybody else away from it. What is worked out
+        here is which raw reading of theirs it was, so that a page can say "outTemp is
+        filled by tempf from garden" rather than only naming the station.
+
+        Columns nobody has filled yet are here too, from what a station's map says it
+        would write. They are what the interface has to warn about before somebody
+        picks one of them twice.
         """
         holders = {}
-        for row in self.activity.snapshot():
-            ident = row['ident']
+        rows = {row['ident']: row for row in self.activity.snapshot()}
+        for field, ident in self.owners.owned.items():
+            row = rows.get(ident) or {}
+            holders[field] = {'ident': ident, 'name': self._name_of(ident),
+                              'raw': self._raw_behind(ident, field, row)}
+        for ident, row in rows.items():
             placed = self._placements(self._station_for_ident(ident))
             for raw in row.get('raw_seen', ()):
                 field = placed.get(raw, row['fields'].get(raw))
@@ -1083,6 +1701,23 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                                            'raw': raw})
         return holders
 
+    def _raw_behind(self, ident, field, row):
+        """Which reading of this station ends up in that column.
+
+        Args:
+            ident (str): The station's identity.
+            field (str): The column it fills.
+            row (dict): What the activity log holds for it.
+
+        Returns:
+            str: The raw reading that ends up in that column, or an empty string.
+        """
+        placed = self._placements(self._station_for_ident(ident))
+        for raw in row.get('raw_seen', ()):
+            if placed.get(raw, row.get('fields', {}).get(raw)) == field:
+                return raw
+        return ''
+
     def web_add_column(self, field, sql_type=None):
         """Add one archive column, so that nobody has to leave for a terminal.
 
@@ -1090,6 +1725,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         do, and neither does weectl, is give the column a daily summary: those tables
         are built from the declared schema when the database is made. Aggregates
         still work, computed from the archive table itself, which is slower and right.
+
+        Args:
+            field (str): The column to add.
+            sql_type (str): REAL or INTEGER. Worked out from the unit group when
+                it is not given.
+
+        Returns:
+            dict: Whether it worked, and a message fit to show somebody.
         """
         field = str(field or '').strip()
         if not field:
@@ -1107,7 +1750,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         return {'ok': ok, 'message': message}
 
     def _column_type(self, field):
-        """REAL for anything measured, INTEGER for anything counted."""
+        """REAL for anything measured, INTEGER for anything counted.
+
+        Args:
+            field (str): A WeeWX field name.
+
+        Returns:
+            str: INTEGER for counted things, REAL for measured ones.
+        """
         groups = {}
         for station in self._every_station():
             for mapper in station.mappers.values():
@@ -1155,10 +1805,281 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         }
 
     def _station_for_ident(self, ident):
+        """The station one identity belongs to.
+
+        Args:
+            ident (str): A station identity.
+
+        Returns:
+            Station: Whichever file names it, or the default station when neither
+            does.
+        """
         return (self.stations.get(ident) or self.web_stations.get(ident)
                 or self.default_station)
 
-    def web_create(self, protocol_name, name):
+    # ---- one main station ----------------------------------------------------
+    #
+    # Exactly one station is the main one. That is not a preference: two of them
+    # write the same columns, every few seconds, and afterwards nothing can separate
+    # the mixture. So every way a station comes into being goes through here, rather
+    # than each one deciding for itself and the count coming out at two.
+
+    def _mains(self):
+        """Every station set up as the main one, as {identity: station}.
+
+        Both files, and the station an installation with neither has. That last one
+        is the console this driver adopted the first time it heard one: it is named
+        nowhere, it is the main station by default, and leaving it out here would let
+        the interface hand out a second main to sit beside it.
+        """
+        everyone = dict(self.stations)
+        everyone.update(self.web_stations)
+        found = {ident: station for ident, station in everyone.items()
+                 if station.role == roles.MAIN}
+        adopted = self._adopted_ident()
+        if adopted is not None:
+            found[adopted] = self.default_station
+        return found
+
+    def _adopted_ident(self):
+        """A console this driver answers to that neither file names, if there is one.
+
+        It is read as the default station, which is the main one. Nobody chose that,
+        which is exactly why it has to be counted.
+        """
+        if self.default_station is None:
+            return None
+        for ident in sorted(self.known):
+            if ident not in self.stations and ident not in self.web_stations:
+                return ident
+        return None
+
+    def _main_ident(self):
+        """Which station is the main one, by identity.
+
+        The identity survives _reload, which builds every station object again. That
+        makes it the thing to compare when asking whether a change moved the main
+        station somewhere else.
+        """
+        for ident, station in self.stations.items():
+            if station.role == roles.MAIN:
+                return ident
+        for ident, station in self.web_stations.items():
+            if station.role == roles.MAIN:
+                return ident
+        return self._adopted_ident()
+
+    def the_main_station(self):
+        """The one station whose readings go where they belong.
+
+        Everything the interface writes keeps the count at one. A configuration
+        written by hand can still hold two, and then one of them has to be it. The
+        pick is the order the stations are declared in: weewx.conf before the
+        settings file, and within each, the order somebody wrote them. The first
+        station in the file is the station, which is what anybody reading that file
+        would assume, and it does not move about between restarts the way a pick
+        based on who uploaded first would.
+        """
+        for station in self.stations.values():
+            if station.role == roles.MAIN:
+                return station
+        for station in self.web_stations.values():
+            if station.role == roles.MAIN:
+                return station
+        return self.default_station
+
+    def _declared_main(self, besides=None):
+        """The name of a main station weewx.conf declares, if there is one.
+
+        Args:
+            besides (str): An identity to leave out of the answer.
+
+        Returns:
+            str: The name of a main station weewx.conf declares, or None.
+        """
+        for ident, station in self.stations.items():
+            if ident != besides and station.role == roles.MAIN:
+                return station.name or ident
+        return None
+
+    def _role_for_new(self, ident, role, channel, force, protocol_name=''):
+        """What role a station is about to get, and what that costs.
+
+        Returns (ok, role, channel, message). Two things are refused unless `force`
+        says somebody has been told and agreed, because both of them reach into the
+        archive rather than only into the settings file:
+
+        Taking the main station away from another station. From then on the readings
+        of the one that was main land in different columns, and outTemp holds one
+        sensor before that moment and another after it.
+
+        Writing into a column that already holds readings. Those came from somewhere
+        else, and carrying on in them is right when it is the same weather station in
+        the same place and ruins the series when it is not. Only somebody who knows
+        which of the two it is can answer that.
+
+        Args:
+            ident (str): The station this is for, or None for one being made.
+            role (str): The role asked for, or None to take the default.
+            channel (int): The channel asked for, or None to be given one.
+            force (bool): Whether somebody has been told what it costs and agreed.
+            protocol_name (str): Which protocol the station speaks, for working
+                out which columns it would fill.
+
+        Returns:
+            tuple: (ok, role, channel, message). The message is the reason when
+            ok is False, and is fit to show somebody.
+        """
+        if role is None:
+            # Nothing asked for. The first station is the station; every one after
+            # that is an extra sensor, because the alternative is two stations
+            # writing one column and that is never what somebody meant.
+            role = roles.EXTRA if self._mains() else roles.MAIN
+        if role not in roles.ROLES:
+            return False, None, None, "A role is one of %s." % ', '.join(roles.ROLES)
+
+        ok, role, channel, message = self._role_and_channel(ident, role, channel,
+                                                            force)
+        if not ok:
+            return False, None, None, message
+        if force:
+            return True, role, channel, None
+        if not protocol_name:
+            protocol_name = self.overrides.station(ident).get('protocol', '')
+        blocked = self._columns_with_history(protocol_name, role, channel, ident,
+                                             self.history() or {})
+        if blocked:
+            # Somewhere to put this is not the driver's to choose. Carrying on in a
+            # column that already holds readings is right when it is the same weather
+            # station in the same place, and ruins the series when it is not.
+            first = blocked[0]
+            return False, None, None, (
+                "%s already holds %d reading(s), the last on %s%s. A station writing "
+                "into it carries that series on, which is right if this is the same "
+                "weather station in the same place and mixes two sensors into one "
+                "column if it is not."
+                % (first['field'], first['count'], first['last'],
+                   ' (and %d other column(s))' % (len(blocked) - 1)
+                   if len(blocked) > 1 else ''))
+        return True, role, channel, None
+
+    def _role_and_channel(self, ident, role, channel, force):
+        """Which role and channel this station is asking for, and whether it may.
+
+        Args:
+            ident (str): The station this is for.
+            role (str): MAIN or EXTRA.
+            channel (int): The channel asked for, or None to be given one.
+            force (bool): Whether taking the main station from another is agreed.
+
+        Returns:
+            tuple: (ok, role, channel, message).
+        """
+        if role == roles.MAIN:
+            declared = self._declared_main(besides=ident)
+            if declared is not None:
+                return False, None, None, (
+                    "weewx.conf declares '%s' as the main station, so the main "
+                    "station is set there rather than here." % declared)
+            mains = self._mains()
+            others = [i for i in mains if i != ident]
+            if others and not force:
+                # Whichever it is, including the console this driver adopted, which
+                # is named in neither file and is the main station all the same.
+                station = mains[others[0]]
+                return False, None, None, (
+                    "'%s' is the main station. Making this one the main station "
+                    "moves that one aside, and its readings go to different columns "
+                    "from then on." % (station.name or others[0]))
+            return True, roles.MAIN, None, None
+
+        if channel is None:
+            channel = self._free_channel(exclude=ident)
+            if channel is None:
+                return False, None, None, (
+                    "Every extra channel is taken. The standard schema has eight.")
+        else:
+            ok, channel, message = self._wanted_channel(ident, channel)
+            if not ok:
+                return False, None, None, message
+        return True, roles.EXTRA, channel, None
+
+    def _wanted_channel(self, ident, channel):
+        """Whether a channel somebody picked is free. Returns (ok, channel, why).
+
+        Args:
+            ident (str): The station asking, which may already be on it.
+            channel (int): The channel it wants.
+
+        Returns:
+            tuple: (ok, channel, why), where `why` is the reason it cannot have
+            it.
+        """
+        try:
+            channel = int(channel)
+        except (TypeError, ValueError):
+            return False, None, "A channel is a number from 1 to %d." % roles.CHANNELS
+        if not 1 <= channel <= roles.CHANNELS:
+            return False, None, ("A channel is a number from 1 to %d. The standard "
+                                 "schema has that many extraTemp columns."
+                                 % roles.CHANNELS)
+        everyone = dict(self.stations)
+        everyone.update(self.web_stations)
+        for other, station in everyone.items():
+            if (other != ident and station.role == roles.EXTRA
+                    and station.channel == channel):
+                return False, None, ("Channel %d is taken by '%s'."
+                                     % (channel, station.name or other))
+        return True, channel, None
+
+    def _stand_down_main(self, becoming, force):
+        """Move whoever is main aside, so that `becoming` can be it.
+
+        Only ever reached once `_role_for_new` has agreed to it, which is where the
+        refusing is done. Returns (ok, message).
+
+        Args:
+            becoming (str): The station that is to be the main one.
+            force (bool): Whether this was agreed to. Only ever reached once
+                _role_for_new has said yes, which is where the refusing is done.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        for ident in list(self._mains()):
+            if ident == becoming:
+                continue
+            if ident in self.stations:
+                # weewx.conf declares it. _role_for_new has already refused this.
+                continue
+            channel = self._free_channel(exclude=ident)
+            if channel is None:
+                return False, ("There is no free extra channel to move the station "
+                               "that is main into. The standard schema has eight.")
+            was = self.web_stations.get(ident)
+            ok, message = self.overrides.set_station(ident, role=roles.EXTRA,
+                                                     channel=channel)
+            if not ok:
+                return False, message
+            # An adopted console has no entry anywhere until now. Writing one is what
+            # gives it a role at all, and from here it is a station like any other.
+            log.info("Station '%s' is no longer the main one. Its readings go to "
+                     "channel %d from the next upload.",
+                     (was.name if was else None) or ident, channel)
+        return True, None
+
+    def _roles_moved(self):
+        """Take up a change to the stations.
+
+        The register is read back from the file rather than kept across the change,
+        because whoever changed something may have taken columns away from a station
+        in doing it.
+        """
+        self.reload_wanted = True
+        self._reload()
+        self.said_apart = set()
+
+    def web_create(self, protocol_name, name, role=None, channel=None, force=False):
         """Set a station up before it has ever uploaded.
 
         For hardware whose upload path is yours to choose. A path is made here, the
@@ -1171,6 +2092,23 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         Hardware that cannot be given a path is not set up this way. It broadcasts,
         or its path is burned into its firmware, and the only way to know it is to
         hear it and confirm. Those are adopted, and web_accept is that.
+
+        With no role asked for, the first station is the station and every one after
+        it is an extra sensor. Asking for main when another station already is one is
+        refused unless `force`, because it moves that station's readings into other
+        columns from then on.
+
+        Args:
+            protocol_name (str): Which protocol the console speaks. Only hardware
+                whose path is yours to choose can be set up this way.
+            name (str): What to call the station.
+            role (str): MAIN or EXTRA, or None to take the default.
+            channel (int): The channel for an extra sensor, or None.
+            force (bool): Whether somebody has been told what it costs and agreed.
+
+        Returns:
+            tuple: (ok, answer). On success `answer` holds the new station and the
+            settings to put into the console; on failure it is the reason.
         """
         import secrets
 
@@ -1193,35 +2131,76 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # brings a PASSKEY with it and the station is recorded under that instead,
         # because that is what every later upload carries.
         ident = 'path:' + path
+
+        ok, role, channel, message = self._role_for_new(ident, role, channel, force,
+                                                        protocol_name)
+        if not ok:
+            return False, message
+        if role == roles.MAIN:
+            ok, message = self._stand_down_main(ident, force)
+            if not ok:
+                return False, message
+
         ok, message = self.overrides.set_station(
-            ident, name=clean, path=path, protocol=protocol_name)
+            ident, name=clean, path=path, protocol=protocol_name,
+            role=role, channel=channel)
         if not ok:
             return False, message
         self.known.add(ident)
-        self.reload_wanted = True
-        self._reload()
-        log.info("Station '%s' was set up for %s. Its upload path is %s.",
-                 clean, protocol.label, path)
+        self._roles_moved()
+        log.info("Station '%s' was set up for %s, as %s. Its upload path is %s.",
+                 clean, protocol.label,
+                 'the main station' if role == roles.MAIN
+                 else 'an extra sensor on channel %d' % channel, path)
         return True, {'name': clean, 'protocol': protocol_name, 'path': path,
+                      'role': role, 'channel': channel,
                       'address': self.web_address(), 'port': self.data_port(),
                       'settings': checklist._pointing(protocol, self.web_address(),
                                                       self.data_port(), path)}
 
     def web_accept(self, ident, name=None, infer_unknown=None):
-        """Let a station in, and give it a name."""
+        """Let a station in, and give it a name.
+
+        A station let in while another is already the main one is an extra sensor.
+        Anything else would be two consoles writing one column, which is what the
+        driver refused this upload for in the first place. Where the eight extra
+        channels are all taken it is still let in, and says that nothing of it will
+        be recorded until a channel is free: refusing to let it in would be worse,
+        because then nothing would explain why.
+
+        Args:
+            ident (str): Whatever the console sends to name itself.
+            name (str): What to call it.
+            infer_unknown (str): This station's own inference setting.
+
+        Returns:
+            tuple: (ok, message).
+        """
         ident = str(ident or '').strip()
         if not ident:
             return False, "A station with no identity cannot be told from another."
         if ident in self.stations:
             return False, "weewx.conf already names this one. Change it there."
-        ok, message = self.overrides.set_station(ident, name, infer_unknown)
+
+        role, channel, note = roles.MAIN, None, ''
+        if [other for other in self._mains() if other != ident]:
+            role = roles.EXTRA
+            channel = self._free_channel(exclude=ident)
+            if channel is None:
+                note = (" Every extra channel is taken, so nothing from it is "
+                        "recorded until one is free.")
+            else:
+                note = " It is an extra sensor on channel %d." % channel
+
+        ok, message = self.overrides.set_station(ident, name, infer_unknown,
+                                                 role=role, channel=channel)
         if not ok:
             return False, message
         self.known.add(ident)
         self.store.add(ident, "let in through the web interface")
-        self.reload_wanted = True
-        log.info("Station '%s' was let in through the web interface.", ident)
-        return True, "Recorded in %s." % message
+        self._roles_moved()
+        log.info("Station '%s' was let in through the web interface.%s", ident, note)
+        return True, "Recorded in %s.%s" % (message, note)
 
     def web_set_field(self, ident, raw, field, force=False):
         """Place one raw field for one station.
@@ -1231,6 +2210,18 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         one column take turns every few seconds and cannot be told apart afterwards.
         `force` is somebody having read that and said yes, and then the reading that
         held the field is placed nowhere instead of being left to fight over it.
+
+        Args:
+            ident (str): The station this placement is for.
+            raw (str): The raw field name, as the console sends it.
+            field (str): The WeeWX field to write it to. Empty removes the
+                placement; mapping.NOWHERE records that it goes nowhere on
+                purpose.
+            force (bool): Whether taking the column from its holder is agreed.
+
+        Returns:
+            dict: Whether it worked, and either a message or, for a conflict, who
+            holds the column.
         """
         ident = str(ident or '').strip()
         raw = str(raw or '').strip()
@@ -1255,10 +2246,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                     "%s is filled by '%s' from station %s, which weewx.conf declares "
                     "under [[stations]]. Change it there first."
                     % (field, held['raw'], held['name']))}
-            ok, message = self.overrides.set_field(held['ident'], held['raw'],
-                                                   mapping.NOWHERE)
-            if not ok:
-                return {'ok': False, 'message': message}
+            if held['raw']:
+                ok, message = self.overrides.set_field(held['ident'], held['raw'],
+                                                       mapping.NOWHERE)
+                if not ok:
+                    return {'ok': False, 'message': message}
+            # And the column itself, or this station would go on being turned away
+            # from the field somebody has just given it.
+            self.overrides.set_column(field, ident)
 
         ok, message = self.overrides.set_field(ident, raw, field)
         if not ok:
@@ -1267,67 +2262,206 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self._reload()
         return {'ok': True, 'message': message}
 
-    def web_role(self, ident, role):
+    def web_role(self, ident, role, force=False):
         """Say whether a station is the station, or an extra sensor.
 
-        Exactly one is the main one. Making a second station main would leave two
-        writing the same columns, which is the thing this is here to stop, so the
-        one that was main becomes extra and is told which channel it got.
+        Args:
+            ident (str): The station's identity.
+            role (str): MAIN or EXTRA.
+            force (bool): Whether taking the main station from another is agreed.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        return self.web_edit(ident, role=role, force=force)
+
+    def web_edit(self, ident, name=None, role=None, channel=None, force=False):
+        """Change a station the interface set up: its name, its role, its channel.
+
+        Exactly one station is the main one. Making this one it moves the one that
+        was aside, onto a channel of its own, and from that moment its readings are
+        in different columns than they were: the archive holds one sensor's outTemp
+        before and another's after. That cannot be undone by clicking back, so it is
+        refused unless `force` says somebody has been told and agreed.
+
+        A station weewx.conf names is not edited here. That file is its declaration,
+        and one owner per setting is the rule the whole settings file rests on.
+
+        Args:
+            ident (str): The station's identity.
+            name (str): A new name, or None to leave it.
+            role (str): MAIN or EXTRA, or None to leave it.
+            channel (int): A channel, or None to leave it.
+            force (bool): Whether somebody has been told what it costs and agreed.
+
+        Returns:
+            tuple: (ok, message).
         """
         ident = str(ident or '').strip()
-        if role not in roles.ROLES:
-            return False, "A role is one of %s." % ', '.join(roles.ROLES)
+        if not ident:
+            return False, "A station with no identity cannot be told from another."
         if ident in self.stations:
-            return False, "weewx.conf names this station, so its role lives there."
+            return False, ("weewx.conf names this station, so its settings live "
+                           "there.")
+        if ident not in self.web_stations:
+            return False, "No station here has that identity."
 
-        if role == roles.MAIN:
+        was = self.web_stations[ident]
+        clean = None
+        if name is not None:
+            clean = overrides._as_name(name)
+            if not clean:
+                return False, ("A name may hold letters, digits, dashes and "
+                               "underscores.")
             for other, station in self.web_stations.items():
-                if other != ident and station.role == roles.MAIN:
-                    channel = self._free_channel(exclude=other)
-                    if channel is None:
-                        return False, ("There is no free extra channel to move the "
-                                       "station that is main into. The schema has "
-                                       "eight.")
-                    ok, message = self.overrides.set_station(
-                        other, role=roles.EXTRA, channel=channel)
-                    if not ok:
-                        return False, message
-            ok, message = self.overrides.set_station(ident, role=roles.MAIN)
-        else:
-            channel = self._free_channel(exclude=ident)
-            if channel is None:
-                return False, ("Every extra channel is taken. The standard schema "
-                               "has eight of them.")
-            ok, message = self.overrides.set_station(ident, role=roles.EXTRA,
-                                                     channel=channel)
+                if other != ident and station.name == clean:
+                    return False, "There is already a station called '%s'." % clean
+
+        if role is None and channel is not None:
+            # A channel is only a thing an extra sensor has. Somebody moving one is
+            # not also asking to change what it is.
+            role = was.role
+        if role is not None:
+            ok, role, channel, message = self._role_for_new(ident, role, channel,
+                                                            force)
+            if not ok:
+                return False, message
+            if role == roles.MAIN:
+                ok, message = self._stand_down_main(ident, force)
+                if not ok:
+                    return False, message
+
+        moved = role is not None and (role != was.role or channel != was.channel)
+        ok, message = self.overrides.set_station(ident, name=clean, role=role,
+                                                 channel=channel)
         if not ok:
             return False, message
-        self.reload_wanted = True
-        self._reload()
-        # What the main station owns is learned from what it sends, so it has to be
-        # learned again once the roles have moved.
-        self.owned_by_main = set()
-        self.said_apart = set()
+        if moved:
+            # It writes different columns from here on: an extra sensor on another
+            # channel, or a main station that no longer has its readings shifted. The
+            # ones it held say nothing about that, so it gives them up and takes what
+            # it fills from its next upload.
+            gone = self.owners.owns(ident)
+            if gone:
+                self.overrides.drop_columns(gone)
+                log.info("Station '%s' gave up %d column(s) with its role: %s.",
+                         clean or was.name or ident, len(gone), ', '.join(gone))
+        self._roles_moved()
+        if role is not None:
+            log.info("Station '%s' is now %s.", clean or was.name or ident,
+                     'the main station' if role == roles.MAIN
+                     else 'an extra sensor on channel %s' % channel)
         return True, message
 
     def _free_channel(self, exclude=None):
+        """The channel to hand out next, or None if there is none.
+
+        A channel another station is on is taken. So, as far as this can help it, is
+        one whose columns already hold readings: they came from somewhere else, and a
+        new sensor writing into them makes one column out of two sensors, which is
+        the failure this driver exists to refuse. Where every free channel has
+        history, one of them has to be used anyway, and then it is somebody's
+        decision rather than this function's.
+
+        Args:
+            exclude (str): A station whose own channel does not count as taken,
+                which is the station being given one.
+
+        Returns:
+            int: The channel to hand out, or None when there is none.
+        """
         taken = set()
         for ident, station in self.web_stations.items():
             if ident != exclude and station.role == roles.EXTRA and station.channel:
                 taken.add(station.channel)
-        return roles.next_channel(taken)
+        used = self.history() or {}
+        clean = set(taken)
+        for channel in range(1, roles.CHANNELS + 1):
+            if any(field in used for field in roles.columns_for(channel)):
+                clean.add(channel)
+        return roles.next_channel(clean) or roles.next_channel(taken)
+
+    def web_release(self, ident, field=''):
+        """Give up a column this station holds, so another may fill it.
+
+        For a sensor that was taken down. Its column is held until somebody says
+        otherwise, which is right while a console is merely offline for a week and
+        wrong once it is gone for good.
+
+        Args:
+            ident (str): The station's identity.
+            field (str): One column to release, or empty for all of them.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        ident = str(ident or '').strip()
+        field = str(field or '').strip()
+        held = self.owners.owns(ident)
+        if field:
+            if field not in held:
+                return False, "'%s' does not fill %s." % (self._name_of(ident), field)
+            held = [field]
+        if not held:
+            return False, "That station fills no columns."
+        ok, message = self.overrides.drop_columns(held)
+        if not ok:
+            return False, message
+        self._roles_moved()
+        log.info("Station '%s' gave up %d column(s): %s. The next station to fill "
+                 "one of them has it.", self._name_of(ident), len(held),
+                 ', '.join(held))
+        return True, ("Given up: %s. The next station to fill one of them has it."
+                      % ', '.join(held))
 
     def web_forget(self, ident):
+        """Take a station out again.
+
+        The upload path goes with it, so the console that was told to use it starts
+        being turned away rather than quietly recorded as somebody else. That is the
+        honest outcome: a station nobody set up is a station this driver does not
+        answer to.
+
+        Args:
+            ident (str): The station's identity.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        ident = str(ident or '').strip()
+        if ident in self.stations:
+            return False, ("weewx.conf names this station. Take it out of there and "
+                           "restart WeeWX.")
         ok, message = self.overrides.forget_station(ident)
-        if ok:
-            self.reload_wanted = True
-        return ok, message
+        if not ok:
+            return False, message
+        # Out of the list of consoles this driver answers to as well, or it would go
+        # on being let in under the default station until the next restart. Not out
+        # of the console file: that is the record of what has ever been heard here,
+        # and a station set up in the interface was never written to it.
+        if ident not in self.store.read():
+            self.known.discard(ident)
+        gone = self.owners.owns(ident)
+        if gone:
+            self.overrides.drop_columns(gone)
+        self._roles_moved()
+        log.info("Station '%s' was taken out through the web interface.", ident)
+        return True, message
 
     def web_columns(self, ident, refresh=False):
         """Which columns this station needs, and what is in them already.
 
         The history check is one pass over the archive table, so it happens when
         somebody asks rather than on every page load.
+
+        Args:
+            ident (str): The station's identity.
+            refresh (bool): Read the archive table again rather than using what is
+                kept.
+
+        Returns:
+            dict: Which readings have no column, the commands that would add them,
+            and which columns already hold data.
         """
         found = self.activity.one(ident)
         if found is None:
@@ -1344,14 +2478,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         except Exception as e:
             return {'ok': False, 'error': "Cannot work out the columns: %s" % e}
 
-        if refresh and self.config_path:
-            try:
-                self.occupied = columns.occupied(self.config_path)
-            except Exception as e:
-                log.warning("The web interface could not read the archive table: %s",
-                            e)
-                self.occupied = {}
-        used = self.occupied
+        used = self.history(refresh=refresh)
 
         return {
             'ok': True,
@@ -1367,7 +2494,16 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         }
 
     def _station_for(self, protocol, raw, client):
-        """Which console this upload belongs to, or None to leave it alone."""
+        """Which console this upload belongs to, or None to leave it alone.
+
+        Args:
+            protocol: The protocol that claimed the upload.
+            raw (dict): The raw name/value pairs.
+            client (str): The address it came from.
+
+        Returns:
+            Station: Which console this belongs to, or None to leave it alone.
+        """
         ident = protocol.station_of(raw)
 
         if not self.known:
@@ -1392,6 +2528,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         Only Weather Underground has one to present. It is the one protocol here
         where the hardware can authenticate itself, so when a password is configured
         it is checked, and when it is not, nothing changes.
+
+        Args:
+            protocol: The protocol that claimed the upload.
+            raw (dict): The raw name/value pairs.
+            client (str): The address it came from.
+
+        Returns:
+            bool: Whether the upload may be kept.
         """
         from .protocols import wunderground
         if wunderground.password_ok(raw, self.password):
@@ -1424,7 +2568,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         return protocol
 
     def _unclaimed(self, request):
-        """Say once that something arrived that no protocol recognised."""
+        """Say once that something arrived that no protocol recognised.
+
+        Args:
+            request: The upload nothing recognised.
+        """
         self.unclaimed += 1
         if self.unclaimed > 1:
             return
@@ -1438,7 +2586,13 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             ', '.join(p.name for p in self.enabled))
 
     def _adopt(self, ident, client, protocol):
-        """Record the first console ever heard, and answer to it from then on."""
+        """Record the first console ever heard, and answer to it from then on.
+
+        Args:
+            ident (str): Whatever named the station.
+            client (str): The address it came from.
+            protocol: The protocol that claimed it.
+        """
         self.known.add(ident)
         where = self.store.add(ident, "first console seen, from %s, speaking %s"
                                       % (client, protocol.name))
@@ -1455,6 +2609,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         directory nobody backed up leaves it behind, and then the next console to
         upload becomes the station. One line in weewx.conf does not have that
         problem, so say so where somebody will see it.
+
+        Args:
+            ident (str): The identity just adopted.
+            protocol: The protocol that claimed it.
         """
         if self.configured_passkey or self.stations:
             return
@@ -1462,6 +2620,13 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                  "'passkey = %s' under [%s].", ident, DRIVER_NAME)
 
     def _refuse(self, ident, client, protocol):
+        """Say once that an upload was turned away, and what would let it in.
+
+        Args:
+            ident (str): Whatever named the station.
+            client (str): The address it came from.
+            protocol: The protocol that claimed it.
+        """
         if (ident, protocol.name) in self.unknown_consoles:
             return
         self.unknown_consoles.add((ident, protocol.name))
@@ -1478,6 +2643,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         Getting hold of a raw upload otherwise means reconfiguring the console and
         waiting for an interval. The driver has it in hand, so it writes it once and
         says where the file is.
+
+        Args:
+            payload (str): The upload as it arrived.
+            guesses (dict): What the mapper worked out for itself.
+            protocol: The protocol that claimed it.
         """
         if self.reported or not self.report_file:
             return
@@ -1509,13 +2679,25 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
 
         Only fields WeeWX does not already know about are touched. Overriding a group
         it ships with would change the meaning of a field for every other driver.
+
+        Args:
+            groups (dict): WeeWX field to unit group, for fields WeeWX does not
+                already know.
         """
         for field, group in groups.items():
             weewx.units.obs_group_dict.setdefault(field, group)
 
 
 def _contested_with(station):
-    """Who disagrees about a placement, for the sentence that asks."""
+    """Who disagrees about a placement, for the sentence that asks.
+
+    Args:
+        station (Station): The station whose catalog is in question.
+
+    Returns:
+        str: The name of the driver this one disagrees with about where a
+        field belongs.
+    """
     for mapper in (station.mappers.values() if station else []):
         if mapper.dialect.contested_with:
             return mapper.dialect.contested_with
@@ -1523,7 +2705,14 @@ def _contested_with(station):
 
 
 def _station_section(config_dict):
-    """The [Station] section as plain values, or None when there is no config."""
+    """The [Station] section as plain values, or None when there is no config.
+
+    Args:
+        config_dict (dict): The whole of weewx.conf.
+
+    Returns:
+        dict: The [Station] section, or an empty dict.
+    """
     if not config_dict:
         return None
     try:
@@ -1535,7 +2724,14 @@ def _station_section(config_dict):
 
 
 def _config_path(config_dict):
-    """Where weewx.conf is, for the add-column commands and the history check."""
+    """Where weewx.conf is, for the add-column commands and the history check.
+
+    Args:
+        config_dict (dict): The whole of weewx.conf, as WeeWX passed it.
+
+    Returns:
+        str: The path to weewx.conf, or None when it cannot be worked out.
+    """
     if not config_dict:
         return None
     return getattr(config_dict, 'filename', None) or config_dict.get('config_path')
