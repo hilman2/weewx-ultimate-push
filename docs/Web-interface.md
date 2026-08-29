@@ -50,7 +50,7 @@ A Raspberry Pi or similar on a private network, with no proxy in front of it.
 Both ports are above 1024, so neither requires root.
 
 ```
-weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.12.4.zip
+weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.13.0.zip
 sudo systemctl restart weewx
 ```
 

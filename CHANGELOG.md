@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.13.0 (2026-08-29)
+
+**Two stations no longer share a column.** A role kept an extra station out of the main
+station's columns, and said nothing about two extra sensors. Three identical consoles
+beside an Ambient main station all wrote `soilMoist1`, `rainRate` and ten more, in turn,
+every few seconds, because the main station has no such readings to keep them out of.
+
+A column now belongs to whichever station fills it first. Everybody else is turned away
+from it, and the main station outranks the lot. Ownership is written to `[columns]` in
+`ultimate-push-web.conf`, so it survives a restart.
+
+That has a second effect worth having. An extra station used to be held back after every
+restart until the main station happened to upload again, which cost an upload interval
+per station per restart. It now waits once, the first time, and never again.
+
+**Exactly one station is the main station.** A station set up beside an existing one
+becomes an extra sensor on a free channel without being asked, which is what somebody
+setting up a second console means. Taking the main station from another station changes
+which columns its readings land in from that moment, so the interface says what that
+does and asks twice. The data path holds the count at one whatever a hand-written
+configuration says.
+
+**A column that already holds readings is not written into without being asked.** When a
+station is set up, the driver reads the archive table and reports which of the columns
+that station would write already hold data, how many rows and from when. Those readings
+came from an older console, another driver or an import: continuing the series is right
+for the same station in the same place and mixes two sensors when it is not. Where the
+choice can be avoided it is, and a channel whose `extraTempN` already holds readings is
+skipped when one is handed out.
+
+**Stations have a tab of their own.** Every station the driver knows, including the ones
+set up and never heard from, with the console settings for each. Name, role and channel
+can be changed there, columns can be given up, and a station can be taken out again.
+
+**Fixed:** the driver's own path stopped being answered as soon as any station had used
+its own path. Setting up a second station therefore silenced the console that was there
+first, and an unknown console was turned away with a 404 rather than being offered for
+approval.
+
+**Fixed:** the setup page redrew itself every five seconds, which emptied the field
+somebody was typing a station name into.
+
+The documentation follows the WeeWX reference style, and docstrings are Google style.
+
+
 ## 0.12.4 (2026-08-28)
 
 Setting a station up in the interface did not work, in three separate ways.

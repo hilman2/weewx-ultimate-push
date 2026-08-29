@@ -49,7 +49,7 @@ IPv6 and token checking are handled by the WeeWX core.
 Install the extension and restart WeeWX:
 
 ```
-weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.12.4.zip
+weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.13.0.zip
 sudo systemctl restart weewx
 ```
 
@@ -60,7 +60,7 @@ Next, point the hardware at the machine running WeeWX. For an Ecowitt console, u
 WSView Plus app: *Device List*, your console, *Weather Services*, then page through to
 *Customized*. Set protocol type to *Ecowitt*, the server to the address of the machine,
 and the path and port to match your configuration. The other protocols are described in
-[Installation](docs/Installation.md).
+[Installation](https://github.com/hilman2/weewx-ultimate-push/wiki/Installation).
 
 ## Configuration
 
@@ -90,7 +90,7 @@ Which protocols to listen for, as a comma-separated list. `auto` enables every p
 that arrives over HTTP, which costs nothing: an upload is recognised by its content
 rather than by the port it arrived on. Name protocols explicitly to add WeatherFlow,
 which requires a second socket, or to settle an upload that identifies nothing. Default
-is `auto`. See [Protocols](docs/Protocols.md).
+is `auto`. See [Protocols](https://github.com/hilman2/weewx-ultimate-push/wiki/Protocols).
 
 #### model
 
@@ -105,7 +105,7 @@ Default is `series`. See [infer_unknown](#infer_unknown-1) below.
 
 A subsection mapping raw field names to WeeWX field names. Entries here take precedence
 over the catalog and over the station role. Default is empty. See
-[Field map](docs/Field-map.md).
+[Field map](https://github.com/hilman2/weewx-ultimate-push/wiki/Field-map).
 
 #### report_file
 
@@ -183,7 +183,7 @@ The largest upload accepted, in bytes. Larger uploads receive a 413. Default is 
 Log every upload at debug level. Turn this on when a sensor is missing. Default is
 `False`.
 
-Every option is described in full in [Configuration](docs/Configuration.md).
+Every option is described in full in [Configuration](https://github.com/hilman2/weewx-ultimate-push/wiki/Configuration).
 
 ## Rain
 
@@ -238,9 +238,11 @@ INFO user.ultimatepush.mapping: New field 'leafwetness_ch5' -> 'leafWet5'
 A field only reaches the database if the archive table has a column for it. Fields
 outside the standard schema require one to be added, which is a button in the web
 interface or `weectl database add-column` from a terminal. See
-[Database columns](docs/Database-columns.md).
+[Database columns](https://github.com/hilman2/weewx-ultimate-push/wiki/Database-columns).
 
 ## The web interface
+
+![The setup checklist, with six stations on five protocols](docs/img/01-setup.png)
 
 The web interface runs on a port of its own and is enabled by the installer, with a
 token generated at install time that differs on every machine. The driver logs the
@@ -257,21 +259,62 @@ select the hardware: for hardware whose upload path is yours to choose, the driv
 generates a path and displays the settings to enter into the console's app. The page
 detects the first upload without being reloaded.
 
-The **Stations** tab lists every station the driver knows, including those set up but
-not yet heard from. Each entry gives the console settings for that station, and its
-name, role and channel can be changed there. The **Fields** tab shows what every
-station sends and where each reading is written, and lets you place a field without
-editing a file or restarting WeeWX.
+### Setting up a station
+
+Enter a name, select the hardware, and the driver generates an upload path for that
+station and displays exactly what to type into the console's app. The page detects the
+first upload without being reloaded.
+
+![Setting up a station](docs/img/04-add-station.png)
+
+The role is part of the same form. The first station is the main station; every station
+after it is offered as an extra sensor on a free channel, which is what a second console
+beside an existing one usually is.
+
+### Stations
+
+Every station the driver knows, including those set up but never heard from, and those
+declared in `weewx.conf`. Each entry carries the console settings for that station and
+the archive columns it fills, and its name, role and channel can be changed there.
+
+![The stations tab](docs/img/02-stations.png)
+
+### Fields
+
+What every station sends, and where each reading is written. Placing a field takes
+effect on the next upload, with no restart and no editing of files.
+
+![The fields tab](docs/img/03-fields.png)
+
+Each row states what its column costs: `column ready`, `no column` with a button that
+creates it, `column holds 240 earlier values`, or the station that already fills it. The
+selector offers the fields that measure the same thing first, then everything else, then
+`nowhere`, then a field of your own.
 
 The interface exists because placing a field is irreversible if it is done wrongly, and
 because whether a column already holds another sensor's readings is not something a log
-entry can report. The interface shows this per field, next to the value that has just
-arrived.
+entry can report.
+
+### Before anything irreversible
+
+Two changes reach the archive rather than only the settings file: taking the main
+station away from another station, and writing into a column that already holds
+readings. Both are stated in full, with the row counts and dates out of the archive
+table, and both are confirmed twice.
+
+![Confirming a change that reaches the archive](docs/img/05-confirm.png)
+
+### Database columns
+
+Which readings have nowhere to be written, with the `weectl` commands for exactly the
+columns this station needs, and what the archive table already holds.
+
+![The database columns tab](docs/img/06-columns.png)
 
 An address that presents the wrong token ten times in five minutes stops receiving
 answers. The interface is plain HTTP; on a private network this is the usual trade, and
 across the internet it should be placed behind TLS. Setting `enable = false` closes the
-port. See [Web interface](docs/Web-interface.md).
+port. See [Web interface](https://github.com/hilman2/weewx-ultimate-push/wiki/Web-interface).
 
 ## Several stations
 
@@ -298,27 +341,29 @@ after a restart. Ownership is recorded in the settings file, so it survives a re
 a station is set up, the driver reads the archive table and reports which columns
 already hold data, how many rows, and the date of the most recent one. Continuing a
 series is correct when it is the same weather station in the same place, and mixes two
-sensors when it is not. Only you can tell which. See [Stations](docs/Stations.md).
+sensors when it is not. Only you can tell which. See [Stations](https://github.com/hilman2/weewx-ultimate-push/wiki/Stations).
 
 ## Documentation
 
+Everything below is in the [wiki](https://github.com/hilman2/weewx-ultimate-push/wiki).
+
 | | |
 |---|---|
-| [Installation](docs/Installation.md) | install, point the hardware at it, start |
-| [Protocols](docs/Protocols.md) | what each protocol sends, and how they are told apart |
-| [Web interface](docs/Web-interface.md) | see what a station sends, and place a field without a restart |
-| [Configuration](docs/Configuration.md) | every option, with worked examples |
-| [Field map](docs/Field-map.md) | how a reading reaches a column |
-| [Hardware](docs/Hardware.md) | every device, and what it takes to reach it |
-| [Sensors](docs/Sensors.md) | every field this driver knows, by sensor |
-| [Unknown fields](docs/Unknown-fields.md) | what happens to a field the catalog misses |
-| [Stations](docs/Stations.md) | setting one up, roles, and column ownership |
-| [Database columns](docs/Database-columns.md) | which columns a station needs |
-| [Diagnostics](docs/Diagnostics.md) | one command that answers most questions |
-| [Reporting a new sensor](docs/New-sensors.md) | exactly what to send |
-| [Troubleshooting](docs/Troubleshooting.md) | symptoms and what they mean |
-| [Keeping strangers out](docs/Security.md) | path, token, addresses, TLS |
-| [Development](docs/Development.md) | layout, tests, rebuilding a catalog |
+| [Installation](https://github.com/hilman2/weewx-ultimate-push/wiki/Installation) | install, point the hardware at it, start |
+| [Protocols](https://github.com/hilman2/weewx-ultimate-push/wiki/Protocols) | what each protocol sends, and how they are told apart |
+| [Web interface](https://github.com/hilman2/weewx-ultimate-push/wiki/Web-interface) | see what a station sends, and place a field without a restart |
+| [Configuration](https://github.com/hilman2/weewx-ultimate-push/wiki/Configuration) | every option, with worked examples |
+| [Field map](https://github.com/hilman2/weewx-ultimate-push/wiki/Field-map) | how a reading reaches a column |
+| [Hardware](https://github.com/hilman2/weewx-ultimate-push/wiki/Hardware) | every device, and what it takes to reach it |
+| [Sensors](https://github.com/hilman2/weewx-ultimate-push/wiki/Sensors) | every field this driver knows, by sensor |
+| [Unknown fields](https://github.com/hilman2/weewx-ultimate-push/wiki/Unknown-fields) | what happens to a field the catalog misses |
+| [Stations](https://github.com/hilman2/weewx-ultimate-push/wiki/Stations) | setting one up, roles, and column ownership |
+| [Database columns](https://github.com/hilman2/weewx-ultimate-push/wiki/Database-columns) | which columns a station needs |
+| [Diagnostics](https://github.com/hilman2/weewx-ultimate-push/wiki/Diagnostics) | one command that answers most questions |
+| [Reporting a new sensor](https://github.com/hilman2/weewx-ultimate-push/wiki/New-sensors) | exactly what to send |
+| [Troubleshooting](https://github.com/hilman2/weewx-ultimate-push/wiki/Troubleshooting) | symptoms and what they mean |
+| [Keeping strangers out](https://github.com/hilman2/weewx-ultimate-push/wiki/Security) | path, token, addresses, TLS |
+| [Development](https://github.com/hilman2/weewx-ultimate-push/wiki/Development) | layout, tests, rebuilding a catalog |
 
 ## Where the field names come from
 

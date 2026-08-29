@@ -1248,8 +1248,23 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             'settings_error': self.overrides.error,
             'door': self.doorman.state() if self.doorman else None,
             'stations': sorted(stations, key=lambda r: r['ident']),
-            'waiting': self.activity.unknown_stations(transport.redact),
+            'waiting': self.web_waiting(),
         }
+
+    def web_waiting(self):
+        """The stations being turned away, as of now.
+
+        A station that was refused an hour ago and has since been let in is not
+        waiting for anything. Without this it would sit under "waiting to be let in"
+        until twenty more refusals had pushed its old uploads out of the ring, which
+        reads as the button not having worked.
+
+        Returns:
+            list: One entry per console, with what named it and a few readings, so
+            that somebody can tell their own new console from a stranger's.
+        """
+        return [w for w in self.activity.unknown_stations(transport.redact)
+                if w['ident'] not in self.known]
 
     def web_station(self, ident):
         """One station, every raw field it has sent, and where each one stands.

@@ -17,8 +17,8 @@ Three things then decide the middle step, in this order.
 
 ## 1. Your own mapping
 
-`field_map_extensions` wins over everything. Whatever you write there is where the
-reading goes.
+`field_map_extensions` decides where a reading goes, ahead of the catalog and ahead
+of the station's role.
 
 ```ini
 [UltimatePush]
@@ -30,6 +30,12 @@ reading goes.
 The left side is the raw name as the console sends it. The right side is any WeeWX
 field name. The driver does not check whether the field is a sensible destination,
 because only the person who installed the sensor knows where it is.
+
+One thing still comes after it. A column belongs to whichever station fills it first,
+and a placement does not take a column away from the station that holds it: the
+reading is dropped instead, and the checklist reports it. Placing the same field for
+another station on the Fields tab does hand the column over, because that is a
+decision made in front of what it costs. See [Stations](Stations.md).
 
 ## 2. The catalog
 

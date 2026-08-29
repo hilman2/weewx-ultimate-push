@@ -12,7 +12,7 @@ There are no other requirements: no pip packages and no compiler.
 ## Install
 
 ```
-weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.12.4.zip
+weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.13.0.zip
 sudo systemctl restart weewx
 ```
 
@@ -119,7 +119,7 @@ sudo journalctl -u weewx -f
 Within one upload interval the log shows:
 
 ```
-INFO user.ultimatepush.driver: Driver version is 0.12.4, listening with weewx.listener for Ecowitt, Ambient Weather, Acurite, LaCrosse LW30x, Weather Underground
+INFO user.ultimatepush.driver: Driver version is 0.13.0, listening with weewx.listener for Ecowitt, Ambient Weather, Acurite, LaCrosse LW30x, Weather Underground
 INFO weewx.listener: Listening for HTTP requests on *:8000
 INFO weewx.engine: Starting main packet loop.
 ```
