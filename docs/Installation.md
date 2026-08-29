@@ -4,22 +4,22 @@
 
 - WeeWX 5.0 or later
 - Python 3.7 or later
-- Hardware that pushes. See [Protocols](Protocols) for the six it reads.
+- Hardware that pushes its readings. See [Protocols](Protocols) for the six protocols
+  supported.
 
-Nothing else. No pip packages, no compiler.
+There are no other requirements: no pip packages and no compiler.
 
 ## Install
 
 ```
-weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.8.0.zip
+weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.12.4.zip
 sudo systemctl restart weewx
 ```
 
-Two commands. The installer sets `station_type`, writes the `[UltimatePush]` section,
-sets up the rain counter, and switches on the web interface with a token of its own.
+The installer sets `station_type`, writes the `[UltimatePush]` section, configures the
+rain counter, and enables the web interface with a token generated for this machine.
 
-`weectl station reconfigure` also offers `UltimatePush` in its list, if you would rather
-go that way.
+`weectl station reconfigure` also offers `UltimatePush` in its list.
 
 To install from a clone instead:
 
@@ -119,7 +119,7 @@ sudo journalctl -u weewx -f
 Within one upload interval the log shows:
 
 ```
-INFO user.ultimatepush.driver: Driver version is 0.5.0, listening with weewx.listener for Ecowitt, Ambient Weather, Acurite, LaCrosse LW30x, Weather Underground
+INFO user.ultimatepush.driver: Driver version is 0.12.4, listening with weewx.listener for Ecowitt, Ambient Weather, Acurite, LaCrosse LW30x, Weather Underground
 INFO weewx.listener: Listening for HTTP requests on *:8000
 INFO weewx.engine: Starting main packet loop.
 ```
@@ -132,12 +132,20 @@ INFO user.ultimatepush.driver: Reading ecowitt uploads with the 'ecowitt' catalo
 
 Followed by any fields waiting for a decision. See [Field map](Field-map).
 
+## Set the station up
+
+Open the address the log reported. If nothing has uploaded yet, the page asks for a name
+and the hardware type, and displays the settings to enter into the console. With a
+station already recording, a second one is set up the same way and becomes an extra
+sensor without being asked. See [Stations](Stations).
+
 ## Rain
 
-None of this hardware sends the rain since the last upload. It sends running counters,
-and the installer sets up `StdWXCalculate` to difference `dayRain`, which suits four of
-the six protocols. WeatherFlow needs nothing; LaCrosse needs `input = totalRain`. The
-driver says so at startup if the setting does not suit what you enabled.
+None of this hardware reports the rain since the last upload. It reports running
+counters, and the installer configures `StdWXCalculate` to difference `dayRain`, which
+suits four of the six protocols. WeatherFlow requires none of this. LaCrosse requires
+`input = totalRain`. The driver logs a warning at startup if the setting does not suit
+the protocols you enabled.
 
 ## Upgrade
 
@@ -146,7 +154,7 @@ weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases
 sudo systemctl restart weewx
 ```
 
-Your `[UltimatePush]` section is left alone. Read the
+Your `[UltimatePush]` section is left unchanged. Read the
 [changelog](https://github.com/hilman2/weewx-ultimate-push/blob/main/CHANGELOG.md) first
 if you skipped versions: a field that moves is listed there.
 
@@ -157,4 +165,4 @@ weectl extension uninstall ultimate-push
 weectl station reconfigure
 ```
 
-Pick another station type when asked. The database keeps everything it collected.
+Select another station type when asked. The database keeps everything it collected.

@@ -12,9 +12,13 @@ bin/user/ultimatepush/
     mapping.py     the three above, combined into a packet. Still no WeeWX.
     columns.py     which database columns a packet needs.
     consoles.py    which stations this driver answers to.
+    roles.py       which station may fill which field: main, extra, and channels.
+    owners.py      which station owns which archive column.
     server.py      an answer per protocol, and several listeners behind one iterator.
     activity.py    what each station has been doing lately. Bounded, in memory.
+    report.py      the report left behind when a station sends something unplaceable.
     overrides.py   the settings the web interface may change, in a file of its own.
+    checklist.py   what still stands between the current state and a working station.
     admin.py       the web interface: routing and the JSON API.
     page.py        the web interface, as one self-contained page.
     driver.py      the WeeWX end: loop packets, unit groups, shutdown.
@@ -25,15 +29,15 @@ tests/                 pytest, with captured payloads in tests/fixtures.
 ```
 
 Everything except `driver.py`, `server.py`, `admin.py` and `__main__.py` runs without
-WeeWX installed. That is what lets the tests work from a captured payload rather than from
-mocks, and it is worth keeping: a catalog is data, and data should be checkable
-without a weather station or a WeeWX.
+WeeWX installed. This is what allows the tests to work from a captured payload rather
+than from mocks, and it is worth preserving: a catalog is data, and data should be
+checkable without a weather station.
 
 ## Protocols and dialects
 
-Two words, kept apart on purpose.
+Two terms, deliberately distinct.
 
-A **protocol** is an exchange: a path, an answer, a way of naming the station.
+A **protocol** is an exchange: a path, an answer, and a way of naming the station.
 
 A **dialect** is a catalog: what the names mean and what units they arrive in.
 
