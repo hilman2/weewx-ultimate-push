@@ -168,7 +168,7 @@ against WeatherFlow's own examples.
 
 **Its rain is already a difference.** Every other protocol here sends running counters.
 A hub sends the millimetres since its last report, which is what WeeWX means by `rain`.
-Differencing it again with `StdDelta` would record almost nothing.
+Differencing it again with `StdWXCalculate` would record almost nothing.
 
 Eight message types are read: `obs_st`, `obs_air`, `obs_sky`, `rapid_wind`, `evt_strike`,
 `evt_precip`, `device_status` and `hub_status`. `rapid_wind` arrives every three seconds
@@ -241,7 +241,7 @@ dialect of this one.
 ## Adding one
 
 A protocol is a small class and a catalog. `bin/user/ultimatepush/protocols/` has six
-worked examples, and [Development](Development.md) has the walkthrough.
+worked examples, and [Contributing](Contributing.md) has the walkthrough.
 
 What is needed:
 

@@ -47,14 +47,8 @@ A Raspberry Pi or similar on a private network, with no proxy in front of it.
       +-------------------------------->
 ```
 
-Both ports are above 1024, so neither requires root.
-
-```
-weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.13.0.zip
-sudo systemctl restart weewx
-```
-
-Then point the console at `192.168.1.50:8000` and open the address from the log.
+Both ports are above 1024, so neither requires root. Installing and pointing the
+console are in [Installation](Installation.md); this page is what you open afterwards.
 
 ### Where files are placed
 
@@ -89,6 +83,8 @@ written, whether a column exists, and how many earlier values that column holds.
 
 ## The checklist
 
+![The setup checklist, with six stations on five protocols](img/01-setup.png)
+
 Until a station is recording properly, the page opens on a checklist of what still
 stands in the way. It has no step numbers and no fixed order: it determines what is
 true each time it is loaded.
@@ -109,11 +105,15 @@ console that appears a year later puts its step back at the top.
 
 ### Setup
 
+![Setting up a station](img/04-add-station.png)
+
 The checklist above, and the form for setting up a station. Selecting a role is part of
 that form: the first station is the main station, and every station after it is offered
 as an extra sensor. See [Stations](Stations.md).
 
 ### Stations
+
+![The stations tab](img/02-stations.png)
 
 Every station the driver knows, including stations set up but never heard from, and
 stations declared in `weewx.conf`. Each entry is collapsed and opens to show:
@@ -130,6 +130,8 @@ is named in no file.
 
 ### Fields
 
+![The fields tab](img/03-fields.png)
+
 Every station at once, one block each, collapsible. Not one page per station: the
 question is not what a given station sends, it is which station fills `outTemp`, and
 that answer is spread across two pages if each station has its own.
@@ -144,6 +146,8 @@ One WeeWX field takes one reading. Selecting a field that is taken reports who h
 and changes nothing until you confirm, after which the reading that held it is placed
 `nowhere` rather than left to take turns in the column.
 
+![Confirming a change that reaches the archive](img/05-confirm.png)
+
 A field with no column has a button in the row that creates it. A selection takes effect
 on the next upload.
 
@@ -154,6 +158,8 @@ names the station is redacted, so they are safe to attach to an issue. This repl
 enabling `log_raw` and watching the log.
 
 ### Database columns
+
+![The database columns tab](img/06-columns.png)
 
 Which readings have nowhere to be written, with the `weectl database add-column`
 commands, and the same check the Fields tab uses. The archive table is also checked for
@@ -169,10 +175,34 @@ owned by root while the driver runs as the `weewx` user. And it is your file, wi
 comments in it.
 
 Settings the interface changes are written to `ultimate-push-web.conf`, beside the
-console list, in the same format. They are read on the next upload, without a restart.
+console list, in the same format as `weewx.conf`. They are read on the next upload,
+without a restart.
 
 Anything that does require a restart — the port, `protocols`, `path` — is displayed as a
 block to copy rather than written.
+
+The file holds two kinds of entry:
+
+```ini
+[stations]
+    [[path:/E0rbpxexKCsb/report]]
+        path = /E0rbpxexKCsb/report
+        protocol = ecowitt
+        name = garden
+        role = main
+
+[columns]
+    outTemp = path:/E0rbpxexKCsb/report
+    extraTemp1 = path:/g0nTdxurjQd8/report
+```
+
+`[stations]` holds the stations the interface set up or accepted, keyed by identity.
+`[columns]` records which station fills which archive column, so that ownership survives
+a restart. Both are described in [Stations](Stations.md).
+
+Editing the file by hand works and is read on the next upload, but the interface
+rewrites the whole file the next time something changes in it, and comments added by
+hand do not survive that.
 
 ### Which file takes precedence
 
@@ -292,7 +322,9 @@ These are a subsection of `[UltimatePush]`.
 
 #### enable
 
-Whether to open the port. Set to `true` by the installer. Default is `true`.
+Whether to open the port. The installer sets it to `true`. Default is `false`, so an
+installation upgraded from a version before the interface existed keeps its port shut
+until you ask for it.
 
 #### port
 
@@ -326,9 +358,8 @@ Comma-separated addresses to accept requests from. Default is anywhere.
 Take the client address from `X-Forwarded-For`. Use only with a proxy you control.
 Default is `false`.
 
-#### override_file
-
-Where the settings the interface writes are kept. Default is beside the console list.
+Where the file below is written is set by `override_file`, which is a driver option
+rather than one of these. See [Configuration](Configuration.md).
 
 ## What the interface does not do
 
