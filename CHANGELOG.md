@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+**The interface carries its own icon.** A page that declares one is not asked for
+`/favicon.ico`, and that request arrives without a token: ten of them in five minutes
+would have stopped the address being answered at all. A request for it is now answered
+before the token is looked at, for the browsers that ask anyway.
+
+The wiki sidebar is built from a list in `tools/publish_wiki.py` that nothing kept in
+step with `docs/`. A page missing from it was published and linked from nowhere. A test
+now compares the two, and `docs/Home.md` as well.
+
 ## 0.14.0 (2026-08-30)
 
 **Hardware that has to be asked now runs beside hardware that pushes.** WeeWX runs one

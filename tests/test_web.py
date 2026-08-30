@@ -249,6 +249,11 @@ def test_the_page_is_one_file(station):
     assert body.lstrip().startswith(b'<!doctype')
     # Nothing to fetch. The listener answers one request per connection and closes
     # it, and a driver has no business shipping an asset pipeline.
+    #
+    # The SVG namespace is the one address in the page and is not a fetch: it names
+    # what the icon is, browsers never resolve it, and an SVG without it does not
+    # parse. So it is taken out before looking, rather than the check being dropped.
+    body = body.replace(b"'http://www.w3.org/2000/svg'", b'')
     for outside in (b'http://', b'https://', b'.css"', b'.js"'):
         assert outside not in body
 
@@ -1125,3 +1130,36 @@ def test_hardware_that_can_be_told_nothing_is_still_adopted(empty):
 
     assert not made['ok']
     assert 'nothing to set up in advance' in made['message']
+
+
+# ---- the icon ----------------------------------------------------------------
+
+
+def test_the_page_carries_its_own_icon(station):
+    """In the page, like everything else here.
+
+    A page that declares an icon is not asked for /favicon.ico, which is the point:
+    that request arrives without a token.
+    """
+    _, _, body = web(station, '/')
+
+    assert b'<link rel="icon" href="data:image/svg+xml,' in body
+    # The policy is default-src 'none', so an inline image needs saying.
+    assert b'img-src data:' in body
+
+
+def test_asking_for_favicon_ico_is_not_counted_against_the_address(station):
+    """A browser working from a bookmark has no token to send.
+
+    Ten of those in five minutes would stop the address being answered at all, and
+    the person would find an interface that had gone silent for no reason they
+    could see.
+    """
+    for _ in range(12):
+        status, content_type, _ = web(station, '/favicon.ico', token=None)
+        assert status == 200
+        assert content_type.startswith('image/')
+
+    # Still answering, and still asking for the token.
+    _, _, answer = web(station, '/api/state')
+    assert answer['ok'] is True

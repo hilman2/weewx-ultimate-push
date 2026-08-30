@@ -291,6 +291,13 @@ class Site:
             tuple: (body, content_type).
         """
         try:
+            if (request.path or '').rstrip('/') == '/favicon.ico':
+                # Answered before the token is looked at, and not counted. The page
+                # carries its own icon, so nothing that has the page asks for this;
+                # what does is a browser working from a bookmark or from history,
+                # and it has no token to send. Counted, ten of those in five minutes
+                # would stop answering that address.
+                return '', 'image/x-icon'
             standing = self.doorman.check(request.client_address, _presented(request))
             if standing == 'blocked':
                 # The black hole. No explanation, no hint that the address is known,

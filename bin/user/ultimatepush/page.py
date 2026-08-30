@@ -24,8 +24,13 @@ PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'">
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src data:">
 <title>weewx-ultimate-push</title>
+<!-- The icon is in the page, like everything else here. A page that declares one is
+     not asked for /favicon.ico, and that request would arrive without the token and
+     be counted against the address by the doorman. An arrow leaving a line: readings
+     going up from the console to this machine, which is the whole of what this is. -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3.5' fill='%238a4b2a'/><path d='M8 3 11.8 7.2H9.4v3.4H6.6V7.2H4.2z' fill='%23fbfaf8'/><rect x='4.2' y='11.7' width='7.6' height='1.5' rx='.75' fill='%23fbfaf8'/></svg>">
 <style>
 :root {
   --bg: #fbfaf8; --panel: #fff; --line: #e2ded8; --ink: #24211d;
