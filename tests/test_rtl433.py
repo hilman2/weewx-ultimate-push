@@ -587,3 +587,90 @@ def test_a_station_of_this_driver_s_own_cannot_be_set_aside(tmp_path):
         assert 'Take it out' in message
     finally:
         driver.closePort()
+
+
+def test_a_sensor_nothing_has_been_heard_from_for_two_days_drops_off():
+    """Without anybody having to say anything about it.
+
+    A car drove past on Tuesday and was heard once. Nobody is going to press a
+    button about it, and it should not still be on the list on Thursday.
+    """
+    from ultimatepush.activity import FORGET_REFUSED, Log, Upload
+
+    def heard(log, ident, at):
+        log.refused(
+            Upload(
+                at=at,
+                client='127.0.0.1',
+                method='',
+                path='/',
+                text='',
+                ident=ident,
+                protocol='rtl433',
+                dialect='',
+                packet={},
+            )
+        )
+
+    log = Log()
+    now = time.time()
+    heard(log, 'PassingCar/1', now - FORGET_REFUSED - 60)
+    heard(log, 'Mine/57/1', now - 30)
+    assert [row['ident'] for row in log.unknown_stations(lambda t: t)] == ['Mine/57/1']
+    # Dropped, not merely hidden: nothing is kept about it.
+    assert 'PassingCar/1' not in log.refusals
+
+
+def test_a_console_unplugged_over_a_weekend_is_still_there():
+    """Two days is the line, and it is on the generous side of a weekend."""
+    from ultimatepush.activity import FORGET_REFUSED, Log, Upload
+
+    log = Log()
+    log.refused(
+        Upload(
+            at=time.time() - FORGET_REFUSED + 3600,
+            client='127.0.0.1',
+            method='',
+            path='/',
+            text='',
+            ident='Console/1',
+            protocol='rtl433',
+            dialect='',
+            packet={},
+        )
+    )
+    assert [row['ident'] for row in log.unknown_stations(lambda t: t)] == ['Console/1']
+
+
+def test_one_that_comes_back_starts_counting_again():
+    """It was dropped, so there is nothing to add to. That is the honest count.
+
+    A sensor that went quiet for two days and returned is news again, and a tally
+    carried over from before would say it had been heard steadily all along.
+    """
+    from ultimatepush.activity import FORGET_REFUSED, Log, Upload
+
+    def heard(log, at):
+        log.refused(
+            Upload(
+                at=at,
+                client='127.0.0.1',
+                method='',
+                path='/',
+                text='',
+                ident='Gone/1',
+                protocol='rtl433',
+                dialect='',
+                packet={},
+            )
+        )
+
+    log = Log()
+    now = time.time()
+    for _ in range(5):
+        heard(log, now - FORGET_REFUSED - 60)
+    assert log.unknown_stations(lambda t: t) == []
+    heard(log, now)
+    rows = log.unknown_stations(lambda t: t)
+    assert [row['ident'] for row in rows] == ['Gone/1']
+    assert rows[0]['uploads'] == 1

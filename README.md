@@ -10,6 +10,10 @@ every reading and where it is being written.
 And the drivers WeeWX ships with. A Vantage on a serial port and an Ecowitt gateway on
 the network are one station in one database, rather than two WeeWX instances.
 
+And hardware that does neither. A PurpleAir has nowhere to type a server address into,
+so it is asked instead. A cheap 433 MHz thermometer cannot be asked or pointed either,
+so an RTL-SDR stick listens for it. Four ways in, one database, one set of reports.
+
 ![The setup checklist, with six stations on five protocols](docs/img/01-setup.png)
 
 The interface opens on whatever still stands between the current state and a station that
@@ -84,6 +88,8 @@ port. See [Web interface](https://github.com/hilman2/weewx-ultimate-push/wiki/We
 | WeatherFlow | Tempest, and the AIR and SKY before it | UDP broadcast on port 50222 |
 | Acurite | smartHUB and Access, with a 5-in-1, towers, Pro sensors, the 899 gauge | POST, requires a DNS entry |
 | LaCrosse | LW301 and LW302 gateways | POST, requires a DNS entry |
+| PurpleAir | PA-II, PA-II-SD and PA-I | asked over HTTP, on a schedule |
+| rtl_433 | any 433, 868 or 915 MHz sensor it decodes | UDP from rtl_433, which does the radio |
 
 Every device by name, with what it takes to reach each one, is in
 [Hardware](https://github.com/hilman2/weewx-ultimate-push/wiki/Hardware).
@@ -114,6 +120,87 @@ Its own section is read by its own loader, so `weectl device` is unaffected. Wit
 what the other stations sent during the period is added to it.
 
 See [Hosted hardware](https://github.com/hilman2/weewx-ultimate-push/wiki/Hosted-hardware).
+
+## Hardware that answers rather than sends
+
+Some hardware has no field for a server address, because it was never meant to send
+anything: it sits on your network and answers whoever asks. A PurpleAir is like this,
+and so is most of what is sold with a local API.
+
+One block says what to ask, how often, and what station it is. There is no second
+block naming it and nothing waiting to be let in: the driver knows which sensor
+answered because it knows which address it asked.
+
+```ini
+[UltimatePush]
+    [[polling]]
+        [[[air]]]
+            address = 1.2.3.4
+            protocol = purpleair
+            interval = 60
+            role = extra
+            channel = 3
+```
+
+No sensor yet? `python -m user.ultimatepush --fake-purpleair` answers like one.
+
+See [Sensors this driver asks](https://github.com/hilman2/weewx-ultimate-push/wiki/Polled-sources).
+
+## Cheap radio sensors
+
+A twenty-five euro RTL-SDR stick hears every sensor within a few hundred metres that
+talks on 433, 868 or 915 MHz: outdoor thermometers, soil probes, rain gauges, pool
+sensors. [rtl_433](https://github.com/merbanan/rtl_433) does the radio and the
+decoding. It is a separate program and none of it ships here.
+
+```bash
+sudo apt install rtl-433
+rtl_433 -C si -F syslog:127.0.0.1:1433
+```
+
+`-C si` asks it to convert what it can itself. `-F syslog:` is how it sends: one
+datagram per message, so nothing has to start it or supervise it. Leave it running
+with a unit of its own:
+
+```bash
+sudo tee /etc/systemd/system/rtl_433.service <<'EOF'
+[Unit]
+Description=rtl_433
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/rtl_433 -C si -F syslog:127.0.0.1:1433
+Restart=always
+User=nobody
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl enable --now rtl_433
+```
+
+Then switch the protocol on:
+
+```ini
+[UltimatePush]
+    protocols = ecowitt, rtl433
+```
+
+Everything in range turns up, including the neighbours', because listening is not the
+same as being sent to. Nothing is recorded until you say which sensors are yours. They
+appear in the web interface, most often heard first, which is a good guide: something
+heard sixty times an hour is close by and on a schedule, and something heard once was
+a car going past. *Not mine* takes one off the list for good, and anything nothing has
+been heard from for two days drops off by itself.
+
+A battery change can give one of these sensors a new id. When that happens it stops
+recording and turns up looking new; the interface moves the station onto the new id,
+keeping its name, its channel and the columns it owns.
+
+No stick yet? `python -m user.ultimatepush --fake-rtl433` sends what rtl_433 sends,
+three sensors at a time, one of them a neighbour's.
+
+See [rtl_433](https://github.com/hilman2/weewx-ultimate-push/wiki/Protocol-Rtl433).
 
 ## Why another driver
 

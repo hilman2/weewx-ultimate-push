@@ -35,6 +35,15 @@ KEEP = 20
 # busy road does not grow it for ever. The least recently heard goes first.
 KEEP_REFUSED = 200
 
+# How long a station stays on the list after it was last heard.
+#
+# Two days, because that covers a console somebody unplugged over a weekend and does
+# not cover a car that drove past on Tuesday. Nothing is remembered about the ones
+# that go: they are dropped, and one that transmits again comes straight back, with
+# its count starting over. That is the right count either way, because a sensor that
+# went quiet for two days and returned is news again.
+FORGET_REFUSED = 48 * 3600.0
+
 # The longest payload worth storing, in characters. Real uploads are a kilobyte. A
 # listener will accept sixty-four, and there is no reason to hold that in memory
 # twenty times over for whoever sent it.
@@ -249,8 +258,28 @@ class Log:
             # Back to the end, so that the one dropped when the list is full is the
             # one nothing has been heard from for longest.
             self.refusals[ident] = row
+            self._forget_quiet(upload.at)
             while len(self.refusals) > KEEP_REFUSED:
                 self.refusals.popitem(last=False)
+
+    def _forget_quiet(self, now):
+        """Drop the stations nothing has been heard from for two days.
+
+        Cheap because the list is in the order things were last heard: whatever has
+        gone quiet is at the front, so this stops at the first one that has not.
+
+        Called with the lock held.
+
+        Args:
+            now (float): The time to measure from, which is when the upload that
+                prompted this arrived.
+        """
+        cutoff = now - FORGET_REFUSED
+        while self.refusals:
+            ident, row = next(iter(self.refusals.items()))
+            if row['last_seen'] >= cutoff:
+                return
+            del self.refusals[ident]
 
     def kept_apart(self, ident, fields):
         """Record readings a station is not writing because another station has them.
@@ -412,6 +441,11 @@ class Log:
         transmitting on a schedule, which is what a sensor somebody owns does. A car
         going past is heard once.
 
+        Anything nothing has been heard from for two days is left out and dropped.
+        A console that was unplugged over a weekend is still there; the car that
+        drove past on Tuesday is not. Nothing about the ones that go is remembered,
+        so one that transmits again comes straight back.
+
         Args:
             redact (callable): Given the upload text, returns it redacted.
 
@@ -421,6 +455,10 @@ class Log:
             readings. Most often heard first.
         """
         with self.lock:
+            # Swept here as well as when an upload arrives, so that a list read
+            # after a quiet night is right even though nothing has arrived to
+            # prompt a sweep.
+            self._forget_quiet(time.time())
             rows = list(self.refusals.values())
         made = []
         for row in rows:

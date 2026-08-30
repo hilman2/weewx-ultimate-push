@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.0
 
 **Cheap radio sensors, by way of rtl_433.** A twenty-five euro USB stick hears
 every sensor within a few hundred metres that talks on 433, 868 or 915 MHz: outdoor
