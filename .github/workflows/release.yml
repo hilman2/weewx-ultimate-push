@@ -21,22 +21,29 @@ jobs:
               || { echo "$file does not say ${tag}"; exit 1; }
           done
 
+      # The asset name carries no version, so that
+      # releases/latest/download/weewx-ultimate-push.zip is a URL the documentation
+      # can state once. Which version it is comes from the tag, the release notes,
+      # CHANGELOG.md and install.py, and the step above checks that those agree.
       - name: Build the extension package
         run: |
-          name="weewx-ultimate-push-${GITHUB_REF_NAME#v}"
+          name=weewx-ultimate-push
           mkdir -p "build/${name}"
           cp -r install.py bin LICENSE README.md CHANGELOG.md "build/${name}/"
           find "build/${name}" -name '__pycache__' -type d -prune -exec rm -rf {} +
           (cd build && zip -qr "../${name}.zip" "${name}")
-          echo "ASSET=${name}.zip" >> "$GITHUB_ENV"
 
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ASSET }}
+          files: weewx-ultimate-push.zip
           body: |
-            Install with:
+            Install or upgrade with:
 
-                weectl extension install https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.ASSET }}
+                weectl extension install https://github.com/${{ github.repository }}/releases/latest/download/weewx-ultimate-push.zip
+                sudo systemctl restart weewx
+
+            To pin this release rather than track the latest, take the zip from the
+            assets below.
 
             See CHANGELOG.md for what changed.
