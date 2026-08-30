@@ -24,6 +24,7 @@ address rather than a chosen few.
 import json
 import logging
 import socket
+import struct
 import socketserver
 import threading
 import time
@@ -350,6 +351,132 @@ def test_a_sensor_that_is_not_registered_is_not_reported():
     )
 
     assert sorted(got) == ['wh65_batt', 'wh65_sig']
+
+
+# ---- the widths, against the document rather than against the table ----------
+#
+# The round trip above encodes and decodes with one table, so it cannot tell that
+# table is wrong: a width that is too narrow round-trips perfectly until a value
+# turns up that will not fit in it. What catches a wrong width is a second statement
+# of it that did not come from the code.
+#
+# This is that statement. Every number below was read off Ecowitt's document, out of
+# the byte count it prints beside each ITEM_ in its definition list, and none of it
+# was derived from anything in the driver.
+
+# Address to the width the document gives it, grouped by the width and written as the
+# address bytes themselves, so that a line here and the document's definition list can
+# be read against each other.
+DOCUMENTED = {
+    1: bytes.fromhex(
+        '06 07 17 22 23 24 25 26 27 28 29 2C 2E 30 32 34 36 38 3A 3C 3E 40'
+        '42 44 46 48 4A 58 59 5A 5B 60 72 73 74 75 76 77 78 79 7A 7B'
+    ),
+    2: bytes.fromhex(
+        '01 02 03 04 05 08 09 0A 0B 0C 0D 0E 0F 10 11 16 19 1A 1B 1C 1D 1E'
+        '1F 20 21 2A 2B 2D 2F 31 33 35 37 39 3B 3D 3F 41 43 45 47 49 4D 4E'
+        '4F 50 51 52 53 80 81 82'
+    ),
+    3: bytes.fromhex('63 64 65 66 67 68 69 6A 88'),
+    4: bytes.fromhex('12 13 14 15 61 62 6C 83 84 85 86'),
+    6: bytes.fromhex('18'),
+    16: bytes.fromhex('4C 70'),
+    20: bytes.fromhex('87'),
+}
+
+# The one address the document gives no byte count for. It says instead that a WH46
+# is "ITEM_SENSOR_CO2 + pm1 + pm4", which is the WH45's sixteen bytes and four more
+# readings of two, and the response table beside CMD_GW1000_LIVEDATA lists all
+# thirteen of them in order.
+WH46_IS_DERIVED = 24
+
+# What the document's CMD_READ_RAIN response table gives, which is a different set of
+# widths for some of the same addresses. This is the transcription that matters most:
+# it is the only place the two tables can be held apart by something outside the code.
+DOCUMENTED_RAIN = {
+    0x0E: 2,
+    0x0F: 2,
+    0x0D: 2,
+    0x10: 4,
+    0x11: 4,
+    0x12: 4,
+    0x13: 4,
+    0x7A: 1,
+    0x80: 2,
+    0x81: 2,
+    0x83: 4,
+    0x84: 4,
+    0x85: 4,
+    0x86: 4,
+    0x87: 20,
+    0x88: 3,
+}
+
+
+def documented_widths():
+    """The document's byte count per address, flattened."""
+    return {
+        address: width
+        for width, addresses in DOCUMENTED.items()
+        for address in addresses
+    }
+
+
+def test_every_live_address_is_as_wide_as_the_document_says():
+    """The check the round trip cannot make, because it is not the same source.
+
+    A width that is one too narrow moves every reading after it, and encoding and
+    decoding with one table hides that: both halves agree, and the numbers still come
+    back. Only a second statement of the width catches it, and this is that.
+    """
+    said = documented_widths()
+    said[0x6B] = WH46_IS_DERIVED
+
+    wrong = []
+    for address, shapes in sorted(api.LIVE.items()):
+        mine = struct.calcsize(api.shape_format(shapes))
+        if said.get(address) != mine:
+            wrong.append(
+                '0x%02X is %d bytes here and %s in the document'
+                % (address, mine, said.get(address))
+            )
+
+    assert not wrong, '; '.join(wrong)
+    # And nothing the document lists is missing, so an address that arrives is one
+    # the table can step over rather than one it has to stop at.
+    assert sorted(api.LIVE) == sorted(said)
+
+
+def test_every_rain_address_is_as_wide_as_the_rain_table_says():
+    """The other table, against the other page of the document.
+
+    Six of these addresses are in the live-data table at a different width. That is
+    the trap this whole second table exists for, and this is the assertion that the
+    two were not transcribed from one another.
+    """
+    wrong = []
+    for address, shapes in sorted(api.RAIN.items()):
+        mine = struct.calcsize(api.shape_format(shapes))
+        if DOCUMENTED_RAIN.get(address) != mine:
+            wrong.append(
+                '0x%02X is %d bytes here and %s in the document'
+                % (address, mine, DOCUMENTED_RAIN.get(address))
+            )
+
+    assert not wrong, '; '.join(wrong)
+    assert sorted(api.RAIN) == sorted(DOCUMENTED_RAIN)
+
+
+def test_the_two_tables_really_do_disagree():
+    """If they ever came to agree, one of the transcriptions was copied from the other."""
+    live = documented_widths()
+    differ = {
+        address
+        for address in DOCUMENTED_RAIN
+        if address in live and live[address] != DOCUMENTED_RAIN[address]
+    }
+
+    assert differ == {0x10, 0x11}
 
 
 # ---- reading a whole gateway -------------------------------------------------
