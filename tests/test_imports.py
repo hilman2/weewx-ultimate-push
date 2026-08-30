@@ -47,6 +47,10 @@ WITHOUT_WEEWX = [
     'ultimatepush.catalogs.purpleair',
     'ultimatepush.catalogs.airlink',
     'ultimatepush.catalogs.rtl433',
+    # An Ecowitt gateway is asked over a socket rather than over HTTP, and the
+    # whole of what that takes is socket and struct.
+    'ultimatepush.protocols.ecowitt_gateway',
+    'ultimatepush.catalogs.ecowitt_gateway',
     'ultimatepush.owners',
     'ultimatepush.consoles',
     'ultimatepush.report',

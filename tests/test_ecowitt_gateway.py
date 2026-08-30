@@ -639,7 +639,13 @@ def test_a_gateway_that_cannot_be_reached_says_so_once(caplog):
 
 
 def test_a_gateway_that_is_away_does_not_hold_up_another(gateway):
-    """One thread each, so the one that is answering is still read every interval."""
+    """One thread each, so the one that is answering is still read every interval.
+
+    The one test here that needs WeeWX. Asking is the standard library, and this is
+    the only one that waits for an answer to be handed over, which is done in the
+    class the installed listener brings.
+    """
+    pytest.importorskip('weewx', reason="WeeWX is not installed")
     poller = polling.build(
         {
             'gw': {
