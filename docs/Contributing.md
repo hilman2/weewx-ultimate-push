@@ -18,7 +18,8 @@ short.
 - `python -m pytest tests -q` passing
 - `black bin tools tests install.py` run
 - `mypy` and the docstring checker passing
-- an entry in `CHANGELOG.md`, in the same voice as the ones above it
+- an entry in `CHANGELOG.md` for anything a user would notice, in the same voice as
+  the ones above it. Documentation and formatting do not get one.
 
 ## Adding a field
 
