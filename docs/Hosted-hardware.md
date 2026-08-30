@@ -8,8 +8,14 @@ instances. This driver can host the other driver instead. It is loaded exactly a
 loads it, from its own section, and its readings join the ones that arrive over the
 network. Set one up in the web interface, or in `weewx.conf`; both are below.
 
-The options are in [Configuration](Configuration.md#hosted-hardware). How it is put
-together is in [Architecture](Architecture.md#hosted-drivers).
+There are two sets of options here, and it helps to keep them apart.
+
+Which drivers to run, and what role each has, is this driver's business and is in
+[Configuration](Configuration.md#hosted-hardware). What goes inside `[Vantage]` or
+`[WMR100]` is that driver's own business, and is not repeated anywhere here. See
+[Where a driver's own options come from](#where-a-drivers-own-options-come-from) below.
+
+How it is put together is in [Architecture](Architecture.md#hosted-drivers).
 
 ## Adding one in the web interface
 
@@ -76,6 +82,26 @@ INFO user.ultimatepush.hardware: Hosting 1 driver(s): Vantage. The archive stati
 
 Anything WeeWX can load works here, whether it ships with WeeWX or came from elsewhere.
 A driver is named by its section, and the section says which module to import.
+
+## Where a driver's own options come from
+
+Every WeeWX driver has a section of its own, named after it, holding whatever that
+driver takes: `[Vantage]` has a port and a baud rate, `[WMR100]` has almost nothing,
+`[WS28xx]` has a radio frequency. Those options belong to that driver. This one neither
+adds to them nor documents them, because there is no version of them here that could
+not go out of date.
+
+There are two places to read them, and both are on your own machine.
+
+The web interface shows them when you pick the hardware, one field each, with the
+sentence the driver's author wrote above it. That text comes out of the driver as it is
+installed, so it describes the version you actually have.
+
+`weectl station reconfigure --driver=weewx.drivers.vantage` writes the same block into
+`weewx.conf`, comments and all, which is the same text from the same place.
+
+For anything beyond that, the WeeWX documentation covers each driver it ships under
+Hardware. A driver from elsewhere brings its own README.
 
 ## Which station fills the plain columns
 
