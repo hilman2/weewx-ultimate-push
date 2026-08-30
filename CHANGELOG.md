@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+**Configuration.md says which options belong to which protocol.** Six protocols share
+one section, so the option list did not tell somebody with a Tempest which of the
+thirteen were theirs. One table now does: whether the protocol is in `protocols = auto`,
+which options only it has, and what names a station of that kind. For four of the six
+the answer is that there is nothing to configure at all.
+
 **A station in `weewx.conf` can carry its own password.** The interface gives one to
 every Weather Underground console it sets up, and `Stations.md` promises that everything
 the interface does can be written by hand. It could not: only the interface wrote it.

@@ -137,7 +137,9 @@ The same, for a console whose clock runs fast. Default is `60`.
 #### password
 
 Weather Underground only. Refuse uploads that do not present this as `PASSWORD`. This
-is the only protocol here whose hardware can carry a secret. Default is none.
+is the only protocol here whose hardware can carry a secret. A station with a password
+of its own uses that instead; this covers the ones that have none. Default is none. See
+[Stations](Stations.md#configuring-stations-in-weewxconf).
 
 #### metric_wind
 
@@ -154,6 +156,39 @@ it. Default is `50222`.
 
 Where the settings the web interface writes are kept. Default is beside the console
 list.
+
+## What each protocol needs
+
+Six protocols share one port and one section. Most of the settings above apply to all
+of them at once, and three belong to one protocol each. This is the whole of what
+differs.
+
+| | In `protocols = auto` | Only it has | A station is named by |
+|---|---|---|---|
+| Ecowitt | yes | none | its PASSKEY, or a path you choose |
+| Ambient Weather | yes | none | its PASSKEY, or a path you choose |
+| Weather Underground | yes | `password`, `metric_wind` | its `ID`, with a `PASSWORD` |
+| WeatherFlow | **no** | `udp_port` | the hub's serial number |
+| Acurite | yes | none | the bridge's MAC address |
+| LaCrosse | yes | none | the gateway's MAC address |
+
+So for four of the six there is nothing to configure beyond the port everything shares.
+Point the hardware at this machine and it is read.
+
+**WeatherFlow has to be named.** It broadcasts rather than posting, which needs a second
+socket, and a socket is not opened for hardware nobody has:
+
+```ini
+[UltimatePush]
+    protocols = ecowitt, weatherflow
+```
+
+**Acurite and LaCrosse need a DNS entry** rather than a setting here. Their server name
+is in the firmware. See [Hardware](Hardware.md#the-two-that-need-a-dns-entry).
+
+What each protocol sends and how they are told apart is in
+[Protocols](Protocols.md). What to write for a station of each kind is in
+[Stations](Stations.md#setting-up-a-station).
 
 ## The web interface
 
