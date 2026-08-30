@@ -16,6 +16,7 @@ for understanding the machine behind it. **Development** is for changing it.
 - **[Hardware](Hardware.md)** — every device, and what it takes to reach it
 - **[Web interface](Web-interface.md)** — see what a station sends, and place a field without a restart
 - **[Stations](Stations.md)** — setting one up, roles, and column ownership
+- **[Hosted hardware](Hosted-hardware.md)** — a Vantage or a USB console beside the stations that upload
 - **[Database columns](Database-columns.md)** — which columns a station needs, and how to add them
 - **[Configuration](Configuration.md)** — every option, with worked examples
 - **[Diagnostics](Diagnostics.md)** — one command that answers most questions

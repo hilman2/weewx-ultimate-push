@@ -194,6 +194,9 @@ var stationList = null;
 /* A main station about to be taken over, while the page explains what that does.
    Held here rather than in the DOM so that a redraw does not lose the question. */
 var pending = null, editing = null, pendingDraw = false, unfolded = {};
+/* The options a driver's author ruled off as rarely needing attention start
+   folded, which is what ruling them off meant. */
+folded.driverrest = true;
 
 function busy() {
   /* Somebody is in the middle of something on this page. A redraw would empty the
@@ -275,12 +278,36 @@ function drawDoor(door) {
     }).join('<br>') + '</div>';
 }
 
+function waitingCards() {
+  /* Stations that are set up and have not been heard from. They are in no other
+     list here, because every other list is built from what has arrived, and a
+     station somebody has just set up has not arrived. Leaving them out makes
+     setting one up look like it did nothing at all. */
+  if (!stationList) return '';
+  var heard = {};
+  state.stations.forEach(function (s) { heard[s.ident] = true; });
+  return stationList.stations.filter(function (s) {
+    return !heard[s.ident] && !s.adopted;
+  }).map(function (s) {
+    return '<div class="card" data-goto="stations">' +
+      '<div class="id">' + esc(s.name || s.ident) + '</div>' +
+      '<div class="sub">' + esc(s.station_type || s.protocol || 'kind unknown') +
+      (s.role === 'extra' ? ' \\u00b7 extra ' + (s.channel || '?')
+                          : ' \\u00b7 main station') + '</div>' +
+      '<div class="sub warn">' + (s.station_type
+        ? 'Nothing read from it yet.'
+        : 'Waiting for its first upload.') + '</div></div>';
+  }).join('');
+}
+
 function drawSidebar() {
   var box = document.getElementById('stations');
+  var waiting = waitingCards();
   if (!state.stations.length) {
-    box.innerHTML = '<div class="dim" style="font-size:13px">Nothing has uploaded yet.</div>';
+    box.innerHTML = waiting || '<div class="dim" style="font-size:13px">Nothing has ' +
+      'uploaded yet.</div>';
   } else {
-    box.innerHTML = state.stations.map(function (s) {
+    box.innerHTML = waiting + state.stations.map(function (s) {
       return '<div class="card' + (s.ident === chosen ? ' on' : '') +
         '" data-ident="' + esc(s.ident) + '">' +
         '<div class="id">' + esc(s.name || s.ident) + '</div>' +
@@ -459,9 +486,18 @@ function createBox(one) {
      above: naming a station here and picking a kind there are one choice, and two
      places to make it is one too many. */
   if (!one.can_create) {
-    return '<p class="dim" style="margin-top:8px">Nothing to name here. This ' +
-      'hardware picks its own upload path, so the driver only hears of a station ' +
-      'when it uploads. It shows up as something to let in once it does.</p>';
+    /* Three reasons, and saying the wrong one is worse than saying none: a Tempest
+       has no upload path at all, and a Weather Underground console has one that
+       every console of its kind shares. */
+    var why = one.how === 'point'
+      ? 'Its path is fixed in the firmware, and every console of its kind uses the ' +
+        'same one, so this driver cannot tell them apart until one uploads.'
+      : (one.enabled === false
+        ? 'Switch it on first.'
+        : 'There is nothing to point here and nothing to name: it is recognised ' +
+          'from what it sends.');
+    return '<p class="dim" style="margin-top:8px">Nothing to name yet. ' + why +
+      ' It shows up as something to let in once it has been heard.</p>';
   }
   if (pending && pending.what === 'create') return confirmBox();
   return '<div class="add">' +
@@ -469,9 +505,9 @@ function createBox(one) {
     roleSelect('newrole', mainStation() ? 'extra' : 'main') +
     '<button class="act" id="create" data-proto="' + esc(one.name) +
     '">Set it up</button></div>' +
-    '<p class="dim" style="margin-top:8px">Naming it here gives it an upload path of ' +
-    'its own. That path is how the driver knows which station an upload is from, and ' +
-    'it is a secret: a PASSKEY can be read off anybody\\u2019s upload and repeated.</p>' +
+    '<p class="dim" style="margin-top:8px">The path it gets is how the driver knows ' +
+    'which station an upload is from, and it is a secret: a PASSKEY can be read off ' +
+    'anybody\\u2019s upload and repeated.</p>' +
     roleNote();
 }
 
@@ -593,34 +629,221 @@ function settingsTable(one) {
 }
 
 function createdBody(made) {
-  /* Which stations are waiting, and nothing else. Each one's path and console
-     settings live on the Stations tab, where they stay after this step is
-     ticked off; saying them twice means two places to keep right, and the one
-     inside a checklist is the one that disappears. */
+  /* What to type into the console, right here, for a station that has just been
+     set up. The Stations tab keeps this for good and is where somebody comes back
+     to it a year later; this is the one moment it is also needed on this page,
+     because naming a station is what gives it the path, and being told to go and
+     look somewhere else for the thing you just asked for reads as nothing having
+     happened. */
   if (!made || !made.length) return '';
-  return '<div class="made"><p>' + made.map(function (m) {
-      return '<b>' + esc(m.name) + '</b>';
-    }).join(', ') + ' ' + (made.length > 1 ? 'are' : 'is') +
-    ' set up and waiting for a first upload. The Stations tab has what to put ' +
-    'into the console.</p>' +
+  return '<div class="made">' + made.map(function (m) {
+    return '<p><b>' + esc(m.name) + '</b> is set up and waiting for its first ' +
+      'upload. Put this into the console:</p>' +
+      (m.settings ? settingsTable(m.settings) : '') +
+      '<p class="dim">The path is what tells this station apart from the others, ' +
+      'so it is a secret: anybody who can post to it can write into this ' +
+      'station’s columns. It is on the Stations tab too, for when the console ' +
+      'has to be set up again.</p>';
+  }).join('') +
+    '<p class="waiting"><b>Waiting for the first upload.</b> This page notices by ' +
+    'itself, so you can leave it open.</p>' +
     '<button class="act" data-goto="stations">Show the stations</button>' +
     '</div>';
 }
 
+/* What each group of hardware asks of the person setting it up. The order is the
+   order somebody meets them: choose an address and type it in, or plug it in and
+   fill in the port, or change something on the network and wait. */
+var GROUPS = [
+  ['point', 'You point it at this machine',
+   'Choose an address here and type it into the app that configures the console.'],
+  ['fetch', 'This machine reads it',
+   'On a cable, on USB, or somewhere on the network. Nothing has to find its way ' +
+   'here: the driver goes and gets the readings.'],
+  ['arrives', 'It turns up on its own',
+   'There is nowhere to type an address. It broadcasts, or its firmware holds ' +
+   'the server name and only a DNS entry on your network can move it. Make that ' +
+   'change and it appears below, waiting to be let in.']
+];
+
 function hardwareBody(s) {
-  if (!s.protocols) return '';
-  if (!picked) picked = s.protocols[0].name;
-  var one = s.protocols.filter(function (p) { return p.name === picked; })[0]
-            || s.protocols[0];
-  return '<div class="pick">' + s.protocols.map(function (p) {
-      return '<button data-pick="' + esc(p.name) + '"' +
-        (p.name === picked ? ' class="on"' : '') + '>' + esc(p.label) + '</button>';
-    }).join('') + '</div>' +
+  /* One list, whatever the hardware is. "Polled" and "uploads" is a distinction
+     this driver has and its user does not: they have a weather station. What they
+     do have to know is what to do next, which is what the groups say. */
+  if (!ways) { loadWays(); return '<p class="dim">Loading.</p>'; }
+  var one = wayFor(picked) || ways.ways[0];
+  if (!one) return '<p class="dim">No hardware this driver can read.</p>';
+  picked = wayKey(one);
+  return GROUPS.map(function (g) { return groupOfWays(g, one); }).join('') +
     '<p class="dim">' + esc(one.hardware) + '</p>' +
-    settingsTable(one) +
-    '<p class="waiting"><b>Waiting for the first upload.</b> This page notices by ' +
-    'itself, so you can leave it open.</p>' +
+    (one.kind === 'driver' ? fetchBody(one) : pointBody(one));
+}
+
+function wayKey(one) {
+  return one.kind + ':' + one.name;
+}
+
+function wayFor(key) {
+  if (!ways || !key) return null;
+  var found = null;
+  ways.ways.forEach(function (one) { if (wayKey(one) === key) found = one; });
+  return found;
+}
+
+function groupOfWays(group, chosen) {
+  var mine = ways.ways.filter(function (one) { return one.how === group[0]; });
+  if (!mine.length) return '';
+  return '<p class="dim" style="margin-top:10px"><b>' + esc(group[1]) + '</b> ' +
+    esc(group[2]) + '</p><div class="pick">' +
+    mine.map(function (one) {
+      var key = wayKey(one);
+      var why = one.problem ? ' \u2014 ' + esc(one.problem)
+        : (one.taken ? ' \u2014 already set up'
+          : (one.enabled === false ? ' \u2014 not switched on' : ''));
+      return '<button data-pick="' + esc(key) + '"' +
+        (key === wayKey(chosen) ? ' class="on"' : '') +
+        (one.problem || one.taken ? ' disabled' : '') + '>' +
+        esc(one.label) + why + '</button>';
+    }).join('') + '</div>';
+}
+
+function pointBody(one) {
+  /* Nothing to put into a console until there is something to put in. Naming the
+     station is what makes its path, and showing the address and the port before
+     that invites somebody to type those in, reach the path, and use the driver's
+     general one instead. Then the console uploads as a stranger and the station
+     they made sits there having never been heard from.
+
+     Hardware that cannot be given a path of its own is the other way round: there
+     is nothing to name and pointing it here is the whole of it, so its settings
+     are what this has to show. */
+  var off = one.enabled === false
+    ? '<p class="dim">This driver is not listening for it yet. What that takes is ' +
+      'below; it needs a restart.</p>'
+    : '';
+  if (one.can_create) {
+    return off +
+      '<p class="dim">Name it first. That is what gives it an upload path of its ' +
+      'own, and the settings to type into the console appear once it has one.</p>' +
+      createBox(one);
+  }
+  return off + settingsTable(one) +
+    (one.enabled === false
+      ? ''
+      : '<p class="waiting"><b>Waiting for the first upload.</b> This page notices ' +
+        'by itself, so you can leave it open.</p>') +
     createBox(one);
+}
+
+function fetchBody(one) {
+  /* The fields are the driver's own, from its configuration editor, which is what
+     weectl station reconfigure asks with. Nothing here keeps a second copy of them. */
+  formFields = one.fields;
+  return driverForm(
+    one.fields, formValues || {}, ways.ports, 'data-hostedopt', one.about
+  ) +
+    '<table class="settings"><tr><th>role</th><td>' +
+    hostedRoleSelect(mainStation() ? 'extra' : 'main') + '</td></tr>' +
+    '<tr><th>name</th><td><input data-hostedname value="' + esc(one.name) + '"></td>' +
+    '</tr></table>' +
+    '<p><button class="act" data-hostedadd="' + esc(one.name) +
+    '">Try it and set it up</button></p>' +
+    '<p class="dim">The driver is opened before anything is saved. If the port is ' +
+    'not there, nothing is written and the reason is shown here.</p>' + roleNote();
+}
+
+function driverForm(fields, values, ports, attribute, about) {
+  /* One row per option, in the order the driver's own stanza has them, because that
+     order is somebody's idea of which matter most: a Vantage names the connection
+     type and the port first and rules off eleven that rarely need attention. */
+  var keys = Object.keys(fields || {});
+  if (!keys.length) {
+    return '<p class="dim">This driver describes no settings of its own. ' +
+      'Whatever it needs goes in its own section, as its documentation says.</p>';
+  }
+  var now = function (key) {
+    var field = fields[key];
+    return values && values[key] !== undefined ? values[key] : field.value;
+  };
+  var applies = function (key) {
+    /* A Vantage takes a port or a host and never both, and says so in its own
+       configuration editor. Showing the one that does not apply is showing a
+       setting that will be ignored. */
+    var when = fields[key].when;
+    if (!when || !fields[when.field]) return true;
+    return when.values.indexOf(now(when.field)) >= 0;
+  };
+  var row = function (key) {
+    var field = fields[key];
+    return '<tr><th>' + esc(key) + '</th><td>' +
+      driverField(key, field, now(key), ports, attribute) +
+      ((field.help || []).length
+        ? '<div class="dim" style="font-size:12px;margin-top:2px">' +
+          field.help.map(esc).join('<br>') + '</div>'
+        : '') +
+      '</td></tr>';
+  };
+  var shown = keys.filter(function (key) {
+    return !fields[key].rarely && applies(key);
+  });
+  var rest = keys.filter(function (key) {
+    return fields[key].rarely && applies(key);
+  });
+  return (about ? '<p class="dim">' + esc(about) + '</p>' : '') +
+    '<table class="settings">' + shown.map(row).join('') + '</table>' +
+    (rest.length
+      ? '<p><button data-fold="driverrest">' +
+        (folded.driverrest ? '\u25b8' : '\u25be') + ' ' + rest.length +
+        ' settings the driver\u2019s author says rarely need attention</button></p>' +
+        (folded.driverrest
+          ? ''
+          : '<table class="settings">' + rest.map(row).join('') + '</table>')
+      : '');
+}
+
+function driverField(key, field, value, ports, attribute) {
+  /* A list where the driver takes one of a few values, the devices this machine
+     actually has where it wants a serial port, and a text box otherwise. Every list
+     keeps a way to type something else: the choices are a convenience, and a
+     convenience must not be able to refuse a value the driver would have taken.
+     And a way back, because stepping out of the list is not a decision anybody
+     should have to reload the page to undo. */
+  if (typedBy[key]) {
+    return '<input ' + attribute + '="' + esc(key) + '" value="' + esc(value) +
+      '"> <button data-relist="' + esc(key) + '">choose from the list</button>';
+  }
+  if (field.kind === 'fixed') {
+    /* One value, so there is nothing to choose. A box here would invite somebody
+       to type something the driver raises on. */
+    return '<b>' + esc(field.choices[0].label) + '</b>' +
+      '<input type="hidden" ' + attribute + '="' + esc(key) + '" value="' +
+      esc(field.choices[0].value) + '">';
+  }
+  var options = [];
+  if (field.kind === 'choice') {
+    options = field.choices;
+  } else if (field.kind === 'port') {
+    options = (ports || []).map(function (port) {
+      return { value: port.value, label: port.label };
+    });
+    if (!options.length) {
+      return '<input ' + attribute + '="' + esc(key) + '" value="' + esc(value) +
+        '">' + '<div class="dim" style="font-size:12px">Nothing serial is plugged ' +
+        'into this machine, or this is not a machine with /dev. Type the device ' +
+        'name.</div>';
+    }
+  } else {
+    return '<input ' + attribute + '="' + esc(key) + '" value="' + esc(value) + '">';
+  }
+  var known = options.some(function (o) { return o.value === value; });
+  return '<select ' + attribute + '="' + esc(key) + '" data-freetext>' +
+    options.map(function (o) {
+      return '<option value="' + esc(o.value) + '"' +
+        (o.value === value ? ' selected' : '') + '>' + esc(o.label) + '</option>';
+    }).join('') +
+    (known ? '' : '<option value="' + esc(value) + '" selected>' + esc(value) +
+      '</option>') +
+    '<option value="__other__">something else\u2026</option></select>';
 }
 
 function watch() {
@@ -822,16 +1045,21 @@ function stationCard(s) {
   var what = s.role === 'extra'
     ? 'extra sensor on channel ' + (s.channel || '?')
     : (s.is_main ? 'the main station' : 'main, and not the one that writes');
+  /* A station this driver reads has no protocol and sends no uploads: it is asked,
+     and what it has instead of a count is whether it is answering. */
+  var wired = !!s.station_type;
+  var seen = s.heard
+    ? (wired ? 'read ' + ago(s.last_seen)
+             : s.uploads + (s.uploads === 1 ? ' upload ' : ' uploads ') +
+               '\\u00b7 ' + ago(s.last_seen))
+    : (wired ? 'nothing read yet' : 'never heard from');
   return '<div class="step ' + (s.is_main ? 'done' : 'todo') + '">' +
     '<div class="head shut" data-open="' + esc(s.ident) + '">' +
     '<span class="mark">' + (s.is_main ? '\\u2605' : '\\u25cb') +
     '</span><span class="caret">' + (open ? '\\u25be' : '\\u25b8') +
     '</span><span class="what">' + esc(s.name || s.ident) + '</span>' +
-    '<span class="dim">' + esc(s.protocol || '?') + ' \\u00b7 ' + esc(what) +
-    ' \\u00b7 ' + (s.heard
-      ? s.uploads + (s.uploads === 1 ? ' upload ' : ' uploads ') + '\\u00b7 ' +
-        ago(s.last_seen)
-      : 'never heard from') + '</span></div>' +
+    '<span class="dim">' + esc(s.station_type || s.protocol || 'kind unknown') +
+    ' \\u00b7 ' + esc(what) + ' \\u00b7 ' + esc(seen) + '</span></div>' +
     (open ? '<div class="body">' + stationBody(s, editing === s.ident) +
             '</div>' : '') +
     '</div>';
@@ -841,6 +1069,7 @@ function stationBody(s, open) {
   /* The console settings, every time. The checklist shows them once and then
      stops, because it is a checklist; a console reset a year later needs them
      again, and this is where somebody would come looking. */
+  if (s.station_type) return hostedBody(s) + columnsHeld(s);
   var html = s.settings ? settingsTable(s.settings) : '';
   if (s.path) {
     html += '<p class="dim">The path is what tells this station apart from the ' +
@@ -852,15 +1081,30 @@ function stationBody(s, open) {
       'role and its channel are set there. One owner per setting.</p>';
   }
   if (s.adopted) {
-    return html + '<p class="dim">The first console this driver ever heard, adopted ' +
-      'so that it would record rather than be turned away. It is named in no file, ' +
-      'which is why there is nothing here to change: what it wants is a name, and ' +
-      'the Setup tab gives it one.</p>';
+    /* Two states that look the same from here and read very differently. Saying
+       "the first console this driver ever heard" about one that has not been heard
+       is telling somebody their station is working. */
+    return html + '<p class="dim">' + (s.heard
+      ? 'The first console this driver ever heard, adopted so that it would record ' +
+        'rather than be turned away. It is named in no file, which is why there is ' +
+        'nothing here to change: what it wants is a name, and the Setup tab gives ' +
+        'it one.'
+      : 'weewx.conf names this console with \\u2018passkey\\u2019, and nothing has ' +
+        'been heard from it yet. It counts as the main station until something else ' +
+        'is, so that a first upload has somewhere to go. There is nothing to change ' +
+        'here until it has uploaded: its name is all this driver knows about it.') +
+      '</p>';
   }
   html += columnsHeld(s);
   if (!open) {
     return html + '<div class="add"><button class="act" data-edit="' + esc(s.ident) +
-      '">Change it</button></div>';
+      '">Change it</button>' +
+      /* Taking out a station that has never been heard from is undoing a typing
+         mistake, and it should not be behind a form called "Change it". One that
+         has been heard keeps its remove button inside that form, where an accident
+         is harder to have. */
+      (s.heard ? '' : ' <button class="act" data-forget="' + esc(s.ident) +
+        '">Take it out</button>') + '</div>';
   }
   return html + '<div class="add">' +
     '<input type="text" id="editname" value="' + esc(s.name || '') +
@@ -1004,13 +1248,181 @@ function saveStation(ident, body) {
   });
 }
 
+/* -------------------------------------------------------- hosted drivers */
+
+/* What /api/ways last said. Held because the picker is redrawn on every choice, and
+   asking again for a list that has not changed would empty the fields somebody is
+   typing a serial port into. */
+var ways = null;
+/* What is in the form now, and what its fields are, so that changing an option
+   others depend on can rebuild it without losing what has been typed. */
+var formValues = null, formFields = null;
+/* Options somebody has stepped out of the list for. Kept rather than done by
+   swapping the element, so that stepping back in is possible at all. */
+var typedBy = {};
+
+function loadWays() {
+  api('ways').then(function (d) {
+    if (!d.ok) return;
+    ways = d;
+    if (tab === 'setup') drawSetup(document.getElementById('body'));
+  });
+}
+
+function hostedRoleSelect(chosenRole) {
+  return '<select data-hostedrole>' +
+    '<option value="main"' + (chosenRole === 'main' ? ' selected' : '') +
+    '>main station</option>' +
+    '<option value="extra"' + (chosenRole === 'extra' ? ' selected' : '') +
+    '>extra sensor, on a free channel</option></select>';
+}
+
+function hostedBody(one) {
+  /* A hosted driver, on the Stations tab, where every other station is managed too.
+     What it has instead of an upload path is a serial port, so that is what is
+     shown; everything else on the card is the same. */
+  var html = '';
+  if (one.answers_for.length) {
+    html += '<p class="dim">As the archive station it answers for: ' +
+      esc(one.answers_for.join(', ')) + '.</p>';
+  } else {
+    html += '<p class="dim">It sends readings and keeps no records of its own, so ' +
+      'the archive is worked out from what arrives.</p>';
+  }
+  if (!one.editable) {
+    return html + '<p class="dim">weewx.conf names this driver, so its settings, ' +
+      'its role and its channel are there. One owner per setting.</p>';
+  }
+  formFields = one.fields;
+  html += driverForm(
+    one.fields, formValues || one.options, one.ports, 'data-hwopt', ''
+  ) +
+    '<table class="settings"><tr><th>role</th><td>' +
+    hostedRoleSelect(one.role) + '</td></tr></table>' +
+    '<p><button data-hwsave="' + esc(one.station_type) + '">Save and reopen</button>' +
+    ' <button data-hwarchive="' + esc(one.station_type) +
+    '">Make the archive station</button>' +
+    ' <button data-hwremove="' + esc(one.station_type) +
+    '">Remove this station</button></p>' +
+    '<p class="dim">Changed here, kept in the settings file. ' +
+    'weectl device reads weewx.conf and will not find a driver set up this way; ' +
+    'the block to paste there instead is below.</p>' +
+    '<pre id="hwconf' + esc(one.station_type) + '">' + esc(hostedStanza(one)) +
+    '</pre><p><button data-hwcopy="' + esc(one.station_type) +
+    '">Copy that block</button></p>';
+  return html;
+}
+
+function hostedStanza(one) {
+  /* What weewx.conf would hold for the same thing, for somebody who would rather
+     keep it there. Two places, one of which is in force: see the note above it. */
+  var lines = ['[' + one.station_type + ']'];
+  Object.keys(one.options).sort().forEach(function (key) {
+    lines.push('    ' + key + ' = ' + one.options[key]);
+  });
+  lines.push('');
+  lines.push('[UltimatePush]');
+  lines.push('    [[hardware]]');
+  lines.push('        station_types = ' + one.station_type);
+  lines.push('        [[[' + one.station_type + ']]]');
+  lines.push('            role = ' + one.role);
+  if (one.role === 'extra') lines.push('            channel = ' + (one.channel || 1));
+  return lines.join('\\n');
+}
+
+function hostedOptions(attribute) {
+  var out = {};
+  document.querySelectorAll('[' + attribute + ']').forEach(function (input) {
+    out[input.getAttribute(attribute)] = input.value;
+  });
+  return out;
+}
+
+function dependsOn(key) {
+  /* Whether anything on the form only applies for certain values of this option.
+     Redrawing on every field would take the cursor out of whatever is being typed
+     in, for nothing. */
+  var fields = (formFields || {});
+  for (var name in fields) {
+    if (fields[name].when && fields[name].when.field === key) return true;
+  }
+  return false;
+}
+
+function hostedRole() {
+  var select = document.querySelector('[data-hostedrole]');
+  return select ? select.value : 'main';
+}
+
+function hostedThen(d) {
+  flash(d.ok ? 'Saved.' : d.message || 'That did not work.', !d.ok);
+  if (d.ok) adding = false;
+  /* A driver that has just been set up is no longer on offer, and it is a station
+     now, so both lists are stale. */
+  ways = null;
+  stationList = null;
+  formValues = null;
+  typedBy = {};
+  loadWays();
+  loadSetup();
+  draw();
+}
+
 /* ---------------------------------------------------------------- events */
 
 document.addEventListener('click', function (e) {
   var t = e.target;
   if (t.dataset.tab) { show(t.dataset.tab); return; }
+  if (t.dataset.relist) {
+    formValues = hostedOptions(
+      document.querySelector('[data-hostedopt]') ? 'data-hostedopt' : 'data-hwopt');
+    delete typedBy[t.dataset.relist];
+    // Back to whatever the list has, rather than to a value the list does not.
+    delete formValues[t.dataset.relist];
+    draw();
+    return;
+  }
+  if (t.dataset.hostedadd) {
+    api('hardware/add', {
+      station_type: t.dataset.hostedadd,
+      options: hostedOptions('data-hostedopt'),
+      role: hostedRole(),
+      name: (document.querySelector('[data-hostedname]') || {}).value || null
+    }).then(hostedThen);
+    return;
+  }
+  if (t.dataset.hwsave) {
+    api('hardware/edit', {
+      station_type: t.dataset.hwsave,
+      options: hostedOptions('data-hwopt'),
+      role: hostedRole()
+    }).then(hostedThen);
+    return;
+  }
+  if (t.dataset.hwarchive) {
+    var order = [t.dataset.hwarchive];
+    (stationList ? stationList.stations : []).forEach(function (one) {
+      if (one.station_type && one.station_type !== t.dataset.hwarchive) {
+        order.push(one.station_type);
+      }
+    });
+    api('hardware/order', { station_types: order }).then(hostedThen);
+    return;
+  }
+  if (t.dataset.hwremove) {
+    api('hardware/remove', { station_type: t.dataset.hwremove }).then(hostedThen);
+    return;
+  }
+  if (t.dataset.hwcopy) {
+    copy(document.getElementById('hwconf' + t.dataset.hwcopy).textContent,
+         'the block for weewx.conf');
+    return;
+  }
   if (t.dataset.pick) {
     picked = t.dataset.pick;
+    // A different driver is a different form.
+    formValues = null;
+    typedBy = {};
     drawSetup(document.getElementById('body'));
     return;
   }
@@ -1203,6 +1615,30 @@ function placeField(ident, raw, field, force) {
 }
 
 document.addEventListener('change', function (e) {
+  var decides = e.target.dataset.hostedopt || e.target.dataset.hwopt;
+  if (decides && dependsOn(decides)) {
+    /* This option decides whether others apply, and which of them is what the
+       driver's own configuration editor says rather than anything decided here.
+       What has been typed is carried over, because the form is rebuilt from the
+       values in it. */
+    formValues = hostedOptions(
+      e.target.dataset.hostedopt ? 'data-hostedopt' : 'data-hwopt');
+    draw();
+    return;
+  }
+  if (e.target.dataset.freetext !== undefined &&
+      e.target.value === '__other__') {
+    /* The list could not offer it, so get out of the way rather than make somebody
+       find the file. What is in the rest of the form is kept. */
+    var which = e.target.dataset.hostedopt || e.target.dataset.hwopt;
+    formValues = hostedOptions(
+      e.target.dataset.hostedopt ? 'data-hostedopt' : 'data-hwopt');
+    formValues[which] = '';
+    typedBy[which] = true;
+    draw();
+    return;
+  }
+
   var raw = e.target.dataset.raw;
   if (!raw) return;
   var field = e.target.value;

@@ -4,14 +4,25 @@ The driver opens a port that accepts weather readings. Anyone who can reach it c
 post readings, and most of this hardware has no way to prove it is the station.
 
 One protocol is an exception. Weather Underground sends `PASSWORD` in every upload,
-which is a shared secret and can be checked:
+which is a shared secret and can be checked. A station set up in the web interface is
+given one of its own, along with the `ID` that names it, and both are shown once so they
+can be typed into the console. Uploads that do not present it are refused, and the
+comparison is constant time.
+
+A password for every console that has none of its own goes in the driver section:
 
 ```ini
 [UltimatePush]
     password = whatever-you-set-in-the-console
 ```
 
-Uploads that do not present it are refused, and the comparison is constant time.
+A station's own comes first. Two consoles told apart by an `ID` would otherwise be able
+to use each other's, and an `ID` is readable by anybody who can watch the network.
+
+Neither is protection against somebody who can. They travel in the query string over
+plain HTTP, exactly as a secret upload path does, and what they keep out is a stranger
+who has found the port rather than one who is watching the wire. Put TLS in front if
+that matters.
 
 Everything else sends an identifier rather than a secret. An Ecowitt or Ambient
 `PASSKEY` is derived from the MAC address and is visible in every upload; a

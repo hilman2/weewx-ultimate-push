@@ -394,6 +394,8 @@ class Site:
             )
         if route == 'catalog':
             return _json(_catalog_of(query.get('protocol', '')))
+        if route == 'ways':
+            return _json(self.driver.web_ways())
         return _json({'ok': False, 'error': "No such route: %s" % route})
 
     # ---- writing -------------------------------------------------------------
@@ -462,6 +464,34 @@ class Site:
             return _json({'ok': ok, 'message': message})
         if route == 'forget':
             ok, message = self.driver.web_forget(body.get('ident', ''))
+            return _json({'ok': ok, 'message': message})
+        if route == 'hardware/add':
+            ok, message = self.driver.web_add_hardware(
+                body.get('station_type', ''),
+                body.get('options') or {},
+                role=body.get('role') or None,
+                channel=body.get('channel') or None,
+                name=body.get('name') or None,
+            )
+            return _json({'ok': ok, 'message': message})
+        if route == 'hardware/edit':
+            ok, message = self.driver.web_edit_hardware(
+                body.get('station_type', ''),
+                role=body.get('role') or None,
+                channel=body.get('channel') or None,
+                name=body.get('name') or None,
+                # An empty stanza is a stanza. Only a missing one means 'leave the
+                # driver's own settings alone', so this cannot be `or None`.
+                options=body.get('options'),
+            )
+            return _json({'ok': ok, 'message': message})
+        if route == 'hardware/remove':
+            ok, message = self.driver.web_remove_hardware(body.get('station_type', ''))
+            return _json({'ok': ok, 'message': message})
+        if route == 'hardware/order':
+            ok, message = self.driver.web_hardware_order(
+                body.get('station_types') or []
+            )
             return _json({'ok': ok, 'message': message})
         return _json({'ok': False, 'error': "No such route: %s" % route})
 

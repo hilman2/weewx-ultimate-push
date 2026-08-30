@@ -57,6 +57,7 @@ class WeatherFlow(Protocol):
 
     # A broadcast has no path and gets no answer. There is nobody to answer to.
     datagram = True
+    reached = 'broadcast'
     default_port = PORT
 
     settings = ()

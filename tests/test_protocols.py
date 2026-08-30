@@ -156,3 +156,46 @@ def test_the_unit_systems_are_the_numbers_weewx_uses():
     assert protocols.US == weewx.US
     assert protocols.METRIC == weewx.METRIC
     assert protocols.METRICWX == weewx.METRICWX
+
+
+# ---- how each protocol is reached -------------------------------------------
+
+
+def test_every_protocol_says_how_it_is_reached():
+    """Three ways, and each protocol declares which.
+
+    The web interface groups the hardware by this, because it is the first thing
+    somebody has to do and the only thing they have to decide before anything else.
+    """
+    for protocol in protocols.registry():
+        assert protocol.reached in ('point', 'redirect', 'broadcast'), protocol.name
+
+
+def test_nothing_to_type_in_means_it_cannot_be_pointed_here():
+    """The invariant that keeps the grouping honest.
+
+    A protocol with no settings has no field for a server address, which is exactly
+    what 'point' claims there is. Acurite and LaCrosse hold the name in firmware and
+    WeatherFlow broadcasts; all three have to be met on the network instead.
+    """
+    for protocol in protocols.registry():
+        if not protocol.settings:
+            assert protocol.reached != 'point', (
+                "%s says it can be pointed here, but offers nothing to type in"
+                % protocol.name
+            )
+
+
+def test_being_pointed_here_is_not_the_same_as_getting_a_path():
+    """The distinction that was got wrong once.
+
+    A Weather Underground console has a Server field like any other, so it is
+    pointed at this machine in the ordinary way. Its path is burned into the
+    firmware, so this driver still cannot give it one of its own, and it has to be
+    let in after its first upload rather than named before it.
+    """
+    wu = protocols.by_name('wunderground')
+
+    assert wu.reached == 'point'
+    assert dict(wu.settings).get('Server')
+    assert wu.secret_kind != 'path'

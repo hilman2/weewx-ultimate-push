@@ -15,6 +15,8 @@ The doorman has its own file. Here it is only checked that the door is wired to 
 
 import http.client
 import json
+import time
+import urllib.parse
 import os
 import re
 
@@ -137,7 +139,10 @@ def test_ten_characters_is_enough(tmp_path):
         },
     )
     try:
-        assert len(made.listener.ports) == 2
+        # Two sockets: the one hardware uploads to and the one the interface is on.
+        # The third listener is where a hosted driver would go and has no port; see
+        # hardware.Host.
+        assert len([port for port in made.listener.ports if port]) == 2
     finally:
         made.closePort()
 
@@ -752,6 +757,67 @@ def _string_left_open(script):
     return None
 
 
+def _assigned_but_never_declared(script):
+    """Names the script assigns to at the top of a line without ever declaring.
+
+    This does not parse JavaScript either. It looks for the one mistake that has
+    happened: renaming a variable and missing one of the places that writes it. The
+    page runs under 'use strict', where assigning to a name nothing declared is a
+    ReferenceError, and a ReferenceError in a click handler means the button does
+    nothing at all and the console is the only place that says so.
+
+    Only assignments that start a line are looked at, which is what a statement
+    looks like here, and only plain names: a property or an index belongs to
+    something that was declared elsewhere.
+
+    Args:
+        script (str): The page's script.
+
+    Returns:
+        set[str]: The names, empty when every one of them was declared.
+    """
+    without_comments = re.sub(r'/\*.*?\*/', '', script, flags=re.S)
+    declared = set(
+        re.findall(r'\b(?:var|let|const)\s+([A-Za-z_$][\w$]*)', without_comments)
+    )
+    # 'var a = 1, b = 2' declares both, and the pattern above sees only the first.
+    for run in re.findall(r'\b(?:var|let|const)\s+([^;\n]+)', without_comments):
+        for part in run.split(','):
+            name = part.split('=')[0].strip()
+            if re.match(r'^[A-Za-z_$][\w$]*$', name):
+                declared.add(name)
+    # Whatever a function takes is declared by taking it.
+    for names in re.findall(r'function\s*[\w$]*\s*\(([^)]*)\)', without_comments):
+        for part in names.split(','):
+            name = part.strip()
+            if name:
+                declared.add(name)
+    assigned = set(
+        re.findall(r'^\s*([A-Za-z_$][\w$]*)\s*=[^=]', without_comments, flags=re.M)
+    )
+    return assigned - declared - {'window', 'location', 'document'}
+
+
+def test_the_page_declares_everything_it_writes_to():
+    """A name nothing declared is a ReferenceError under 'use strict'.
+
+    That shipped once, while the Hardware tab was folded into the Stations tab: a
+    variable was renamed and one of the two places that wrote it was missed. Nothing
+    else here would have caught it. Every test asks the driver for its answers, and
+    the driver's answers were right the whole time.
+    """
+    from ultimatepush import page
+
+    script = page.PAGE.split('<script>')[1].split('</script>')[0]
+    loose = _assigned_but_never_declared(script)
+
+    assert not loose, (
+        "the page assigns to %s, which nothing declares. Under 'use strict' that "
+        "is a ReferenceError, and whatever was being done stops silently."
+        % ', '.join(sorted(loose))
+    )
+
+
 def test_the_page_is_javascript_a_browser_can_parse():
     """A newline escape written with one backslash in the Python source reaches the
     page as a real newline. Inside a JavaScript string literal that is a syntax error,
@@ -854,3 +920,208 @@ def test_a_station_that_has_been_let_in_stops_waiting(station):
     assert station.web_waiting() == []
     _, _, state = web(station, '/api/state')
     assert state['waiting'] == []
+
+
+# ---- hosted hardware, over the API ------------------------------------------
+
+
+def test_hardware_can_be_set_up_over_the_api(station, tmp_path):
+    """The routes the Hardware tab uses, end to end over HTTP.
+
+    A driver made on the spot, because the point here is the routing and the JSON,
+    not the hardware. What it stands in for is a Vantage on a serial port.
+    """
+    import sys
+    import types
+
+    module = types.ModuleType('fake.web')
+
+    class Fake:
+        @property
+        def hardware_name(self):
+            return 'Fake'
+
+        def genLoopPackets(self):
+            while True:
+                yield {'dateTime': int(time.time()), 'usUnits': 1, 'outTemp': 7.0}
+                time.sleep(0.05)
+
+        def closePort(self):
+            pass
+
+    module.loader = lambda config, engine: Fake()
+    sys.modules['fake.web'] = module
+    try:
+        _, _, listed = web(station, '/api/ways')
+        assert listed['ok'] and listed['can_fetch']
+        assert any(one['name'] == 'Vantage' for one in listed['ways'])
+
+        _, _, added = web(
+            station,
+            '/api/hardware/add',
+            {'station_type': 'Wired', 'options': {'driver': 'fake.web'}},
+        )
+        assert added['ok'], added.get('message')
+
+        _, _, again = web(station, '/api/stations')
+        wired = [one for one in again['stations'] if one['station_type']]
+        assert [one['station_type'] for one in wired] == ['Wired']
+        assert wired[0]['running']
+
+        _, _, renamed = web(
+            station,
+            '/api/hardware/edit',
+            {'station_type': 'Wired', 'name': 'The-Vantage'},
+        )
+        assert renamed['ok'], renamed.get('message')
+
+        _, _, gone = web(station, '/api/hardware/remove', {'station_type': 'Wired'})
+        assert gone['ok'], gone.get('message')
+        _, _, empty = web(station, '/api/stations')
+        assert [one for one in empty['stations'] if one['station_type']] == []
+    finally:
+        sys.modules.pop('fake.web', None)
+
+
+def test_hardware_routes_need_the_token(station):
+    _, _, answer = web(station, '/api/ways', token='a-token-long-enough')
+
+    assert answer['ok'] is False
+    assert 'token' in answer['error'].lower()
+
+
+# ---- a Weather Underground console can be told what to call itself -----------
+
+WU_PATH = '/weatherstation/updateweatherstation.php'
+
+
+@pytest.fixture
+def empty(tmp_path):
+    """A driver with the interface on and no console named anywhere.
+
+    Without a `passkey` there is no station yet, so the first one set up is the main
+    one. The `station` fixture has one, which makes every station after it an extra
+    sensor, and an extra sensor is held back until the main one has been heard. That
+    rule is right and is tested elsewhere; here it would only get in the way.
+    """
+    made = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        report_file='',
+        console_file=str(tmp_path / 'consoles.txt'),
+        override_file=str(tmp_path / 'web.conf'),
+        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': TOKEN},
+    )
+    yield made
+    made.closePort()
+
+
+def wu_upload(driver, ident, password, temp='59.9'):
+    """One Weather Underground upload, as a console sends it.
+
+    Args:
+        driver (ultimatepush.driver.UltimatePushDriver): The driver to send to.
+        ident (str): The ID the console is set to.
+        password (str): The PASSWORD it is set to.
+        temp (str): An outdoor temperature, so the packet has a reading in it.
+
+    Returns:
+        bytes: Whatever the driver answered.
+    """
+    query = urllib.parse.urlencode(
+        {
+            'ID': ident,
+            'PASSWORD': password,
+            'dateutc': 'now',
+            'tempf': temp,
+            'humidity': '61',
+        }
+    )
+    connection = http.client.HTTPConnection(
+        '127.0.0.1', driver.listener.ports[0], timeout=5
+    )
+    try:
+        connection.request('GET', WU_PATH + '?' + query)
+        return connection.getresponse().read()
+    finally:
+        connection.close()
+
+
+def test_a_wunderground_station_is_given_its_id_and_password(empty):
+    """It carries both and both are anybody's to choose, so this driver chooses.
+
+    Before this, the settings said 'anything you like' for each and the console had
+    to be heard and adopted, which is the one step this driver otherwise avoids:
+    letting something unknown into the database.
+    """
+    _, _, made = web(
+        empty, '/api/create', {'protocol': 'wunderground', 'name': 'Fine-Offset'}
+    )
+
+    assert made['ok'], made.get('message')
+    settings = dict(made['station']['settings']['settings'])
+    assert settings['ID'] == made['station']['ident']
+    assert settings['ID'] != 'anything you like'
+    assert settings['PASSWORD'] and settings['PASSWORD'] != 'anything you like'
+    assert settings['ID'] != settings['PASSWORD']
+
+
+def test_it_is_known_from_its_first_upload(empty):
+    """No adopting. The ID it was given is the ID it sends."""
+    _, _, made = web(
+        empty, '/api/create', {'protocol': 'wunderground', 'name': 'Fine-Offset'}
+    )
+    settings = dict(made['station']['settings']['settings'])
+
+    wu_upload(empty, settings['ID'], settings['PASSWORD'])
+    packet = next(empty.genLoopPackets())
+
+    assert packet['station'] == 'Fine-Offset'
+    assert packet['outTemp'] == 59.9
+    _, _, waiting = web(empty, '/api/waiting')
+    assert waiting['stations'] == [], "it should not be waiting to be let in"
+
+
+def test_the_wrong_password_is_refused(empty):
+    """The password is this station's, not the driver's.
+
+    Two consoles told apart by an ID would otherwise be able to use each other's,
+    because an ID is readable by anybody who can watch the network.
+    """
+    _, _, made = web(
+        empty, '/api/create', {'protocol': 'wunderground', 'name': 'Fine-Offset'}
+    )
+    settings = dict(made['station']['settings']['settings'])
+
+    wu_upload(empty, settings['ID'], 'not-the-password')
+
+    _, _, refused = web(empty, '/api/state')
+    assert not refused['stations'], "an upload with the wrong password was kept"
+
+
+def test_two_of_them_get_different_credentials(empty):
+    _, _, one = web(empty, '/api/create', {'protocol': 'wunderground', 'name': 'North'})
+    _, _, two = web(
+        empty,
+        '/api/create',
+        {'protocol': 'wunderground', 'name': 'South', 'role': 'extra'},
+    )
+    first = dict(one['station']['settings']['settings'])
+    second = dict(two['station']['settings']['settings'])
+
+    assert first['ID'] != second['ID']
+    assert first['PASSWORD'] != second['PASSWORD']
+
+
+def test_hardware_that_can_be_told_nothing_is_still_adopted(empty):
+    """Acurite has its server name in firmware and no ID of its own to set.
+
+    There is nothing to hand it, so it is heard first and confirmed afterwards,
+    which is what web_accept is for.
+    """
+    _, _, made = web(
+        empty, '/api/create', {'protocol': 'acurite', 'name': 'The-bridge'}
+    )
+
+    assert not made['ok']
+    assert 'nothing to set up in advance' in made['message']

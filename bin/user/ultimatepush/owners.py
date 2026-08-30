@@ -33,8 +33,10 @@ import logging
 
 log = logging.getLogger(__name__)
 
-# Not readings. They say when and in what units, and every station sends them.
-NOT_A_READING = ('dateTime', 'usUnits', 'interval', 'station')
+# Not readings. They say when, in what units, and which station, and every station
+# sends them. 'source' is on the packets of hardware this driver hosts and names the
+# stanza its driver was configured under. See hardware.py.
+NOT_A_READING = ('dateTime', 'usUnits', 'interval', 'station', 'source')
 
 
 class Register:

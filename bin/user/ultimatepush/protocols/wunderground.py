@@ -72,19 +72,25 @@ class WeatherUnderground(Protocol):
     answer = ANSWER
     content_type = 'text/plain'
 
+    # ID and PASSWORD are filled in for a station that has been set up here: both
+    # are anybody's to choose at the console, so this driver chooses them and the
+    # station is known from its first upload. For one adopted after uploading, the
+    # ID is whatever it already sends and the password is whatever was already set,
+    # and the fill says so.
     settings = (
         ('Server', '%(address)s'),
         ('Port', '%(port)s'),
-        ('ID', 'anything you like'),
-        ('PASSWORD', 'anything you like'),
+        ('ID', '%(ident)s'),
+        ('PASSWORD', '%(password)s'),
     )
     notes = (
         "Wherever your console or software sets its Weather Underground upload.",
         "The path cannot be changed. It is burned into the firmware, and this driver "
-        "answers on it.",
-        "Set 'password' in the driver section to the same PASSWORD and uploads "
-        "without it are refused. This is the one protocol here whose hardware can "
-        "carry a secret.",
+        "answers on it. The ID is what tells this station from the next one, which "
+        "is why it is worth letting this driver choose it.",
+        "The PASSWORD is checked on every upload and one that gets it wrong is "
+        "refused. Like the ID it goes over plain HTTP, so it keeps a stranger out "
+        "and not somebody who can watch the network.",
     )
 
     identity = ('ID',)

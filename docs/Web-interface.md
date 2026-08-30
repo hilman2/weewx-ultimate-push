@@ -107,9 +107,31 @@ console that appears a year later puts its step back at the top.
 
 ![Setting up a station](img/04-add-station.png)
 
-The checklist above, and the form for setting up a station. Selecting a role is part of
-that form: the first station is the main station, and every station after it is offered
-as an extra sensor. See [Stations](Stations.md).
+The checklist above, and the form for setting up a station. One form for every kind of
+station, grouped by what you have to do: point the console at this machine, let this
+machine read a driver, or change something on the network and wait for the station to
+turn up. Selecting a role is part of that form: the first station is the main station,
+and every station after it is offered as an extra sensor. See [Stations](Stations.md)
+and [Hosted hardware](Hosted-hardware.md).
+
+A console this driver can hand something to is named first, and the settings to type
+into it appear once it has been. There are two kinds. An Ecowitt or Ambient console
+lets you choose where it posts, so it is given a path of its own. A Weather Underground
+console cannot be told a path, but it carries an ID and a PASSWORD that are anybody's to
+choose, so it is given those instead; it is known from its first upload just the same,
+and the password is checked on every one. Both go over plain HTTP, so they keep out a
+stranger and not somebody who can watch the network. They are not shown before that: the path does not exist
+until the station is named, and showing the address and the port without it invites
+somebody to type those in and then use the driver's general path, which makes the
+console upload as a stranger while the station they just made sits there having never
+been heard from.
+
+A driver picked from the middle group shows its own settings, with the defaults its
+author wrote, because they come from the driver's own configuration editor rather than
+from a copy kept here. It is opened before anything is saved, so a serial port that is
+not there is a message rather than an entry to take out again, and it starts at once
+without a restart. A protocol this driver is not listening for is listed too, greyed,
+with what switching it on takes.
 
 ### Stations
 
@@ -123,6 +145,10 @@ stations declared in `weewx.conf`. Each entry is collapsed and opens to show:
   them again.
 - Which archive columns the station fills, and a button to release them.
 - The station's name, role and channel, and a button to remove it.
+
+A station this driver reads rather than waits for shows its driver's settings here
+instead of console settings, with buttons to reopen it, make it the archive station, or
+remove it. See [Hosted hardware](Hosted-hardware.md).
 
 Stations declared in `weewx.conf` are shown but not editable, and say so. The console
 adopted as the first one ever heard is shown but has no settings to change, because it
@@ -181,7 +207,7 @@ without a restart.
 Anything that does require a restart — the port, `protocols`, `path` — is displayed as a
 block to copy rather than written.
 
-The file holds two kinds of entry:
+The file holds three kinds of entry:
 
 ```ini
 [stations]
@@ -194,7 +220,20 @@ The file holds two kinds of entry:
 [columns]
     outTemp = path:/E0rbpxexKCsb/report
     extraTemp1 = path:/g0nTdxurjQd8/report
+
+[hardware]
+    station_types = Vantage
+    [[Vantage]]
+        role = main
+        [[[options]]]
+            driver = weewx.drivers.vantage
+            type = serial
+            port = /dev/ttyUSB0
 ```
+
+`[stations]` is what the interface knows about the consoles that upload, `[columns]` is
+which station fills which archive column, and `[hardware]` is the drivers it is running,
+each with the section `weewx.conf` would otherwise carry.
 
 `[stations]` holds the stations the interface set up or accepted, keyed by identity.
 `[columns]` records which station fills which archive column, so that ownership survives

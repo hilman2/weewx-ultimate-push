@@ -33,9 +33,10 @@ Configuration:
         #     yearlyrainin = rain_year
 """
 
+import importlib
 import logging
 import time
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 import weewx
 import weewx.drivers
@@ -48,6 +49,7 @@ from . import (
     checklist,
     columns,
     consoles,
+    hardware,
     mapping,
     overrides,
     owners,
@@ -114,6 +116,8 @@ NOT_FOR_LISTENER = frozenset(
         'sqlite_root',
         'data_binding',
         'config_dict',
+        'engine',
+        'hardware',
         'protocols',
         'metric_wind',
         'max_behind',
@@ -126,18 +130,21 @@ NOT_FOR_LISTENER = frozenset(
 )
 
 
-def loader(config_dict, _engine):
+def loader(config_dict, engine):
     """Build the driver, as WeeWX asks for it.
 
     Args:
         config_dict (dict): The whole of weewx.conf.
-        _engine (weewx.engine.StdEngine): The WeeWX engine, which this driver
-            does not need.
+        engine (weewx.engine.StdEngine): The WeeWX engine. Needed only by hosted
+            hardware: a driver that is also a service binds to the engine, and the
+            events it binds to have to be forwarded from the real one. See
+            hardware.py.
 
     Returns:
         UltimatePushDriver: The driver.
     """
     options = dict(config_dict[DRIVER_NAME])
+    options.setdefault('engine', engine)
     # The console list belongs with the readings it protects, so the driver is given
     # what it needs to reach the database.
     options.setdefault('config_dict', config_dict)
@@ -173,6 +180,7 @@ class Station:
         max_ahead,
         role=roles.MAIN,
         channel=None,
+        station_type=None,
     ):
         """Set up one station.
 
@@ -185,6 +193,9 @@ class Station:
             max_ahead (int): The same, for a clock that runs fast.
             role (str): MAIN or EXTRA. See roles.py.
             channel (int | None): Which extra channel it writes to.
+            station_type (str | None): The stanza of a driver this one hosts, e.g.
+                'Vantage'. None for a console that uploads, which is the usual
+                case. See hardware.py.
         """
         self.name = name
         self.ident = ident
@@ -196,6 +207,15 @@ class Station:
         # 'main' and nothing here does anything to it.
         self.role = role
         self.channel = channel
+        # Set for hardware this driver hosts. Such a station sends no uploads and
+        # has no catalog: its driver hands over finished WeeWX fields, so nothing
+        # from protocols/ or catalogs/ applies to it.
+        self.station_type = station_type
+        # The secret this station was given, where it has one. Per station rather
+        # than per driver: two Weather Underground consoles are told apart by their
+        # ID, and a password shared between them would let either write the other's
+        # columns once the ID is known, which it is to anybody on the wire.
+        self.password = None
         # An upload path of this station's own, where it has one. Set from
         # weewx.conf or made by the web interface.
         self.path = None
@@ -286,6 +306,39 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # other, and afterwards neither could be recovered.
         self.conf_extensions = dict(stn_dict.get('field_map_extensions', {}))
         self.stations = self._read_stations(stn_dict.get('stations'))
+
+        # What the web interface shows, and where what it changes is kept. Both are
+        # built whether or not the interface is switched on: the activity log costs a
+        # few kilobytes and is what makes a question about last Tuesday answerable,
+        # and the settings file is read either way so that turning the interface off
+        # does not quietly drop what it wrote.
+        self.activity = activity.Log()
+        self.overrides = overrides.Store(
+            overrides.path_for(
+                stn_dict.get('weewx_root'),
+                stn_dict.get('override_file'),
+                stn_dict.get('sqlite_root'),
+            ),
+            reserved=self._reserved_fields(stn_dict),
+        )
+        self.overrides.read()
+
+        # Hardware that has to be asked rather than waited for, each on a thread of
+        # its own. Built before the default station below, because a station with
+        # nothing but a Vantage on a serial port has stations: the default one exists
+        # only for an installation that has none at all.
+        #
+        # An empty host is kept when the interface is on, so that a driver added
+        # there can start without a restart. It costs one more turn of the listener
+        # rotation, on an installation that already has two listeners anyway.
+        self.hardware_section = self._hardware_section(stn_dict)
+        self.hardware = hardware.build(
+            self.hardware_section,
+            self._hosting_config(stn_dict),
+            stn_dict.get('engine'),
+            always=bool(stn_dict.get('web')),
+        )
+        self.stations.update(self._hardware_stations(self.hardware_section))
         # Stations the web interface recorded. Kept apart from the ones weewx.conf
         # names, so that a field set in weewx.conf can always be seen to be the one
         # in force.
@@ -303,22 +356,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             )
         )
         self.password = stn_dict.get('password')
-
-        # What the web interface shows, and where what it changes is kept. Both are
-        # built whether or not the interface is switched on: the activity log costs a
-        # few kilobytes and is what makes a question about last Tuesday answerable,
-        # and the settings file is read either way so that turning the interface off
-        # does not quietly drop what it wrote.
-        self.activity = activity.Log()
-        self.overrides = overrides.Store(
-            overrides.path_for(
-                stn_dict.get('weewx_root'),
-                stn_dict.get('override_file'),
-                stn_dict.get('sqlite_root'),
-            ),
-            reserved=self._reserved_fields(stn_dict),
-        )
-        self.overrides.read()
+        # Kept for a driver added through the web interface, which has to be built
+        # the same way the ones in weewx.conf were.
+        self.stn_dict = stn_dict
         # Set from the web server's thread, read by the loop. A bool is atomic enough
         # for this: the worst a race costs is that a change lands one upload later
         # than it might have.
@@ -343,6 +383,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # Read once, for the setup checklist. A station left at the defaults has its
         # sunrise computed for the north pole, and nothing else says so.
         self.station_section = _station_section(stn_dict.get('config_dict'))
+        # What StdConvert is set to convert everything to, or None when the option
+        # is missing and it therefore converts nothing. See _watch_unit_systems.
+        self.target_unit = _target_unit(stn_dict.get('config_dict'))
+        # usUnits -> the station that sent it, and whether the warning has been
+        # given. Two systems in one accumulator is a fault that shows only once
+        # both stations have been heard, which is not something startup can know.
+        self.units_seen = {}  # type: Dict[int, str]
+        self.said_units = False
         self.listener_path = stn_dict.get('path')
         # Set when the web interface is switched on. See _web_listener.
         self.doorman = None
@@ -367,6 +415,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
 
         self._check_one_main()
         self._check_rain_delta(stn_dict.get('config_dict'))
+        self._forward_engine_events(stn_dict.get('engine'))
 
         self.report_file = stn_dict.get('report_file', report.DEFAULT_PATH)
         self.reported = False
@@ -384,7 +433,18 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
 
     @property
     def hardware_name(self):
-        return self.model
+        """What WeeWX calls this station, in the log and in a report.
+
+        The hosted drivers are named too. Somebody reading 'UltimatePush' in a log
+        line from an installation that also has a Vantage on a serial port would
+        have no way to tell from here that the Vantage is being read at all.
+        """
+        if self.hardware is None:
+            return self.model
+        return '%s + %s' % (
+            self.model,
+            ', '.join(child.station_type for child in self.hardware.children),
+        )
 
     # ---- setting up ---------------------------------------------------------
 
@@ -591,6 +651,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 channel=int(channel) if channel else None,
             )
             built[ident].path = secret or None
+            built[ident].password = str(options.get('password', '')).strip() or None
             # Give the rebuilt station the catalogs the old one had. A mapper is
             # otherwise made on the next upload, and until then nothing could say
             # where a reading now goes, so the page would show the change it had
@@ -670,6 +731,172 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         )
         return stations
 
+    def _hardware_stations(self, configured):
+        """A Station for each hosted driver, so roles and owners cover it too.
+
+        A hosted driver is a station in every sense this driver means: it fills
+        columns, it can be the main one or an extra one, and it must not write over
+        somebody else's readings. The only thing it does not have is a catalog, and
+        nothing here needs one.
+
+        Args:
+            configured (dict): The [[hardware]] subsection, or nothing.
+
+        Returns:
+            dict: Station identity to Station. Empty when nothing is hosted.
+
+        Raises:
+            ValueError: If a hosted station has a role that is not one of the two,
+                or is an extra one with no channel. There is nothing sensible to
+                guess: a channel picked here would move somebody's readings to a
+                different column on the next restart.
+        """
+        if self.hardware is None:
+            return {}
+        return {
+            child.ident: self._hardware_station(
+                child.station_type, (configured or {}).get(child.station_type) or {}
+            )
+            for child in self.hardware.children
+        }
+
+    def _hardware_station(self, station_type, options):
+        """One Station for one hosted driver.
+
+        Args:
+            station_type (str): The section the driver was set up under.
+            options (dict): Its role, channel and name, from whichever file said so.
+
+        Returns:
+            Station: The station.
+
+        Raises:
+            ValueError: If the role is not one of the two, or an extra station has
+                no channel.
+        """
+        role = options.get('role', roles.MAIN)
+        if role not in roles.ROLES:
+            raise ValueError(
+                "The hosted driver '%s' has role '%s'. It is one of %s."
+                % (station_type, role, ', '.join(roles.ROLES))
+            )
+        channel = options.get('channel')
+        if role == roles.EXTRA and not channel:
+            raise ValueError(
+                "The hosted driver '%s' is an extra station, so it needs a "
+                "'channel'. That is which extraTemp and extraHumid column its "
+                "readings go to, and picking one here would move them "
+                "somewhere else on the next restart." % station_type
+            )
+        return Station(
+            options.get('name') or station_type,
+            'driver:%s' % station_type,
+            {},
+            self.infer_unknown,
+            self.max_behind,
+            self.max_ahead,
+            role=role,
+            channel=int(channel) if channel else None,
+            station_type=station_type,
+        )
+
+    def _hardware_section(self, stn_dict):
+        """Which drivers to host, from both places that can say so.
+
+        weewx.conf and the settings file the web interface writes. A driver named in
+        weewx.conf is that file's, whole: its role, its channel and its own stanza
+        all come from there and the interface declines to change any of it. That is
+        the rule everywhere else in this driver, and the reason is the same. Two
+        files with an answer each would mean one is quietly ignored, and which one
+        would depend on the order they happened to be read in.
+
+        Args:
+            stn_dict (dict): The driver section of weewx.conf.
+
+        Returns:
+            dict: The shape [[hardware]] has: 'station_types' naming them in order,
+            and one subsection per driver. The archive station is the first.
+        """
+        configured = dict(stn_dict.get('hardware') or {})
+        from_conf = hardware.as_list(configured.get('station_types'))
+        held = self.overrides.hardware()
+        from_web = [
+            name for name in self.overrides.hardware_order() if name not in from_conf
+        ]
+        merged = {
+            'station_types': ', '.join(from_conf + from_web)
+        }  # type: Dict[str, Any]
+        for name in from_conf:
+            merged[name] = dict(configured.get(name) or {})
+        for name in from_web:
+            entry = dict(held.get(name) or {})
+            # The driver's own stanza is not part of this. It reaches the child
+            # through the config_dict, which is where its loader looks for it. See
+            # _hosting_config.
+            entry.pop('options', None)
+            merged[name] = entry
+        return merged
+
+    def _hosting_config(self, stn_dict):
+        """The config_dict a hosted driver's own loader reads, stanzas and all.
+
+        A hosted driver is loaded exactly as WeeWX loads one, which means its loader
+        looks its settings up in `config_dict[station_type]`. For a driver set up in
+        weewx.conf that section is already there. For one set up in the web
+        interface it is not, because this driver does not write weewx.conf: WeeWX is
+        running from that file, it is often not writable, and it is somebody's file
+        with their comments in it. See overrides.py.
+
+        So the section is kept in the settings file and put into a copy of the
+        config_dict on the way past. The child cannot tell the difference. What is
+        lost is `weectl device`, which reads weewx.conf and will not find a driver
+        set up this way, so the interface offers the block to paste for anybody who
+        wants it.
+
+        A section in weewx.conf is never covered over. It wins.
+
+        Args:
+            stn_dict (dict): The driver section of weewx.conf, holding the whole of
+                it under 'config_dict'.
+
+        Returns:
+            dict: The config_dict to hand to a child's loader. The same object when
+            the settings file adds nothing, and a shallow copy otherwise, so that
+            what WeeWX is running from is not changed.
+        """
+        config_dict = stn_dict.get('config_dict') or {}
+        added = {
+            name: entry['options']
+            for name, entry in self.overrides.hardware().items()
+            if entry.get('options') and name not in config_dict
+        }
+        if not added:
+            return config_dict
+        return dict(config_dict, **added)
+
+    def _forward_engine_events(self, engine):
+        """Pass on the events a hosted driver bound to the engine for.
+
+        A driver that is also a service binds to the engine and expects to be called
+        back. Of the thirteen WeeWX ships, the Vantage's is the one, and it has been
+        given a facade instead of the engine so that it cannot reach another
+        station's packets. Nothing then arrives unless it is forwarded, and
+        END_ARCHIVE_PERIOD in particular has to be: that is where the Vantage's
+        service puts the archive period's highest gust back to zero, and without it
+        the gust would only ever rise.
+
+        NEW_LOOP_PACKET is not forwarded here. It goes per packet, in
+        genLoopPackets, because only the packet says which child it belongs to.
+
+        Args:
+            engine (weewx.engine.StdEngine): The engine, or None when the driver was
+                built outside one, as the tests build it.
+        """
+        if self.hardware is None or engine is None:
+            return
+        for event_type in hardware.FORWARDED:
+            engine.bind(event_type, self.hardware.forward)
+
     def _known_consoles(self, passkey):
         """The identities this driver answers to.
 
@@ -684,7 +911,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             set: The identities this driver answers to. Empty means nothing has
             been heard yet, and the next console to upload is adopted.
         """
-        known = set(self.stations)
+        known = set(
+            ident
+            for ident, station in self.stations.items()
+            if station.station_type is None
+        )
         known.update(self.overrides.stations())
         if passkey:
             known.add(str(passkey).strip())
@@ -750,6 +981,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         web = self._web_listener(stn_dict.get('web'))
         if web is not None:
             listeners.append(web)
+
+        # Last, so that the port a Fan reports is still the one hardware uploads
+        # to. Hosted drivers have no port to report.
+        if self.hardware is not None:
+            listeners.append(self.hardware)
 
         return listeners
 
@@ -898,10 +1134,168 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
     # ---- the loop -----------------------------------------------------------
 
     def genLoopPackets(self):
-        for request in self.listener:
-            packet = self._packet_from(request)
-            if packet is not None:
-                yield packet
+        if self.hardware is not None:
+            self.hardware.start_loop()
+        try:
+            for arrival in self.listener:
+                # A dict is a packet a hosted driver has already built. Anything
+                # else is an upload that still has to be read.
+                packet = (
+                    self._hosted_packet(arrival)
+                    if isinstance(arrival, dict)
+                    else self._packet_from(arrival)
+                )
+                if packet is not None:
+                    self._watch_unit_systems(packet)
+                    yield packet
+        finally:
+            # The engine abandons this generator at the end of every archive period,
+            # and then asks for archive records. A child that streams LOOP packets
+            # down the same port it answers history on has to have stopped by then.
+            if self.hardware is not None:
+                self.hardware.stop_loop()
+
+    def _watch_unit_systems(self, packet):
+        """Say so when two unit systems arrive and nothing is converting them.
+
+        weewx.accum refuses a second unit system outright: `Unit system mismatch 1
+        v. 17`, and the archive record for that period is lost. What prevents it is
+        `[StdConvert] target_unit`, which is in the configuration WeeWX ships and
+        which an installation can lose.
+
+        Checked here rather than at startup because startup cannot know. Which
+        catalog reads an upload is settled per upload, so an Ecowitt console in
+        Fahrenheit and a Fine Offset console on the metric Weather Underground
+        dialect look the same until both have been heard. Hosting a driver makes it
+        likelier still: a Vantage reports US and a console on METRICWX does not.
+
+        Said once, and it names both stations, because "two unit systems" without
+        them leaves somebody comparing six consoles by hand.
+
+        Args:
+            packet (dict): The loop packet about to be yielded.
+        """
+        if self.said_units or self.target_unit is not None:
+            return
+        units = packet.get('usUnits')
+        if units is None:
+            return
+        who = packet.get('station') or packet.get('source') or 'a station'
+        self.units_seen.setdefault(units, who)
+        if len(self.units_seen) < 2:
+            return
+        self.said_units = True
+        log.error(
+            "Two unit systems are arriving and nothing is converting them: %s. "
+            "WeeWX puts both into one accumulator, which refuses the second with "
+            "'Unit system mismatch' and loses the archive record for that period. "
+            "Set 'target_unit' in the [StdConvert] section of weewx.conf. It is in "
+            "the configuration WeeWX ships, and an installation that has lost it "
+            "records nothing until it is back.",
+            ', '.join(
+                '%s sends %s' % (name, _unit_system_name(system))
+                for system, name in sorted(self.units_seen.items())
+            ),
+        )
+
+    def _hosted_packet(self, packet):
+        """Turn one hosted driver's packet into one this driver will keep.
+
+        Its fields are WeeWX's own already, so nothing from protocols/, catalogs/ or
+        mapping.py applies. What does apply is everything that keeps two stations out
+        of one column, which is the whole reason for hosting a second driver here
+        rather than running it beside this one.
+
+        Args:
+            packet (dict): The loop packet as the child's driver made it, carrying
+                'source'.
+
+        Returns:
+            dict | None: The packet, or None when nothing of it is left to keep.
+        """
+        station = self.stations.get('driver:%s' % packet.get('source'))
+        if station is None:
+            # A packet from a child that is not configured as a station. Nothing can
+            # place it, and writing it would be writing into whatever columns it
+            # happens to name.
+            log.error(
+                "A packet arrived from '%s', which is not a station this driver "
+                "knows. It has been dropped.",
+                packet.get('source'),
+            )
+            return None
+        # The child's own service, on this thread and before anything else sees the
+        # packet. That is the thread and the moment it would run on if this driver
+        # were not in the way.
+        self.hardware.deliver(packet)
+        if station.role == roles.EXTRA:
+            self._shift_for_extra(station, packet)
+        self._keep_stations_apart(station, packet)
+        kept = owners.readings(packet)
+        self._record_hosted(station, packet, kept)
+        if not kept:
+            return None
+        if station.name:
+            packet['station'] = station.name
+        return packet
+
+    def _record_hosted(self, station, packet, kept):
+        """Keep a hosted driver's reading, so the interface can show the station.
+
+        Without this a wired station would sit on the stations page reading 'never
+        heard from', which is the one thing that page exists to be right about.
+
+        There is no upload behind it, so the fields an upload would fill are empty:
+        no address, no path, no method. What there is, and what the page shows, is
+        when it was last heard and what it filled.
+
+        Args:
+            station (Station): The hosted station.
+            packet (dict): The loop packet, after roles and owners have had it.
+            kept (list): The columns left in it.
+        """
+        self.activity.arrived(
+            station.ident,
+            activity.Upload(
+                at=time.time(),
+                client='',
+                path='',
+                method='',
+                text='',
+                ident=station.ident,
+                protocol=station.station_type,
+                dialect='',
+                packet={k: v for k, v in packet.items() if k != 'dateTime'},
+            ),
+        )
+        if station.name:
+            self.activity.named(station.ident, station.name)
+        # The names are the WeeWX fields themselves. A hosted driver has no catalog
+        # and nothing to infer, so what it sends is what it places, and the fields
+        # page says exactly that rather than offering to move something.
+        self.activity.mapping(
+            station.ident, kept, {field: field for field in kept}, {}, {}
+        )
+
+    def _shift_for_extra(self, station, packet):
+        """Move a hosted driver's readings to the columns its role leaves it.
+
+        An upload is shifted by the mapper, while the raw field names are still
+        there to shift. A hosted driver hands over finished WeeWX fields, so the same
+        rule is applied to the packet instead: temperature and humidity go to the
+        station's channel, and what has nowhere to go is dropped rather than written
+        over the main station's. See roles.py.
+
+        Args:
+            station (Station): The hosted station, which is an extra one.
+            packet (dict): The loop packet, changed in place.
+        """
+        for field in owners.readings(packet):
+            target = roles.shifted(field, station.channel)
+            if target is None:
+                del packet[field]
+            elif target != field:
+                packet[target] = packet.pop(field)
 
     def reading_for(self, request):
         """How this upload would be read: (protocol, station, mapper, readings).
@@ -967,7 +1361,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             return None, None, None, None
 
         if protocol.secret and not self._secret_ok(
-            protocol, raw, request.client_address
+            protocol, raw, request.client_address, station
         ):
             self._record_refused(
                 request,
@@ -1633,7 +2027,17 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         main = self.the_main_station()
         found = []
         for ident, station in sorted(self.stations.items()):
-            found.append(self._station_row(ident, station, heard, main, declared=True))
+            # Everything in self.stations came from weewx.conf, except a hosted
+            # driver, which the web interface puts there as well. For those, which
+            # file it came from is a question hardware.py already answers.
+            declared = (
+                not self._editable_here(station.station_type)
+                if station.station_type
+                else True
+            )
+            found.append(
+                self._station_row(ident, station, heard, main, declared=declared)
+            )
         for ident, station in sorted(self.web_stations.items()):
             found.append(self._station_row(ident, station, heard, main, declared=False))
         adopted = self._adopted_ident()
@@ -1677,25 +2081,68 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             dict: The station, as the Stations tab needs it.
         """
         row = heard.get(ident) or {}
+        # A station this driver reads speaks no protocol. The activity log notes its
+        # station type under that name, because there it means "what produced this",
+        # but here it would read as a console this driver is listening for.
         named = (
-            self.overrides.station(ident).get('protocol') or row.get('protocol') or ''
+            ''
+            if station.station_type
+            else (
+                self.overrides.station(ident).get('protocol')
+                or row.get('protocol')
+                or ''
+            )
         )
         return {
             'ident': ident,
             'name': station.name or row.get('name') or '',
             'protocol': named,
+            # Set for a driver this station hosts, which is a station in every sense
+            # except that it is read rather than waited for. The interface changes
+            # one through the hardware routes, because what it has to change is a
+            # serial port rather than an upload path.
+            'station_type': station.station_type,
+            'options': (
+                dict(
+                    (self.overrides.hardware().get(station.station_type) or {}).get(
+                        'options'
+                    )
+                    or {}
+                )
+                if station.station_type
+                else {}
+            ),
+            # What each of those options is, from the driver's own configuration
+            # editor. The values above are what this installation has; this is what
+            # they mean, and it is the same for both files.
+            'fields': self._fields_for(station.station_type),
+            'ports': hardware.serial_ports() if station.station_type else [],
+            # A station this driver reads is either answering or it is not, which is
+            # a state a console that uploads does not have: that one is simply quiet.
+            'running': self._child_state(station.station_type, 'running'),
+            'failures': self._child_state(station.station_type, 'failures'),
+            # Whichever hosted driver answers for the archive. Exactly one does, and
+            # it is the first one configured. See hardware.py.
+            'archive': (
+                self.hardware is not None
+                and self.hardware.archive is not None
+                and self.hardware.archive.station_type == station.station_type
+            ),
+            'answers_for': self._answers_for(station.station_type),
             # What to put into the console, with this station's own path in it. The
             # setup checklist shows this once and then stops, because it is a
             # checklist; a console reset a year later needs it again, and this is
             # where somebody would look for it.
-            'settings': self._pointing_at(named, station.path),
+            'settings': self._pointing_at(named, station.path, station),
             'role': station.role,
             'channel': station.channel,
             'path': station.path or '',
             'declared': declared,
-            # A console adopted because it was the first one ever heard. It is named
-            # in neither file, so there is nothing here to edit: what it needs is a
-            # name, and that is what setting it up gives it.
+            # A console this driver answers to that neither file sets up. Either it
+            # uploaded and was adopted, or weewx.conf names it with 'passkey' and it
+            # has not uploaded yet. The two look the same from here and read very
+            # differently, so the page is told which it is rather than left to say
+            # "the first console this driver ever heard" about one that has not been.
             'adopted': adopted,
             'editable': not declared and not adopted,
             'is_main': station is main,
@@ -1708,13 +2155,81 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             'columns': self.owners.owns(ident),
         }
 
-    def _pointing_at(self, protocol_name, path):
+    def _child_state(self, station_type, what):
+        """Whether a hosted driver is answering, and how often it has not.
+
+        Args:
+            station_type (str | None): The hosted driver, or None for a console.
+            what (str): 'running' or 'failures'.
+
+        Returns:
+            bool | int: Whether it is open, or how many times it has failed. False
+            and 0 for a console, which is neither.
+        """
+        child = (
+            self.hardware.by_type.get(station_type)
+            if station_type and self.hardware is not None
+            else None
+        )
+        if what == 'running':
+            return child is not None and child.driver is not None
+        return child.failures if child is not None else 0
+
+    def _fields_for(self, station_type):
+        """What a hosted driver's options are, so that editing one can say.
+
+        Asked of the module the stanza names rather than of the class the driver
+        turned out to be. They are the same for everything WeeWX ships, and where
+        they are not, the stanza is the one that was written down.
+
+        Args:
+            station_type (str | None): The hosted driver, or None for a console.
+
+        Returns:
+            dict: What hardware.template_for returned for it, empty for a console
+            and for a driver whose module cannot be imported.
+        """
+        if not station_type:
+            return {}
+        held = self.overrides.hardware().get(station_type) or {}
+        module_name = (held.get('options') or {}).get('driver') or (
+            (self.stn_dict.get('config_dict') or {}).get(station_type) or {}
+        ).get('driver')
+        if not module_name:
+            return {}
+        try:
+            made = hardware.template_for(importlib.import_module(str(module_name)))
+        except Exception as e:
+            log.debug("Cannot describe the %s options: %s", station_type, e)
+            return {}
+        return made['fields']
+
+    def _answers_for(self, station_type):
+        """What a hosted driver could be asked for beyond loop packets.
+
+        Args:
+            station_type (str | None): The hosted driver, or None for a console
+                that uploads, which is asked for nothing.
+
+        Returns:
+            list: The labels from ANSWERS_FOR that this driver implements.
+        """
+        if not station_type or self.hardware is None:
+            return []
+        child = self.hardware.by_type.get(station_type)
+        if child is None:
+            return []
+        return [label for part, label in self.ANSWERS_FOR if child.can(part)]
+
+    def _pointing_at(self, protocol_name, path, station=None):
         """What a console of this kind has to be told, to reach this station.
 
         Args:
             protocol_name (str): Which protocol the console speaks.
             path (str): This station's own upload path, or nothing for the
                 driver's general path.
+            station (Station | None): The station, for hardware whose identity and
+                password this driver chose rather than learned.
 
         Returns:
             dict | None: What to put into the console, or None for a protocol this driver
@@ -1723,8 +2238,17 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         protocol = protocols.by_name(protocol_name) if protocol_name else None
         if protocol is None:
             return None
+        password = getattr(station, 'password', None)
         return checklist._pointing(
-            protocol, self.web_address(), self.data_port(), path or self.data_path()
+            protocol,
+            self.web_address(),
+            self.data_port(),
+            path or self.data_path(),
+            # Only for a station this driver named. One that was adopted sends an ID
+            # it already had and a password nobody here knows, and the table says
+            # those are yours rather than showing something that is not true.
+            ident=station.ident if password and station else None,
+            password=password,
         )
 
     def web_before(self, protocol_name='', role=None, channel=None, ident=None):
@@ -2385,44 +2909,54 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
     def web_create(self, protocol_name, name, role=None, channel=None, force=False):
         """Set a station up before it has ever uploaded.
 
-        For hardware whose upload path is yours to choose. A path is made here, the
-        interface shows it, you type it into the console, and from the first upload
-        the driver knows which station that is without anyone having adopted
-        anything. The path is the identity and the secret at once, which is better
-        than a PASSKEY: that is readable off any upload and can be repeated by
-        anybody.
+        For hardware this driver can hand something to. There are two kinds, and
+                they come to the same thing:
 
-        Hardware that cannot be given a path is not set up this way. It broadcasts,
-        or its path is burned into its firmware, and the only way to know it is to
-        hear it and confirm. Those are adopted, and web_accept is that.
+                **A path of its own.**  Ecowitt and Ambient consoles let you choose where
+                they post. A path is made here, you type it into the console, and from the
+                first upload the driver knows which station that is. The path is the
+                identity and the secret at once, which is better than a PASSKEY: that is
+                readable off any upload and can be repeated by anybody.
 
-        With no role asked for, the first station is the station and every one after
-        it is an extra sensor. Asking for main when another station already is one is
-        refused unless `force`, because it moves that station's readings into other
-        columns from then on.
+                **An ID and a password.**  A Weather Underground console cannot be told a
+                path, and does not need to be: it carries an ID that names it and a
+                PASSWORD that proves it, and both are anybody's to choose. So they are
+                chosen here rather than left to whoever sets the console up, and the station
+                is known from its first upload in exactly the same way. Both go over plain
+                HTTP, like a path, so they keep out a stranger and not somebody who can
+                watch the network.
 
-        Args:
-            protocol_name (str): Which protocol the console speaks. Only hardware
-                whose path is yours to choose can be set up this way.
-            name (str): What to call the station.
-            role (str | None): MAIN or EXTRA, or None to take the default.
-            channel (int | None): The channel for an extra sensor, or None.
-            force (bool): Whether somebody has been told what it costs and agreed.
+                Hardware that can be given neither is not set up this way. It broadcasts, or
+                its identity is burnt into its firmware, and the only way to know it is to
+                hear it and confirm. Those are adopted, and web_accept is that.
 
-        Returns:
-            tuple: (ok, answer). On success `answer` holds the new station and the
-            settings to put into the console; on failure it is the reason.
+                With no role asked for, the first station is the station and every one after
+                it is an extra sensor. Asking for main when another station already is one is
+                refused unless `force`, because it moves that station's readings into other
+                columns from then on.
+
+                Args:
+                    protocol_name (str): Which protocol the console speaks. Only hardware
+                        this driver can hand an identity to can be set up this way.
+                    name (str): What to call the station.
+                    role (str | None): MAIN or EXTRA, or None to take the default.
+                    channel (int | None): The channel for an extra sensor, or None.
+                    force (bool): Whether somebody has been told what it costs and agreed.
+
+                Returns:
+                    tuple: (ok, answer). On success `answer` holds the new station and the
+                    settings to put into the console; on failure it is the reason.
         """
         import secrets
 
         protocol = protocols.by_name(protocol_name)
         if protocol is None:
             return False, "No protocol called '%s'." % protocol_name
-        if protocol.secret_kind != 'path':
+        if protocol.secret_kind not in ('path', 'password'):
             return False, (
-                "%s hardware cannot be told which path to use, so there "
-                "is nothing to set up in advance. Point it here and it "
-                "will turn up as something waiting to be let in." % protocol.label
+                "%s hardware cannot be told what to call itself, so there is "
+                "nothing to set up in advance. Point it here and it will turn up "
+                "as something waiting to be let in." % protocol.label
             )
         clean = overrides._as_name(name)
         if not clean:
@@ -2430,11 +2964,20 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         if any(s.name == clean for s in self.web_stations.values()):
             return False, "There is already a station called '%s'." % clean
 
-        path = '/%s/report' % secrets.token_urlsafe(9)
-        # The identity is the path until the console says otherwise. The first upload
-        # brings a PASSKEY with it and the station is recorded under that instead,
-        # because that is what every later upload carries.
-        ident = 'path:' + path
+        path = password = None
+        if protocol.secret_kind == 'path':
+            path = '/%s/report' % secrets.token_urlsafe(9)
+            # The identity is the path until the console says otherwise. The first
+            # upload brings a PASSKEY with it and the station is recorded under that
+            # instead, because that is what every later upload carries.
+            ident = 'path:' + path
+        else:
+            # The ID is what every upload carries, so it is the identity from the
+            # start and nothing replaces it later. Short enough to type off a screen
+            # into a phone app, which is where it has to go, and random enough that
+            # nobody arrives at it by trying.
+            ident = 'up-%s' % secrets.token_hex(4)
+            password = secrets.token_urlsafe(9)
 
         ok, role, channel, message = self._role_for_new(
             ident, role, channel, force, protocol_name
@@ -2450,6 +2993,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             ident,
             name=clean,
             path=path,
+            password=password,
             protocol=protocol_name,
             role=role,
             channel=channel,
@@ -2459,7 +3003,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.known.add(ident)
         self._roles_moved()
         log.info(
-            "Station '%s' was set up for %s, as %s. Its upload path is %s.",
+            "Station '%s' was set up for %s, as %s. It is known by %s.",
             clean,
             protocol.label,
             (
@@ -2467,18 +3011,26 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 if role == roles.MAIN
                 else 'an extra sensor on channel %d' % channel
             ),
-            path,
+            # Not the password. It goes in the settings file and on the page that
+            # asked for it, and a log is read by more people than either.
+            'its upload path %s' % path if path else "the ID '%s'" % ident,
         )
         return True, {
             'name': clean,
             'protocol': protocol_name,
             'path': path,
+            'ident': ident,
             'role': role,
             'channel': channel,
             'address': self.web_address(),
             'port': self.data_port(),
             'settings': checklist._pointing(
-                protocol, self.web_address(), self.data_port(), path
+                protocol,
+                self.web_address(),
+                self.data_port(),
+                path or self.data_path(),
+                ident=ident if password else None,
+                password=password,
             ),
         }
 
@@ -2869,6 +3421,385 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             ),
         }
 
+    # ---- the web interface, for hosted hardware -----------------------------
+
+    # The parts of the driver interface a hosted driver may answer for, and what to
+    # call each on the page. Only the archive station is ever asked.
+    ANSWERS_FOR = (
+        ('genArchiveRecords', 'archive records'),
+        ('genStartupRecords', 'catch-up after an outage'),
+        ('archive_interval', 'its own archive interval'),
+        ('getTime', 'reading its clock'),
+        ('setTime', 'setting its clock'),
+    )
+
+    # How a station reaches this driver, which is the only thing about it somebody
+    # setting one up has to decide. Not a category of hardware: a Vantage and an
+    # Ecowitt console are both weather stations, and which of them is polled is this
+    # driver's business rather than theirs.
+    #
+    #   point    you choose an address and type it into the console's app
+    #   arrives  the console has no field for a server address at all. It
+    #            broadcasts, or its firmware holds the name and only a DNS entry on
+    #            the network can move it. So there is nothing to type in here: you
+    #            change the network, and it turns up.
+    #   fetch    it is on a cable or on the network here, and this driver goes and
+    #            reads it. Nothing has to find its way to us at all.
+    POINT = 'point'
+    ARRIVES = 'arrives'
+    FETCH = 'fetch'
+
+    def web_ways(self):
+        """Every way a station can be set up, in one list.
+
+        One list on purpose. "Hardware this driver polls" and "hardware that uploads"
+        is a distinction this driver has and its user does not: they have a weather
+        station and want it recorded. So the list is every kind of station, and what
+        it says about each is the one thing they do have to know, which is what they
+        have to do next.
+
+        Returns:
+            dict: 'ways', each with 'kind' saying whether it is a protocol or a
+            driver, 'how' saying how it reaches us, and whatever that kind needs to
+            be set up: settings to type into a console, or options to fill in.
+        """
+        ways = []
+        # Every protocol, not only the ones switched on. A protocol that broadcasts
+        # is off unless it is named, because it costs a second socket, and somebody
+        # with a Tempest looking at a list that claims to be every way in should find
+        # it here rather than have to know it exists before they can be told about it.
+        for protocol in protocols.registry():
+            pointing = checklist._pointing(
+                protocol, self.web_address(), self.data_port(), self.data_path()
+            )
+            ways.append(
+                {
+                    'kind': 'protocol',
+                    'name': protocol.name,
+                    'label': protocol.label,
+                    'hardware': protocol.hardware,
+                    # Whether the console can be told where to send, which is not
+                    # the same question as whether this driver can give it a path of
+                    # its own. A Weather Underground console is pointed here like any
+                    # other and still cannot be given one, because its path is in the
+                    # firmware. See protocols.Protocol.reached and secret_kind.
+                    'how': (
+                        self.POINT if protocol.reached == 'point' else self.ARRIVES
+                    ),
+                    # Read by the page to decide whether there is anything to name
+                    # yet. Under its own name rather than worked out from 'how'
+                    # again: it is checklist.py's answer, and there is one of it.
+                    'can_create': (pointing['can_create'] and protocol in self.enabled),
+                    'settings': pointing['settings'],
+                    'notes': pointing['notes'],
+                    'fields': {},
+                    'about': '',
+                    'connects': '',
+                    'problem': None,
+                    # Whether this driver is listening for it. A protocol that is off
+                    # still says what it is and what switching it on takes; its own
+                    # notes carry that, because it is the same sentence either way.
+                    'enabled': protocol in self.enabled,
+                    'taken': False,
+                }
+            )
+        hosted = set(self.hardware.by_type) if self.hardware else set()
+        for one in hardware.available():
+            ways.append(
+                {
+                    'kind': 'driver',
+                    'name': one['name'],
+                    'label': one['name'],
+                    'hardware': one['module'],
+                    'how': self.FETCH,
+                    # Nothing to wait for and so nothing to name in advance: a
+                    # driver is set up and then it is running.
+                    'can_create': False,
+                    'settings': [],
+                    'notes': [],
+                    'enabled': True,
+                    'fields': one['fields'],
+                    # What the driver reaches its hardware over, and the sentence
+                    # that goes with it. A USB station offers nothing to set, and
+                    # a form that says nothing at all leaves somebody wondering
+                    # what they have missed.
+                    'about': one['about'],
+                    'connects': one['connects'],
+                    'problem': one['problem'],
+                    'taken': one['name'] in hosted
+                    or one['name'] in (self.stn_dict.get('config_dict') or {}),
+                }
+            )
+        return {
+            'ok': True,
+            'ways': ways,
+            'can_fetch': self.hardware is not None,
+            # What is actually plugged into this machine. "Which of these is my
+            # station" is answerable from an adapter's name and not from an empty
+            # text box, so the form offers the devices rather than describing them.
+            'ports': hardware.serial_ports(),
+        }
+
+    def web_add_hardware(
+        self, station_type, options, role=None, channel=None, name=None
+    ):
+        """Set a driver up, open it, and start hosting it. No restart.
+
+        The driver is opened before anything is written, so that a serial port that
+        is not there is a message on the page rather than an entry somebody has to
+        take out again. That is what makes this worth doing here at all: a wired
+        station is set up by somebody standing next to it, guessing which of four
+        USB devices it is.
+
+        Args:
+            station_type (str): The section to set it up under, e.g. 'Vantage'.
+            options (dict): The driver's own stanza, which must name a 'driver'
+                module to import. The interface fills this in from the driver's own
+                configuration editor.
+            role (str | None): MAIN or EXTRA. Default is MAIN.
+            channel (int | None): Which extra channel. One of the free ones is
+                picked when the role is EXTRA and none is given. That is safe here
+                and not in weewx.conf, because the pick is written to the settings
+                file at once and so is the same after a restart.
+            name (str | None): What to call it. Default is the section name.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        station_type = str(station_type or '').strip()
+        ok, message = self._may_host(station_type)
+        if not ok:
+            return False, message
+        if role == roles.EXTRA and not channel:
+            channel = self._free_channel()
+            if channel is None:
+                return False, (
+                    "Every extra channel from 1 to %d is taken, so there is "
+                    "nowhere for this station's temperature to go." % roles.CHANNELS
+                )
+        wanted = {'role': role or roles.MAIN, 'channel': channel, 'name': name}
+        try:
+            station = self._hardware_station(
+                station_type, {k: v for k, v in wanted.items() if v is not None}
+            )
+        except ValueError as e:
+            return False, str(e)
+
+        child = self._new_child(station_type, options)
+        try:
+            child.open()
+        except Exception as e:
+            return False, (
+                "The %s driver would not open: %s. Nothing has been saved."
+                % (station_type, e)
+            )
+
+        ok, message = self.overrides.set_hardware(
+            station_type,
+            role=role or roles.MAIN,
+            channel=channel,
+            name=name,
+            options=dict(options),
+        )
+        if not ok:
+            child.close()
+            return False, message
+        self.hardware.adopt(child)
+        self.stations[child.ident] = station
+        self.hardware_section = self._hardware_section(self.stn_dict)
+        self._check_one_main()
+        log.info(
+            "The %s driver was set up through the web interface and is running.",
+            station_type,
+        )
+        return True, message
+
+    def web_edit_hardware(
+        self, station_type, role=None, channel=None, name=None, options=None
+    ):
+        """Change a hosted driver's role, channel, name or its own settings.
+
+        New settings mean closing the driver and opening it again, because that is
+        what it takes for a serial port to be a different serial port. The new ones
+        are tried first, and a driver that will not open with them leaves the one
+        that is running alone.
+
+        Args:
+            station_type (str): Which one.
+            role (str | None): MAIN or EXTRA.
+            channel (int | None): Which extra channel.
+            name (str | None): What to call it.
+            options (dict | None): A new stanza for the driver itself.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        station_type = str(station_type or '').strip()
+        child = self.hardware.by_type.get(station_type) if self.hardware else None
+        if child is None:
+            return False, "That driver is not being hosted."
+        if not self._editable_here(station_type):
+            return False, (
+                "weewx.conf names this driver, so it is set up there. Change it in "
+                "that file and restart WeeWX."
+            )
+        held = self.overrides.hardware().get(station_type) or {}
+        settled = {
+            'role': role if role is not None else held.get('role', roles.MAIN),
+            'channel': channel if channel is not None else held.get('channel'),
+            'name': name if name is not None else held.get('name'),
+        }
+        try:
+            station = self._hardware_station(
+                station_type, {k: v for k, v in settled.items() if v is not None}
+            )
+        except ValueError as e:
+            return False, str(e)
+
+        replacement = None
+        if options is not None:
+            replacement = self._new_child(station_type, options)
+            try:
+                replacement.open()
+            except Exception as e:
+                return False, (
+                    "The %s driver would not open with those settings: %s. Nothing "
+                    "has been changed and the one that was running still is."
+                    % (station_type, e)
+                )
+
+        ok, message = self.overrides.set_hardware(
+            station_type,
+            role=role,
+            channel=channel,
+            name=name,
+            options=dict(options) if options is not None else None,
+        )
+        if not ok:
+            if replacement is not None:
+                replacement.close()
+            return False, message
+        if replacement is not None:
+            self.hardware.dismiss(station_type)
+            self.hardware.adopt(replacement)
+        self.stations[station.ident] = station
+        self.hardware_section = self._hardware_section(self.stn_dict)
+        self._check_one_main()
+        return True, message
+
+    def web_remove_hardware(self, station_type):
+        """Stop hosting a driver and take it out of the settings file.
+
+        The columns it filled are released, so that whichever station fills them
+        next may have them. What is already in the archive stays: this changes what
+        is recorded from now on, not what was.
+
+        Args:
+            station_type (str): Which one.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        station_type = str(station_type or '').strip()
+        if not self._editable_here(station_type):
+            return False, (
+                "weewx.conf names this driver. Take it out of there and restart "
+                "WeeWX."
+            )
+        if self.hardware is None or station_type not in self.hardware.by_type:
+            return False, "That driver is not being hosted."
+        ident = 'driver:%s' % station_type
+        ok, message = self.overrides.forget_hardware(station_type)
+        if not ok:
+            return False, message
+        self.hardware.dismiss(station_type)
+        self.stations.pop(ident, None)
+        gone = self.owners.owns(ident)
+        if gone:
+            self.overrides.drop_columns(gone)
+            self.owners.release_all(ident)
+        self.hardware_section = self._hardware_section(self.stn_dict)
+        log.info(
+            "The %s driver was taken out through the web interface. It filled %s.",
+            station_type,
+            ', '.join(gone) if gone else 'no columns',
+        )
+        return True, message
+
+    def web_hardware_order(self, types):
+        """Say which hosted driver answers for the archive. The first one does.
+
+        Args:
+            types (list): Station types, the archive station first.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        wanted = [str(name).strip() for name in types if str(name).strip()]
+        ok, message = self.overrides.set_hardware_order(wanted)
+        if not ok:
+            return False, message
+        if self.hardware is not None:
+            self.hardware.set_order(wanted)
+        self.hardware_section = self._hardware_section(self.stn_dict)
+        return True, message
+
+    def _new_child(self, station_type, options):
+        """A hosted driver, not yet opened, with the stanza it is being given.
+
+        Args:
+            station_type (str): The section it is set up under.
+            options (dict): Its own stanza.
+
+        Returns:
+            hardware.Child: The child, which still has to be opened.
+        """
+        return hardware.Child(
+            station_type,
+            dict(self._hosting_config(self.stn_dict), **{station_type: dict(options)}),
+            self.stn_dict.get('engine'),
+            self.hardware.queue,
+        )
+
+    def _may_host(self, station_type):
+        """Whether a driver may be set up here, under this name.
+
+        Args:
+            station_type (str): The section it would be set up under.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        if not station_type:
+            return False, "A driver needs the name of the section to set it up under."
+        if self.hardware is None:
+            return False, (
+                "Nothing can be hosted: this driver was built without somewhere to "
+                "put a hosted driver. Restart WeeWX."
+            )
+        if station_type in self.hardware.by_type:
+            return False, "That driver is already being hosted."
+        if station_type in (self.stn_dict.get('config_dict') or {}):
+            return False, (
+                "weewx.conf already has a [%s] section. Set it up there, under "
+                "[[hardware]], so that one file has the answer." % station_type
+            )
+        return True, ''
+
+    def _editable_here(self, station_type):
+        """Whether this driver belongs to the interface rather than to weewx.conf.
+
+        Args:
+            station_type (str): Which one.
+
+        Returns:
+            bool: Whether the interface may change it.
+        """
+        named = hardware.as_list(
+            (self.stn_dict.get('hardware') or {}).get('station_types')
+        )
+        return station_type not in named
+
     def _station_for(self, protocol, raw, client):
         """Which console this upload belongs to, or None to leave it alone.
 
@@ -2899,25 +3830,32 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             return self.web_stations[ident]
         return self.default_station
 
-    def _secret_ok(self, protocol, raw, client):
-        """Whether an upload presents the password the driver was configured with.
+    def _secret_ok(self, protocol, raw, client, station=None):
+        """Whether an upload presents the password that belongs to it.
 
         Only Weather Underground has one to present. It is the one protocol here
-        where the hardware can authenticate itself, so when a password is configured
-        it is checked, and when it is not, nothing changes.
+        where the hardware can authenticate itself.
+
+        The station's own comes first. A station set up in the interface was given a
+        password of its own, and checking the driver's instead would mean two
+        consoles could use each other's. The driver's is what an installation that
+        set one by hand has, and it still works.
 
         Args:
             protocol (type[protocols.Protocol]): The protocol that claimed the
                 upload.
             raw (dict): The raw name/value pairs.
             client (str): The address it came from.
+            station (Station | None): Whichever station the upload is from, where
+                it is already known.
 
         Returns:
             bool: Whether the upload may be kept.
         """
         from .protocols import wunderground
 
-        if wunderground.password_ok(raw, self.password):
+        wanted = getattr(station, 'password', None) or self.password
+        if wunderground.password_ok(raw, wanted):
             return True
         log.warning(
             "An upload from %s carries the wrong %s. Ignoring it.",
@@ -3081,6 +4019,116 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         )
         return [mapper for station in stations for mapper in station.mappers.values()]
 
+    # ---- what the archive station answers for ------------------------------
+
+    @property
+    def archive_interval(self):
+        """The archive station's own interval, when it keeps one.
+
+        Raises:
+            NotImplementedError: When nothing hosted here keeps an interval, which
+                is what tells StdArchive to use the one in weewx.conf.
+        """
+        return self._ask_archive('archive_interval')
+
+    def genArchiveRecords(self, since_ts):
+        """The archive station's own records, for the periods since a time.
+
+        Only the archive station's. Everything the other stations sent during those
+        periods reaches the record another way: StdArchive augments a hardware
+        record from the accumulator, which has had every loop packet in it, and
+        augmenting only ever adds a column the record does not already have. So the
+        Vantage's columns come from its logger and the rest come from whoever sent
+        them, in one record, with nothing overwritten.
+
+        The exception is a catch-up after WeeWX was down. Those records are not on
+        the accumulator's boundaries and are not augmented, which is right: there
+        were no loop packets while WeeWX was not running, so the other stations have
+        nothing to contribute for that time.
+
+        Args:
+            since_ts (float): Everything after, but not including, this time.
+
+        Returns:
+            Iterator[dict]: The records.
+
+        Raises:
+            NotImplementedError: When the archive station has no logger, which is
+                what makes StdArchive generate the record from the accumulator
+                instead.
+        """
+        return iter(self._ask_archive('genArchiveRecords', since_ts))
+
+    def genStartupRecords(self, since_ts):
+        """What the archive station recorded while WeeWX was not running.
+
+        Asked for by name first, because it is not the same capability as
+        genArchiveRecords: of the drivers WeeWX ships, cc3000, te923, wmr300 and
+        ws28xx can hand over what they logged at startup but cannot supply a record
+        per archive period. Falling straight through to genArchiveRecords, the way
+        AbstractDevice does, would lose that.
+
+        Args:
+            since_ts (float): Everything after, but not including, this time.
+
+        Returns:
+            Iterator[dict]: The records.
+
+        Raises:
+            NotImplementedError: When the archive station can do neither, which
+                StdArchive takes as "no catch-up to do".
+        """
+        child = self._archive_child()
+        for name in ('genStartupRecords', 'genArchiveRecords'):
+            if child is not None and child.can(name):
+                return iter(child.call(name, since_ts))
+        raise NotImplementedError("No hosted driver can hand over what it logged")
+
+    def getTime(self):
+        """The archive station's clock.
+
+        Raises:
+            NotImplementedError: When nothing hosted here has a clock to read.
+        """
+        return self._ask_archive('getTime')
+
+    def setTime(self):
+        """Set the archive station's clock.
+
+        Raises:
+            NotImplementedError: When nothing hosted here has a clock to set.
+        """
+        return self._ask_archive('setTime')
+
+    def _archive_child(self):
+        """The hosted driver that answers for the archive, or None.
+
+        Returns:
+            hardware.Child | None: The first hosted driver, or None when none is.
+        """
+        return self.hardware.archive if self.hardware is not None else None
+
+    def _ask_archive(self, name, *args):
+        """Put one question to the archive station.
+
+        Args:
+            name (str): The method or property to ask for.
+            *args (Any): Passed on unchanged.
+
+        Returns:
+            object: Whatever it answered.
+
+        Raises:
+            NotImplementedError: When no hosted driver implements this. Deliberately
+                the same answer WeeWX gets from hardware that cannot do it, because
+                that is what it is: StdArchive reads it as a fact about the station
+                and falls back, which is the right thing to happen.
+        """
+        child = self._archive_child()
+        if child is None or not child.can(name):
+            raise NotImplementedError("No hosted driver answers for '%s'" % name)
+        return child.call(name, *args)
+
     def closePort(self):
         self.listener.close()
 
@@ -3134,6 +4182,47 @@ def _station_section(config_dict):
         }
     except (KeyError, TypeError):
         return {}
+
+
+def _target_unit(config_dict):
+    """What StdConvert converts every packet to, if anything.
+
+    Args:
+        config_dict (dict): The whole of weewx.conf, or None when the driver was
+            built without one.
+
+    Returns:
+        int | None: The unit system, or None when the option is missing. None is
+        the answer that matters: StdConvert returns from its constructor before
+        binding anything, so nothing is converted at all.
+    """
+    if not config_dict:
+        return None
+    named = config_dict.get('StdConvert', {}).get('target_unit')
+    if not named:
+        return None
+    try:
+        return weewx.units.unit_constants[str(named).upper()]
+    except KeyError:
+        # StdConvert will raise on this itself, with a better message than
+        # anything here would be. Not our fault to report.
+        return None
+
+
+def _unit_system_name(system):
+    """What to call a unit system in a log line.
+
+    Args:
+        system (int): weewx.US, weewx.METRIC or weewx.METRICWX.
+
+    Returns:
+        str: The name weewx.conf uses for it, or the number when it is none of
+        the three.
+    """
+    for name, value in weewx.units.unit_constants.items():
+        if value == system:
+            return name
+    return str(system)
 
 
 def _config_path(config_dict):

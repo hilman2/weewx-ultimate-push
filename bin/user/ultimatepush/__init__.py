@@ -5,4 +5,4 @@
 #
 """A WeeWX driver for weather hardware that pushes its readings to a custom server."""
 
-VERSION = '0.13.0'
+VERSION = '0.14.0'

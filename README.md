@@ -5,6 +5,10 @@ polled. Ecowitt, Weather Underground, Ambient Weather, WeatherFlow, Acurite and 
 all on one port. It reads what your hardware actually sends, and it comes with a web
 interface that shows every reading and where it is being written.
 
+It also runs the drivers WeeWX ships with. A Vantage on a serial port and an Ecowitt
+gateway on the network are one station in one database, rather than two WeeWX
+instances.
+
 ![The setup checklist, with six stations on five protocols](docs/img/01-setup.png)
 
 The interface opens on whatever still stands between the current state and a station that
@@ -85,6 +89,30 @@ Every device by name, with what it takes to reach each one, is in
 
 Each protocol receives the answer its firmware expects, because hardware that does not
 get one treats the upload as failed, retries, and eventually stops uploading.
+
+## Hardware that has to be asked
+
+WeeWX runs one driver, so a Vantage and an Ecowitt gateway normally mean two WeeWX
+instances, two databases and two sets of reports for one weather station.
+
+This driver hosts the other driver instead. Name its section under `[[hardware]]`, or
+pick it in the web interface, and it runs on a thread of its own with its readings in
+the same stream as the uploads. Every driver WeeWX ships works, and so does anything
+installed as an extension.
+
+```ini
+[UltimatePush]
+    [[hardware]]
+        station_types = Vantage
+        [[[Vantage]]]
+            role = main
+```
+
+Its own section is read by its own loader, so `weectl device` is unaffected. With
+`record_generation = hardware` the archive record comes from that station's logger, and
+what the other stations sent during the period is added to it.
+
+See [Hosted hardware](https://github.com/hilman2/weewx-ultimate-push/wiki/Hosted-hardware).
 
 ## Why another driver
 

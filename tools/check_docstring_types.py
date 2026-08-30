@@ -247,6 +247,22 @@ def names_in(node):
     return found
 
 
+def _is_namedtuple(value):
+    """Whether an assigned value is a namedtuple being defined.
+
+    Args:
+        value (ast.expr): The right-hand side of a module-level assignment.
+
+    Returns:
+        bool: Whether it is a call to namedtuple or collections.namedtuple.
+    """
+    if not isinstance(value, ast.Call):
+        return False
+    called = value.func
+    name = getattr(called, 'attr', None) or getattr(called, 'id', None)
+    return name == 'namedtuple'
+
+
 def module_imports(tree):
     """The names a module has imported, as a type expression may use them.
 
@@ -261,6 +277,13 @@ def module_imports(tree):
     for node in tree.body:
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             out.add(node.name)
+        # A namedtuple is a class the module defines too, just with a call rather
+        # than with 'class'. Only namedtuple, so that a module's constants do not
+        # quietly become acceptable type names.
+        elif isinstance(node, ast.Assign) and _is_namedtuple(node.value):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    out.add(target.id)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:

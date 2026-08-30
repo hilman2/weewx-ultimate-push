@@ -187,6 +187,47 @@ Required only when there is more than one console, or to keep a station's identi
             channel = 4
 ```
 
+## Hosted hardware
+
+Other WeeWX drivers, run inside this one. Each is configured in its own top-level
+section, exactly as it would be on its own, and named here. See
+[Hosted hardware](Hosted-hardware.md).
+
+```ini
+[UltimatePush]
+    [[hardware]]
+        station_types = Vantage, WMR100
+
+        [[[Vantage]]]
+            role = main
+
+        [[[WMR100]]]
+            role = extra
+            channel = 3
+            name = The old Oregon
+```
+
+#### station_types
+
+Comma-separated top-level sections to run, each of which must carry its own `driver`
+option. The first is the archive station: only that one is asked for archive records and
+only its clock is read. Default is none, and nothing is hosted.
+
+#### role
+
+`main` or `extra`, in one subsection per station type. `main` writes to the plain
+columns; `extra` is moved to a channel. Default is `main`.
+
+#### channel
+
+Which `extraTemp` and `extraHumid` column an extra station writes to, from 1 to 8.
+Required when `role = extra`. Default is none.
+
+#### name
+
+What to call the station in the log and in the web interface. Default is the section
+name.
+
 ## What the web interface does not write here
 
 Settings made in the web interface never reach `weewx.conf`. They go to

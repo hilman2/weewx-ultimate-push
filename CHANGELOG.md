@@ -1,5 +1,100 @@
 # Changelog
 
+## 0.14.0 (2026-08-30)
+
+**Hardware that has to be asked now runs beside hardware that pushes.** WeeWX runs one
+driver, so a Vantage on a serial port and an Ecowitt gateway meant two WeeWX instances,
+two databases and two sets of reports for one weather station. Name another driver's
+section under `[[hardware]]` and it is loaded the way WeeWX loads it, on a thread of its
+own, and its readings join the ones that arrive over the network. Its own section is
+untouched, so `weectl device` keeps working. Anything WeeWX can load works, whether it
+ships with WeeWX or came from elsewhere.
+
+The readings go through the same rules as an upload's, which is the point: one column,
+one station, whether the station is a console on the network or a console on a cable.
+
+**Archive records can come from a station that keeps them.** With
+`record_generation = hardware`, the first driver listed supplies the record from its own
+logger, and everything the other stations sent during that period is added to it.
+Nothing is overwritten. A catch-up after an outage carries only that station's columns,
+because nothing else was listening, and the log says so.
+
+**A wired station is set up in the web interface, like every other station.** One list,
+whatever the hardware is, grouped by the only thing somebody has to decide first: point
+the console at this machine, let this machine read a driver, or change something on the
+network and wait for the station to turn up. "Hardware this driver polls" and "hardware
+that uploads" is a distinction this driver has and its user does not.
+
+The list holds every driver installed on this machine, WeeWX's own and anything you
+added, and fills the form from the driver's own configuration editor, so the settings
+are the ones its author wrote. A protocol this driver is not listening for is in the
+list too, with what switching it on takes, rather than missing from a list that claims
+to be every way in. The driver is opened before anything is saved: a serial
+port that is not there is a message on the page rather than an entry to take out again.
+What is set up there starts at once, with no restart, and is kept in
+`ultimate-push-web.conf` rather than in `weewx.conf`, for the same three reasons
+everything else the interface writes is. Each entry carries the block to paste into
+`weewx.conf` for anyone who would rather keep it there, which is also what `weectl
+device` needs.
+
+**The form for a wired station is the one its own driver describes.** Every field
+carries the sentence its author wrote above it in that driver's own configuration
+stanza, which is the answer to "how do I know what goes in here". An option that takes
+one of a few values is a list, one that takes exactly one is stated rather than asked
+for, and a serial port offers the devices actually plugged into this machine rather
+than three examples of what one might be called. A Vantage asks for a port or a host
+and never both, because its own configuration editor says so in an `if`; the eleven
+settings its author ruled off as rarely needing attention start folded. A station found
+over USB says that there is nothing to set, instead of showing an empty form.
+
+The four options that take a fixed set of values are the only thing repeated here, and
+a test checks each against the driver it belongs to: that the option still exists, and
+that the driver's own default is one of the values. Every list also keeps a way to type
+something else, and a way back into the list.
+
+**Two unit systems with nothing converting them are now said out loud.** `weewx.accum`
+refuses the second one and loses the archive record for that period. It happens when
+`[StdConvert] target_unit` is missing and two stations report differently, which nothing
+could see at startup: which catalog reads an upload is settled per upload. It is now
+noticed the moment both have been heard, once, naming both stations.
+
+**A Weather Underground console is given its ID and password instead of being asked
+for them.** The settings used to say `anything you like` for both, and the console had
+to upload once and be adopted before the driver knew what it was. But an ID names the
+station and a PASSWORD proves it, and both are anybody's to choose at the console, so
+this driver chooses them: it is set up in advance like an Ecowitt one, known from its
+first upload, and never has to be let in as a stranger.
+
+The password belongs to the station rather than to the driver. Two consoles told apart
+by an ID would otherwise be able to use each other's, and an ID is readable by anybody
+who can watch the network. An installation with `password` set in the driver section
+keeps working, for the consoles that have none of their own.
+
+Hardware that carries neither a path nor an identity is unchanged: a Tempest broadcasts
+and an Acurite bridge has its server name in firmware, so both are still heard first and
+confirmed afterwards.
+
+**A console is named before it is told anything.** The settings to type into it used to
+be shown before the station existed, with the driver's general path where its own would
+go. Somebody typing those in reaches the path, uses the general one, and the console
+then uploads as a stranger while the station they just made sits there having never been
+heard from. Now naming it comes first, and its settings appear when it has a path,
+where the person is looking, rather than on another tab.
+
+**A station that is set up and has not been heard from is visible.** It is in the list
+of stations, with what kind it is and that it is waiting, rather than nowhere until its
+first upload arrives. It can be taken out again without opening the form for changing
+it, because taking one out that has never been heard from is undoing a typing mistake.
+And a console `weewx.conf` names with `passkey` that has never uploaded no longer
+describes itself as the first console this driver ever heard.
+
+**A wired station that stops answering comes back on its own.** It is closed and built
+again, waiting ten seconds the first time and doubling to five minutes. The stations
+that upload keep being recorded and the web interface stays up. The exception is the
+archive station at startup: if it cannot be opened at all the driver does not start,
+because the alternative is an archive quietly filled from software while the console's
+logger holds the real records.
+
 ## 0.13.0 (2026-08-29)
 
 **Two stations no longer share a column.** A role kept an extra station out of the main

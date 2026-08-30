@@ -59,6 +59,9 @@ class AcuriteBridge(Protocol):
     # the path is not claimed and the payload decides.
     paths = ()
 
+    # There is no server field on a bridge. See the notes below.
+    reached = 'redirect'
+
     settings = ()
     notes = (
         "A bridge cannot be told where to post. It goes to Chaney's servers, over "

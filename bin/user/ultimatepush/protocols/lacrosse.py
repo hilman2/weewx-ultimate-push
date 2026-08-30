@@ -51,6 +51,9 @@ class LW30x(Protocol):
 
     paths = ()
 
+    # There is no server field on a gateway. See the notes below.
+    reached = 'redirect'
+
     settings = ()
     notes = (
         "A gateway cannot be told where to post, so box.weatherdirect.com has to "

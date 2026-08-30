@@ -186,11 +186,31 @@ class Protocol:
     #   'path'      the upload path is yours to choose, so it can be a secret and an
     #               identity at once. The driver knows which station an upload is
     #               from before it has parsed anything.
-    #   'password'  the protocol carries one of its own.
+    #   'password'  the protocol carries an identity and a secret of its own, both
+    #               chosen by whoever sets the console up. So they can be
+    #               chosen here instead and typed in, which comes to the same
+    #               thing as a path: the driver knows the station from its
+    #               first upload.
     #   None        it cannot carry anything. Either its path is burned into the
     #               firmware, or it broadcasts. These are the ones that have to be
     #               adopted: heard first, confirmed afterwards.
     secret_kind = None  # type: Optional[str]
+
+    # How this hardware is made to reach this driver, which is the first thing
+    # somebody setting a station up has to do and the only thing they have to decide
+    # before anything else:
+    #
+    #   'point'      the console has a field for the server address. Type this
+    #                machine's in and it uploads here. Whether the driver can also
+    #                give it a path of its own is a separate question; see
+    #                secret_kind. A Weather Underground console is pointed here like
+    #                any other and still cannot be given a path, because its path is
+    #                burned into the firmware.
+    #   'redirect'   there is no such field. The server name is in the firmware and
+    #                only a DNS entry on the network can move it.
+    #   'broadcast'  there is nothing to set at all. It talks to the whole network
+    #                segment and this driver listens.
+    reached = 'point'
 
     # The catalog, as class attributes, for a protocol with only one dialect.
     fields = {}  # type: Dict[str, str]

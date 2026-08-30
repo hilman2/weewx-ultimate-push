@@ -143,7 +143,165 @@ class Store:
         """
         return dict(self.station(ident).get('field_map_extensions', {}))
 
+    def hardware(self):
+        """The hosted drivers this file records.
+
+        Returns:
+            dict: Station type to its settings: 'role', 'channel', 'name', and
+            'options', which is the driver's own stanza, the one weewx.conf would
+            otherwise carry.
+        """
+        held = self.settings.get('hardware', {})
+        return {
+            name: dict(value) for name, value in held.items() if isinstance(value, dict)
+        }
+
+    def hardware_order(self):
+        """The hosted drivers, in the order that decides the archive station.
+
+        Returns:
+            list[str]: Station types. Anything this file records but does not list
+            comes after the ones it does, so that a file edited by hand cannot lose
+            a driver by forgetting to name it.
+        """
+        held = self.settings.get('hardware', {})
+        named = [
+            name.strip()
+            for name in str(held.get('station_types', '')).split(',')
+            if name.strip()
+        ]
+        rest = sorted(name for name in self.hardware() if name not in named)
+        return [name for name in named if name in self.hardware()] + rest
+
     # ---- writing -------------------------------------------------------------
+
+    def set_hardware(
+        self, station_type, role=None, channel=None, name=None, options=None
+    ):
+        """Record a hosted driver, or change one.
+
+        Every argument left as None is left as it was, so that one caller can change
+        a role without knowing anything about serial ports.
+
+        The driver's own options are kept here only when weewx.conf has no section
+        for it. Which of the two is in force is the driver's question, not this
+        file's; see driver._hosting_config.
+
+        Args:
+            station_type (str): The section the driver wants, e.g. 'Vantage'.
+                Required, and it is a section heading, so it is checked as a name.
+            role (str | None): MAIN or EXTRA. Setting MAIN clears any channel.
+            channel (int | None): Which extra channel it writes to, from 1 to
+                roles.CHANNELS.
+            name (str | None): What to call it in the log and on the page.
+            options (dict | None): The driver's own stanza. Must name a 'driver'
+                module, because without one there is nothing to import.
+
+        Returns:
+            tuple: (ok, message), where the message is the path written or the
+            reason nothing was.
+        """
+        with self.lock:
+            station_type = _as_name(station_type)
+            if not station_type:
+                return False, (
+                    "A section heading may hold letters, digits, dashes and "
+                    "underscores."
+                )
+            held = self.settings.setdefault('hardware', {})
+            entry = held.setdefault(station_type, {})
+            if options is not None:
+                if not options.get('driver'):
+                    return False, (
+                        "A hosted driver needs a 'driver' option naming the module "
+                        "to import, such as weewx.drivers.vantage."
+                    )
+                entry['options'] = {
+                    str(key): str(value) for key, value in options.items()
+                }
+            if role is not None:
+                from .roles import MAIN, ROLES
+
+                if role not in ROLES:
+                    return False, "A role is one of %s." % ', '.join(ROLES)
+                entry['role'] = role
+                if role == MAIN:
+                    entry.pop('channel', None)
+            if channel is not None:
+                from .roles import CHANNELS
+
+                try:
+                    channel = int(channel)
+                except (TypeError, ValueError):
+                    return False, "A channel is a number from 1 to %d." % CHANNELS
+                if not 1 <= channel <= CHANNELS:
+                    return False, (
+                        "A channel is a number from 1 to %d. The standard "
+                        "schema has that many extraTemp columns." % CHANNELS
+                    )
+                entry['channel'] = str(channel)
+            if name is not None:
+                clean = _as_name(name)
+                if not clean:
+                    return False, (
+                        "A name may hold letters, digits, dashes and underscores."
+                    )
+                entry['name'] = clean
+            self._keep_order(held)
+            return self._save()
+
+    def set_hardware_order(self, types):
+        """Say which hosted driver answers for the archive.
+
+        The first one does. Kept as an order rather than as a flag on one of them,
+        because that is the shape weewx.conf uses for the same thing and two ways of
+        saying it would eventually disagree.
+
+        Args:
+            types (list[str]): Station types, the archive station first.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        with self.lock:
+            held = self.settings.setdefault('hardware', {})
+            known = [name for name in types if name in self.hardware()]
+            rest = [name for name in sorted(self.hardware()) if name not in known]
+            held['station_types'] = ', '.join(known + rest)
+            return self._save()
+
+    def forget_hardware(self, station_type):
+        """Take a hosted driver out of this file.
+
+        Args:
+            station_type (str): Which one.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        with self.lock:
+            held = self.settings.get('hardware', {})
+            if station_type not in held or not isinstance(held[station_type], dict):
+                return False, "This file does not have that driver."
+            del held[station_type]
+            self._keep_order(held)
+            return self._save()
+
+    def _keep_order(self, held):
+        """Keep 'station_types' naming exactly the drivers this file records.
+
+        Args:
+            held (dict): The [hardware] section, changed in place.
+        """
+        named = [
+            name.strip()
+            for name in str(held.get('station_types', '')).split(',')
+            if name.strip()
+        ]
+        drivers = [name for name, value in held.items() if isinstance(value, dict)]
+        kept = [name for name in named if name in drivers]
+        kept += sorted(name for name in drivers if name not in kept)
+        held['station_types'] = ', '.join(kept)
 
     def set_station(
         self,
@@ -151,6 +309,7 @@ class Store:
         name=None,
         infer_unknown=None,
         path=None,
+        password=None,
         protocol=None,
         role=None,
         channel=None,
@@ -165,6 +324,9 @@ class Store:
             name (str | None): What to call it.
             infer_unknown (str | None): This station's own inference setting.
             path (str | None): An upload path of its own.
+            password (str | None): The secret this station was given, for hardware
+                that carries one rather than a path. Per station, because two
+                consoles told apart by an ID need a secret each.
             protocol (str | None): Which protocol its uploads are read with.
             role (str | None): MAIN or EXTRA. Setting MAIN clears any channel, because the
                 main station has no use for one.
@@ -182,6 +344,8 @@ class Store:
             station = stations.setdefault(ident, {})
             if path is not None:
                 station['path'] = path
+            if password is not None:
+                station['password'] = password
             if protocol is not None:
                 station['protocol'] = protocol
             if role is not None:

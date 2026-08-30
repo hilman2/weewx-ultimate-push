@@ -221,7 +221,7 @@ def _set_up_but_not_heard(driver, found, address, port):
     return waiting
 
 
-def _pointing(protocol, address, port, path):
+def _pointing(protocol, address, port, path, ident=None, password=None):
     """One protocol's instructions, with this driver's address filled in.
 
     The settings and the sentences stay apart. The page lays the first out as a table
@@ -232,18 +232,32 @@ def _pointing(protocol, address, port, path):
         address (str): This machine's address.
         port (int): The data port.
         path (str): The path this station should upload to.
+        ident (str | None): What this station is to call itself, for hardware that
+            carries an identity of its own rather than an address. None before one
+            has been chosen, and then the table says the field is yours to fill in.
+        password (str | None): The secret to go with it, on the same terms.
 
     Returns:
         dict: What to put into the console, as settings and as sentences.
     """
-    fill = {'address': address, 'port': port, 'path': path}
+    # 'anything you like' is the truth before a station has been set up: nothing
+    # here cares what is in these fields until it has chosen them.
+    fill = {
+        'address': address,
+        'port': port,
+        'path': path,
+        'ident': ident or 'anything you like',
+        'password': password or 'anything you like',
+    }
     return {
         'name': protocol.name,
         'label': protocol.label,
         'hardware': protocol.hardware,
         # Whether a station of this kind can be set up before it has ever uploaded.
-        # Only hardware whose path is yours to choose; the rest has to be heard first.
-        'can_create': protocol.secret_kind == 'path',
+        # Hardware this driver can hand something to: a path of its own, or an
+        # identity and a password. The rest broadcasts or has its identity burnt in,
+        # and has to be heard first.
+        'can_create': protocol.secret_kind in ('path', 'password'),
         'settings': [[label, value % fill] for label, value in protocol.settings],
         'notes': [note % fill for note in protocol.notes],
     }
