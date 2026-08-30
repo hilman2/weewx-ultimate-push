@@ -111,6 +111,10 @@ ARG WXT5X0=d64d39747f3b446ca5706bc8c492dbb39b0aa261
 ARG MAXBOTIX=cf4265253ef50a4077dca3fedf5181d7769dd245
 ARG WS6IN1=1fb840239a1bbc2caee2e663208ea0c7bffe54cb
 ARG KLIMALOGG=9b70be25bc1650ae109de8fa9071ae9ce384e352
+# Not hosted, read. Its live_data_struct is a second person's reading of the same
+# Ecowitt gateway API, written years earlier, and holding a table against an
+# independent one is the only way to catch a transcription slip in it.
+ARG GW1000=97376d971e35826952342a6a4a16400f3bc1cc4c
 
 # Laid out as a WeeWX installation lays them out: bin/user, which is the package
 # `available()` searches for drivers somebody installed as an extension.
@@ -126,6 +130,7 @@ RUN set -e; \
         "https://github.com/matthewwall/weewx-maxbotix ${MAXBOTIX}" \
         "https://github.com/BobAtchley/weewx-ws6in1 ${WS6IN1}" \
         "https://github.com/matthewwall/weewx-klimalogg ${KLIMALOGG}" \
+        "https://github.com/bidord/weewx-gw1000 ${GW1000}" \
     ; do \
         set -- ${one}; \
         name=$(basename "$1"); \
