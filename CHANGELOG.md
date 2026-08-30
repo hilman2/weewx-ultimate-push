@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+**An Ecowitt gateway read over its own API.** The same hardware this driver already
+reads over HTTP, asked on TCP port 45000 instead of being pointed at a server. Nothing
+is set on the console. An address is the whole of the configuration.
+
+```ini
+[[polling]]
+    [[[garden]]]
+        address = 192.168.1.50
+        protocol = ecowitt_gateway
+```
+
+The two are independent. A gateway answers this whether or not its *Customized*
+upload is on, so both can run and the readings land in the same columns either way.
+
+It needs a catalog of its own. The API's field names share nothing with the 532 in
+the HTTP catalog: `intemp` against `tempinf`, `absbaro` against `baromabsin`,
+`rainday` against `dailyrainin`. The new one has 203 fields and the placements are
+copied from the HTTP catalog sensor for sensor, so moving between the two keeps the
+columns.
+
+Live data is addressed rather than positional: an address byte says both what the
+reading is and how many bytes it takes. A width that is wrong by one moves every
+reading after it and each one still looks like a number. The table gets its widths
+from the struct format rather than from a column beside it, and the fake gateway
+encodes from the same table the driver decodes with, so every address goes there and
+back in a test.
+
+CMD_READ_RAIN has its own table. ITEM_RAINDAY is two bytes in a live-data stream and
+four in that one, and Ecowitt's document says so in two places that disagree on
+purpose. One table for both would read every gauge on a newer console at half its
+width.
+
+Units are fixed by the API rather than by the console. Celsius, hectopascals,
+millimetres and metres per second, whatever the display says. CMD_READ_SSSS carries
+the radio band, the outdoor array, the clock and the timezone, and no unit setting.
+
+No new dependency. `socket` and `struct`, and this driver's own catalog rather than
+a second one beside it.
+
+`python -m user.ultimatepush --fake-gw1000` answers like one on port 45000. It builds
+its frames rather than replaying a capture, which is what makes it worth testing
+against.
+
 **Davis AirLink.** The one thing Vince Skahan named in
 [weewx#1124](https://github.com/weewx/weewx/issues/1124) that this driver could not
 read. He queries his with Home Assistant because there was no way to get it into

@@ -35,7 +35,7 @@ no WeeWX on it.
 """
 
 import logging
-from typing import Dict, FrozenSet, Optional, Tuple
+from typing import Any, Callable, Dict, FrozenSet, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -231,8 +231,27 @@ class Protocol:
     overhears = False
 
     # What to ask for, appended to the address somebody gives. Only a fetched
-    # protocol has one.
+    # protocol has one. A path for a protocol that is asked over HTTP, and whatever
+    # else completes an address for one that is not: an Ecowitt gateway's is the port
+    # its API is on, because a host and a port is the whole of where it lives.
     fetch_path = ''
+
+    # How to go and ask, for a protocol that is not asked over HTTP.
+    #
+    # The poller fetches with urllib and hands the body to transport.parse, which
+    # reads text. That is right for everything with a local web server and wrong for
+    # anything else: a binary answer decoded as UTF-8 with errors replaced is no
+    # longer the bytes that arrived.
+    #
+    # So a protocol whose hardware speaks something else supplies its own, and it is
+    # given the source and hands back what the poller would otherwise have read off a
+    # socket. Doing the whole exchange there rather than one request at a time is on
+    # purpose: an Ecowitt gateway takes several commands to make one reading, so only
+    # something that knows the protocol can say when a reading is finished.
+    #
+    # Called as ``fetcher(source)``, returning (the body as bytes, the headers as a
+    # dict with lowercased keys). None means HTTP, which is what every other one is.
+    fetcher = None  # type: Optional[Callable[[Any], Tuple[bytes, Dict[str, str]]]]
 
     # The catalog, as class attributes, for a protocol with only one dialect.
     fields = {}  # type: Dict[str, str]
@@ -328,6 +347,7 @@ def registry():
         airlink,
         ambient,
         ecowitt,
+        ecowitt_gateway,
         lacrosse,
         purpleair,
         rtl433,
@@ -347,6 +367,7 @@ def registry():
         rtl433.Rtl433,
         purpleair.PurpleAir,
         airlink.AirLink,
+        ecowitt_gateway.EcowittGateway,
     ]
 
 

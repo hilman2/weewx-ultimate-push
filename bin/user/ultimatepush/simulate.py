@@ -24,7 +24,14 @@ the part of that protocol worth exercising.
 sends what rtl_433 sends, three sensors at a time, one of them a neighbour's,
 because letting in the ones that are yours is the part worth trying out.
 
-The tests read the same three, so what is shipped and what is known to work are one
+    python -m user.ultimatepush --fake-gw1000 45000
+
+answers an Ecowitt gateway's binary API on a socket. It is the only one of the four
+that is not a web server, and the only one that builds its answers rather than
+holding them: the frames are encoded out of the same table the driver decodes them
+with, so a wrong width in that table shows up as a reading that does not come back.
+
+The tests read the same four, so what is shipped and what is known to work are one
 thing rather than two that can drift apart.
 
 Nothing here is a model of anything. The numbers wander around plausible values so
@@ -428,3 +435,357 @@ def airlink_answer(seconds):
         },
         'error': None,
     }
+
+
+# ---- an Ecowitt gateway that is not there -----------------------------------
+#
+# The other three fakes answer HTTP, which is a line of code to imitate. This one
+# speaks the binary protocol on a socket, and it builds its frames out of the same
+# table the driver reads them with rather than replaying a capture. That is the
+# point: a capture would prove the driver can read one recording, and this proves it
+# can read what the table says a gateway sends.
+
+# What the gateway calls itself. Deliberately not a real MAC or a real firmware
+# string: anybody looking at a log or a page has to be able to tell at a glance that
+# this is not their gateway.
+GW1000_MAC = 'AA:BB:CC:00:11:22'
+GW1000_FIRMWARE = 'GW1000_V0.0.0'
+
+# The battery byte each sensor family sends, by the family's name.
+#
+# These are bytes and not volts. What one means is the gateway's business and not
+# this one's: the same byte is a flag on a WH65, hundredths of a volt on a WH34 and
+# a level from nought to five on a WH41, and turning it into any of those is the
+# driver's job.
+GW1000_BATTERIES = {
+    'wh65': 0,
+    'wh68': 145,
+    'wh80': 145,
+    'wh40': 16,
+    'wh25': 0,
+    'wh26': 0,
+    'wh31': 0,
+    'wh51': 16,
+    'wh41': 5,
+    'wh57': 5,
+    'wh55': 5,
+    'wh34': 145,
+    'wh45': 5,
+    'wh35': 145,
+    'wh90': 140,
+}
+
+# Live-data addresses this does not send, though it can encode them.
+#
+# 0x6B is a WH46, which sends what the WH45 at 0x70 sends with four more particle
+# sizes on the end; no gateway has both, so sending both would be a shape no reader
+# will ever meet. 0x71 is an air quality index the document marks for Ambient
+# consoles. Everything else the driver's table knows is sent.
+GW1000_NOT_SENT = (0x6B, 0x71)
+
+# What each of the gateway's readings sits at, how far it wanders either side of
+# that, and how long one turn of the slow wave takes. Celsius, hPa, millimetres,
+# metres per second, lux and micrograms per cubic metre, which is what the API
+# answers in whatever the console's display says.
+GW1000_WANDERS = {
+    'intemp': (21.4, 2.0, 2400.0),
+    'outtemp': (14.2, 7.0, 1500.0),
+    'dewpoint': (9.1, 5.0, 1700.0),
+    'windchill': (13.0, 7.0, 1550.0),
+    'heatindex': (14.6, 7.0, 1450.0),
+    'inhumi': (46.0, 8.0, 2600.0),
+    'outhumi': (68.0, 18.0, 1700.0),
+    'absbaro': (1006.4, 6.0, 3600.0),
+    'relbaro': (1013.2, 6.0, 3600.0),
+    'winddirection': (200.0, 140.0, 2600.0),
+    'windspeed': (3.2, 2.6, 400.0),
+    'gustspeed': (5.4, 3.4, 380.0),
+    'daylwindmax': (8.8, 2.0, 5400.0),
+    'rainrate': (0.6, 0.6, 900.0),
+    'light': (32000.0, 30000.0, 4000.0),
+    'uv': (180.0, 170.0, 4000.0),
+    'uvi': (3.0, 3.0, 4000.0),
+    'lightning': (12.0, 8.0, 5000.0),
+    'tf_co2': (21.8, 2.0, 2500.0),
+    'humi_co2': (47.0, 8.0, 2700.0),
+    'co2': (620.0, 220.0, 3300.0),
+    'co2_24h': (640.0, 90.0, 9000.0),
+}
+
+# Readings that are not measurements. Settings the gauge was configured with, the
+# times of day it resets at, and the console's free memory. None of these wanders,
+# because on real hardware none of them does.
+GW1000_FIXED = {
+    'rain_gain': 1.0,
+    'rain_priority': 1.0,
+    'radcompensation': 0.0,
+    'rst_rainday_time': 0.0,
+    'rst_rainweek_time': 0.0,
+    'rst_rainyear_time': 0.0,
+    'heap_free': 84512.0,
+    'co2_batt': 5.0,
+}
+
+# When the pretend rain gauge went in. A gauge counts up from the day its battery
+# was fitted and never down, which is what StdDelta differences; without a fixed
+# moment to count from, the total would be the unix time over something, which is
+# kilometres of rain.
+GW1000_RAIN_FROM = 1788000000.0
+
+# Each rain total, and how many hours of counting at a tenth of a millimetre an hour
+# it stands for. A year's total is larger than a day's, and one that was not would
+# be the first thing about this that looked wrong.
+GW1000_RAIN_HOURS = {
+    'rainevent': 6.0,
+    'rainday': 14.0,
+    'rainweek': 90.0,
+    'rainmonth': 380.0,
+    'rainyear': 4200.0,
+    'raintotals': 9000.0,
+}
+
+
+def gw1000_readings(seconds):
+    """Every reading an Ecowitt gateway can put in a live-data stream, at one moment.
+
+    One value for every name the driver's table decodes, so that what is encoded here
+    and what is read back there can be held against each other name for name.
+
+    Each is rounded to what the gateway can actually send. The API carries every
+    reading as an integer and a divisor, so a temperature arrives in tenths and a
+    gain in hundredths, and a fake that sent 21.37 would be sending something no
+    gateway can.
+
+    Args:
+        seconds (float): The time, in seconds. The readings are a function of it, so
+            the same number twice gives the same answer, which is what lets a test
+            use them.
+
+    Returns:
+        dict: Raw gateway field name to value, in the API's own units.
+    """
+    from .protocols import ecowitt_gateway as api
+
+    out = dict(GW1000_FIXED)
+    for name, (middle, spread, period) in GW1000_WANDERS.items():
+        out[name] = _wander(seconds, middle, spread, period)
+    for name, hours in GW1000_RAIN_HOURS.items():
+        counted = 0.1 * hours + (seconds - GW1000_RAIN_FROM) / 36000.0
+        out[name] = counted
+        # A piezo gauge counts the same weather a little differently, which is why a
+        # console with both is asked which of the two it should believe.
+        out['piezo_' + name] = counted * 0.97
+    out['piezo_rainrate'] = out['rainrate'] * 0.97
+    out['piezo_rainhour'] = 0.3 + (seconds - GW1000_RAIN_FROM) / 360000.0
+    # A strike a few minutes ago, and a believable number of them since midnight.
+    out['lightning_time'] = float(int(seconds) - 900)
+    out['lightning_power'] = float(int(seconds) % 37 + 3)
+    for channel in range(1, 9):
+        away = channel * 211.0
+        out['temp%d' % channel] = _wander(seconds + away, 17.0, 5.0, 1600.0)
+        out['humi%d' % channel] = _wander(seconds + away, 58.0, 15.0, 1900.0)
+        out['tf_usr%d' % channel] = _wander(seconds + away, 12.0, 4.0, 2100.0)
+        out['tf_usr%d_batt' % channel] = 2.9
+        out['leaf_wetness_ch%d' % channel] = _wander(seconds + away, 30.0, 25.0, 2300.0)
+    for channel in range(1, 17):
+        away = channel * 137.0
+        out['soiltemp%d' % channel] = _wander(seconds + away, 11.0, 4.0, 2900.0)
+        out['soilmoisture%d' % channel] = _wander(seconds + away, 42.0, 20.0, 3100.0)
+    for channel in range(1, 5):
+        away = channel * 173.0
+        out['pm25_ch%d' % channel] = _wander(seconds + away, 7.2, 4.0, 440.0)
+        out['pm25_24havg%d' % channel] = _wander(seconds + away, 7.6, 1.5, 5400.0)
+        # A leak detector says wet or dry and nothing in between.
+        out['leak_ch%d' % channel] = 0.0
+    for gain in range(10):
+        out['piezo_gain%d' % gain] = 1.0
+    for name, middle in (
+        ('pm1_co2', 4.1),
+        ('pm25_co2', 7.2),
+        ('pm4_co2', 7.8),
+        ('pm10_co2', 8.0),
+    ):
+        out[name] = _wander(seconds, middle, middle * 0.5, 460.0)
+        out[name.replace('_co2', '_24h_co2')] = _wander(
+            seconds, middle, middle * 0.2, 6400.0
+        )
+    for index, name in enumerate(api.AQI):
+        out[name] = float(20 + index)
+    return _gw1000_rounded(out, api)
+
+
+def _gw1000_rounded(readings, api):
+    """Each reading at the resolution the gateway can send it in.
+
+    Args:
+        readings (dict): Name to value.
+        api (Any): The protocol module, for its tables. Passed in rather than
+            imported again so that there is one import of it per answer.
+
+    Returns:
+        dict: The same names, each value rounded to its own resolution.
+    """
+    divisors = {}
+    for table in (api.LIVE, api.RAIN):
+        for shapes in table.values():
+            for name, _, divide in shapes:
+                if name is not None:
+                    divisors[name] = divide
+    out = {}
+    for name, value in readings.items():
+        divide = divisors.get(name, 1.0)
+        out[name] = round(value * divide) / divide
+    return out
+
+
+def gw1000_sensors():
+    """The sensors the pretend gateway has registered.
+
+    Every sensor Ecowitt makes, at once. No garden has all of them, and that is the
+    point of a fake: it fills every column the driver can fill, so somebody can see
+    what they are setting up before the hardware arrives.
+
+    Returns:
+        dict: Sensor name to (id, battery byte, signal).
+    """
+    from .protocols import ecowitt_gateway as api
+
+    made = {}
+    for index, sensor in enumerate(api.SENSORS):
+        family = sensor.split('_')[0]
+        # Ids that are no real sensor's, and all different, so that a reader that
+        # got two of them the wrong way round would be caught by it.
+        made[sensor] = (0xC0DE00 + index, GW1000_BATTERIES[family], 4)
+    return made
+
+
+def gw1000_answer(command, seconds):
+    """What the pretend gateway answers one command with.
+
+    Args:
+        command (int): The command byte that was asked for.
+        seconds (float): The time, for the readings that move.
+
+    Returns:
+        bytes: The whole response frame, or b'' for a command it does not know,
+        which is what a gateway with older firmware does.
+    """
+    from .protocols import ecowitt_gateway as api
+
+    readings = gw1000_readings(seconds)
+    if command == api.CMD_READ_STATION_MAC:
+        payload = bytes(int(one, 16) for one in GW1000_MAC.split(':'))
+    elif command == api.CMD_READ_FIRMWARE_VERSION:
+        said = GW1000_FIRMWARE.encode('ascii')
+        payload = bytes([len(said)]) + said
+    elif command == api.CMD_READ_SSSS:
+        # 868 MHz, set up for a WH65, with a clock and a timezone the driver does
+        # not read. See read_system: there is no unit setting in here to read.
+        payload = api.SYSTEM.pack(1, 1, int(seconds), 18, 0)
+    elif command == api.CMD_GW1000_LIVEDATA:
+        payload = api.write_stream(
+            readings,
+            api.LIVE,
+            [one for one in api.LIVE if one not in GW1000_NOT_SENT],
+        )
+    elif command == api.CMD_READ_RAIN:
+        payload = api.write_stream(readings, api.RAIN)
+    elif command == api.CMD_READ_SENSOR_ID_NEW:
+        payload = api.write_sensors(gw1000_sensors())
+    else:
+        return b''
+    return api.frame(command, payload, answering=True)
+
+
+def gw1000_serve(port=45000, address='127.0.0.1'):
+    """Answer like an Ecowitt gateway on a socket, until interrupted.
+
+    Args:
+        port (int): The port to listen on. The one Ecowitt fixed, by default, so
+            that an address on its own is enough to point a source at it.
+        address (str): The address to bind to. The loopback by default, because a
+            gateway that does not exist has no business being on the network.
+
+    Returns:
+        int: The exit status, which is 0 unless the port could not be had.
+    """
+    import time
+
+    class Handler(socketserver.BaseRequestHandler):
+        """One connection, answering commands until the other end goes away."""
+
+        def handle(self):
+            # A gateway holds a connection open for as long as the driver wants it,
+            # and a connection nobody is using has to be let go rather than hold a
+            # thread for the life of the process.
+            self.request.settimeout(30.0)
+            while True:
+                try:
+                    asked = gw1000_request(self.request)
+                except (OSError, ValueError):
+                    return
+                if asked is None:
+                    return
+                answer = gw1000_answer(asked, time.time())
+                if not answer:
+                    # A gateway whose firmware does not have the command says
+                    # nothing at all, which is the case the driver has to survive.
+                    print("asked: 0x%02x, which this one does not answer" % asked)
+                    continue
+                print("asked: 0x%02x, answered %d bytes" % (asked, len(answer)))
+                self.request.sendall(answer)
+
+    class Gateway(socketserver.ThreadingTCPServer):
+        """So that the port comes back at once, and no thread outlives the server."""
+
+        allow_reuse_address = True
+        daemon_threads = True
+
+    try:
+        server = Gateway((address, port), Handler)
+    except OSError as e:
+        print("Cannot listen on %s:%d: %s" % (address, port, e))
+        return 1
+    print(
+        "Answering like an Ecowitt gateway at %s:%d\n"
+        "Point a source at it:\n"
+        "\n"
+        "    [[polling]]\n"
+        "        [[[gateway]]]\n"
+        "            address = %s\n"
+        "            protocol = ecowitt_gateway\n"
+        "            interval = 10\n" % (address, port, address)
+    )
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Stopped.")
+    finally:
+        server.server_close()
+    return 0
+
+
+def gw1000_request(connection):
+    """Read one request frame off a connection.
+
+    Args:
+        connection (socket.socket): The open connection.
+
+    Returns:
+        int: The command byte, or None when the other end has gone away.
+
+    Raises:
+        ValueError: If what arrived is not a request frame.
+    """
+    from .protocols import ecowitt_gateway as api
+
+    # Every command the driver sends carries no payload, so a request is always the
+    # two header bytes, the command, the size and the checksum.
+    asked = b''
+    while len(asked) < 5:
+        more = connection.recv(5 - len(asked))
+        if not more:
+            return None
+        asked += more
+    api.payload_of(asked[2], asked, answering=False)
+    return asked[2]

@@ -26,6 +26,10 @@ to generate from:
     purpleair     from the answer the sensor's own web server gives
     airlink       from Davis's own local API description
     rtl433        from rtl_433's own DATA_FORMAT.md and its decoders
+
+`ecowitt_gateway` is written out too, from Ecowitt's own TCP API document. It is
+the same hardware as `ecowitt` and shares not one field name with it, because
+Ecowitt named what a console uploads and what it answers when asked separately.
 """
 
 from . import (
@@ -33,6 +37,7 @@ from . import (
     airlink,
     ambient,
     ecowitt,
+    ecowitt_gateway,
     lacrosse,
     purpleair,
     rtl433,
@@ -45,6 +50,7 @@ __all__ = [
     'airlink',
     'ambient',
     'ecowitt',
+    'ecowitt_gateway',
     'lacrosse',
     'purpleair',
     'rtl433',

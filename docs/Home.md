@@ -40,6 +40,7 @@ Setting each kind up by hand, with everything that is only its own.
 - **[Davis AirLink](Protocol-Airlink.md)**
 - **[Ambient](Protocol-Ambient.md)**
 - **[Ecowitt](Protocol-Ecowitt.md)**
+- **[Ecowitt gateway API](Protocol-Ecowitt-gateway.md)** — the same hardware asked rather than pointed, with nothing set on the console
 - **[Lacrosse](Protocol-Lacrosse.md)**
 - **[PurpleAir](Protocol-Purpleair.md)**
 - **[rtl_433](Protocol-Rtl433.md)** — cheap radio sensors, with an RTL-SDR stick

@@ -204,6 +204,58 @@ from another machine to prove the port is open.
 Uploads arrive but are refused: the driver does not know this console yet. It appears
 in the web interface as a station waiting to be let in.""",
     },
+    'ecowitt_gateway': {
+        'good': """Nothing is set on the console. This is the one kind of weather
+station here where the hardware is told nothing at all: the driver connects to the
+gateway and asks it, so the whole of what it needs is the address.
+
+The address is in the WSView Plus app, on the page that lists your gateway. It is
+also in your router's list of what is connected, under a name that starts with the
+model. Give it a fixed address there, under whatever the router calls a reserved
+lease. One whose address moves stops being answered, and the log is the only place
+that says so.
+
+The port does not have to be written down. Ecowitt fixed it at 45000 and there is no
+setting for it anywhere, so the address on its own is the whole line.
+
+**This and the console's *Customized* upload can both be on.** They are two ways of
+reading one box and neither knows about the other, so nothing has to be switched off
+to try this and nothing stops working if you go back to the other. The readings land
+in the same columns either way, which is what makes moving between them safe.
+
+Sixty seconds is a sensible interval. The outdoor array transmits about every sixteen
+seconds and the console keeps the last of what it heard, so asking faster than the
+sensors send gets the same number twice.
+
+Leave it as the main station. This is your weather station, so its temperature is the
+outdoor temperature. That is the difference between it and a PurpleAir or an AirLink,
+which are set up as extra stations because their thermometers are inside their own
+housings.
+
+Everything arrives in Celsius, hectopascals, millimetres and metres per second,
+whatever the console's display is set to. There is no unit setting in this API and
+the display's does not reach it. WeeWX converts to whatever your reports are in, so
+this changes nothing about what you see.
+
+No gateway yet? `python -m user.ultimatepush --fake-gw1000` answers like one, and
+everything above can be tried against it first.""",
+        'wrong': """Nothing is recorded and the log says the gateway cannot be
+reached: the address is wrong, or has moved. It is said once and then the driver
+stays quiet, so look at the start of the log rather than the end.
+
+Something answers and it is refused. Whatever is at that address is not a gateway.
+The usual cause is that the address now belongs to something else on the network.
+
+There is no rain, and the console shows some. A WS90 measures rain with a piezo gauge
+rather than a tipping bucket, and the gateway reports the two separately. The piezo
+totals arrive in columns of their own, `drain_piezo` rather than `dayRain`, and which
+of the two your console believes is a setting in the app.
+
+A sensor is missing. The gateway reports the ones it has registered, so one the app
+does not show is one it has lost rather than one this driver dropped. If the app
+shows it and the readings do not appear, the log names the part of the answer that
+could not be read, and that is worth reporting.""",
+    },
     'ambient': {
         'good': """The awnet app calls it *Customized*, and it behaves exactly as the
 Ecowitt one does. Choose a path of your own rather than leaving it at `/`.
@@ -336,16 +388,26 @@ def minimal(protocol):
         # Not a station under [[stations]]: a source under [[polling]], which is
         # both at once. There is nothing to identify, so there is nothing to say
         # twice.
+        # A protocol that counts no rain is not the weather station. Both of the air
+        # quality sensors here say so by setting rain_counter to None, and their
+        # thermometers sit inside their own housings, so their readings belong in
+        # columns of their own. A gateway's are the main ones, and telling somebody
+        # to write role = extra would send their outdoor temperature to extraTemp3
+        # and leave outTemp empty.
+        beside_the_station = protocol.rain_counter is None
         lines += [
             '',
             '    [[polling]]',
-            '        [[[air]]]',
+            '        [[[%s]]]' % ('air' if beside_the_station else 'garden'),
             '            address = %s' % ADDRESS,
             '            protocol = %s' % protocol.name,
             '            interval = 60',
-            '            role = extra',
-            '            channel = 3',
         ]
+        if beside_the_station:
+            lines += [
+                '            role = extra',
+                '            channel = 3',
+            ]
         return '\n'.join(lines)
     lines += ['', '    [[stations]]', '        [[[garden]]]']
     if protocol.secret_kind == 'path':
@@ -406,9 +468,10 @@ ABOUT_MINIMAL = {
     'fetch': "There is nothing to identify and nothing to wait for. The driver knows"
     " which sensor answered because it knows which address it asked, so the block"
     " above is the whole of the station: it is recording from the first answer, with"
-    " nothing to adopt and nothing to let in. `role = extra` puts its readings in"
-    " columns of their own, which is what you want for a sensor whose thermometer is"
-    " inside its own housing.",
+    " nothing to adopt and nothing to let in.",
+    # The same, for one whose readings would fight with the weather station's.
+    'fetch-extra': "`role = extra` puts its readings in columns of their own, which"
+    " is what you want for a sensor whose thermometer is inside its own housing.",
 }
 
 
@@ -422,7 +485,10 @@ def _about_minimal(protocol):
         str: One paragraph.
     """
     if protocol.fetched:
-        return ABOUT_MINIMAL['fetch']
+        said = ABOUT_MINIMAL['fetch']
+        if protocol.rain_counter is None:
+            said += ' ' + ABOUT_MINIMAL['fetch-extra']
+        return said
     if protocol.overhears:
         return ABOUT_MINIMAL['overheard']
     return ABOUT_MINIMAL[protocol.secret_kind]
@@ -634,7 +700,10 @@ def main(argv=None):
 
     written = []
     for protocol in protocols.registry():
-        path = os.path.join(args.docs, 'Protocol-%s.md' % protocol.name.capitalize())
+        # Hyphens, because that is how every other page in docs/ is named and
+        # the wiki turns a file name into a link.
+        page_name = protocol.name.capitalize().replace('_', '-')
+        path = os.path.join(args.docs, 'Protocol-%s.md' % page_name)
         with io.open(path, 'w', encoding='utf-8', newline='\n') as handle:
             handle.write(page(protocol))
         written.append(protocol.name)

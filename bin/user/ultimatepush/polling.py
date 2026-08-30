@@ -18,6 +18,12 @@ is the point of doing it this way rather than writing a second, parallel path. A
 protocol gets to be polled by saying `fetched = True`, and everything else it already
 had keeps working.
 
+Nearly all of it is HTTP, because nearly everything with a local API has a small
+web server on it. An Ecowitt gateway does not: it answers a binary protocol on a
+socket of its own, and a body decoded as text would no longer be the bytes that
+arrived. So a protocol may bring its own way of fetching and the rest of this is
+unchanged; see protocols.Protocol.fetcher.
+
 Shaped like a listener on purpose: `get`, `close`, `closed` and a `port`. The driver
 merges its sources with server.Fan, which asks nothing of them beyond those four, so
 this needed no change there at all. Same trick as hardware.Host.
@@ -84,12 +90,31 @@ class Source:
         timeout (float): Seconds to wait for an answer.
         path (str): What to put in the request handed on, which is where the log
             and the page of raw uploads say the reading came from.
+        fetcher (Callable[[Any], Tuple[bytes, Dict[str, str]]] | None): How to go and
+            ask, for hardware that does not answer over HTTP. Called as
+            ``fetcher(source)``, returning (the body, the headers). HTTP when
+            there is none, which is what a sensor with a web server on it wants.
     """
 
-    __slots__ = ('name', 'url', 'interval', 'timeout', 'path', 'host', 'stopped')
+    __slots__ = (
+        'name',
+        'url',
+        'interval',
+        'timeout',
+        'path',
+        'host',
+        'stopped',
+        'fetcher',
+    )
 
     def __init__(
-        self, name, url, interval=DEFAULT_INTERVAL, timeout=DEFAULT_TIMEOUT, path=''
+        self,
+        name,
+        url,
+        interval=DEFAULT_INTERVAL,
+        timeout=DEFAULT_TIMEOUT,
+        path='',
+        fetcher=None,
     ):
         self.name = name
         self.url = url
@@ -97,6 +122,7 @@ class Source:
         self.timeout = float(timeout)
         self.path = path or ('/poll/' + name)
         self.host = _host_of(url)
+        self.fetcher = fetcher
         # Set when this one source is taken out while the others carry on. Its
         # thread is asleep for most of an interval and notices on its next turn.
         self.stopped = threading.Event()
@@ -284,7 +310,7 @@ def _request_class():
 
 
 def _fetch(source):
-    """Ask one source and read its answer.
+    """Ask one source and read its answer, however this one has to be asked.
 
     Args:
         source (Source): What to ask.
@@ -293,8 +319,25 @@ def _fetch(source):
         tuple: (the body as bytes, the headers as a dict with lowercased keys).
 
     Raises:
-        Exception: Whatever urllib raised. The caller sits in the failure rather
+        Exception: Whatever the asking raised. The caller sits in the failure rather
             than passing it on.
+    """
+    if source.fetcher is not None:
+        return source.fetcher(source)
+    return _over_http(source)
+
+
+def _over_http(source):
+    """Ask one source over HTTP, which is how anything with a web server answers.
+
+    Args:
+        source (Source): What to ask.
+
+    Returns:
+        tuple: (the body as bytes, the headers as a dict with lowercased keys).
+
+    Raises:
+        Exception: Whatever urllib raised.
     """
     asking = urllib.request.Request(
         source.url, headers={'User-Agent': 'weewx-ultimate-push'}
@@ -326,7 +369,11 @@ def _host_of(url):
         str: The host part, or the whole URL if it has none to speak of.
     """
     try:
-        return urllib.parse.urlsplit(url).hostname or url
+        # A source that is not asked over HTTP is written down as a host and a port
+        # with no scheme in front of it, and urlsplit reads that as a path. Two
+        # slashes make it read the same string as the authority it is.
+        written = url if '://' in url else '//' + url
+        return urllib.parse.urlsplit(written).hostname or url
     except Exception:
         return url
 
@@ -427,6 +474,7 @@ def _source_from(name, block):
         interval=block.get('interval', DEFAULT_INTERVAL),
         timeout=block.get('timeout', DEFAULT_TIMEOUT),
         path=path_for(name, block),
+        fetcher=protocol.fetcher if protocol is not None else None,
     )
 
 
@@ -438,15 +486,39 @@ def _url_for(address, protocol):
 
     Args:
         address (str): What was typed in: a hostname, an address, or a whole URL.
-        protocol (type): The protocol class, for its fetch_path.
+        protocol (type): The protocol class, for its fetch_path and whether it is
+            asked over HTTP at all.
 
     Returns:
-        str: The URL to ask.
+        str: Where to ask.
     """
     address = address.rstrip('/')
-    if '://' not in address:
+    if '://' not in address and protocol.fetcher is None:
+        # Only for the ones that are asked over HTTP. An Ecowitt gateway is a host
+        # and a port and nothing else, and writing http:// in front of it would put
+        # an address into the log that sends somebody to a browser.
         address = 'http://' + address
-    return address + (protocol.fetch_path or '')
+    path = protocol.fetch_path or ''
+    if path.startswith(':') and _has_port(address):
+        # A port rather than a path, which is what a protocol that is not asked over
+        # HTTP has instead. It is a default and a well known one, so it is the part
+        # of an address most likely to have been typed in already, and appending it
+        # to an address that has one would ask on neither.
+        path = ''
+    # Not appended twice, for somebody who typed the whole of it either way.
+    return address if path and address.endswith(path) else address + path
+
+
+def _has_port(address):
+    """Whether an address already says which port to ask on.
+
+    Args:
+        address (str): What was typed in.
+
+    Returns:
+        bool: Whether there is a port on the end of it.
+    """
+    return ':' in address.rsplit('/', 1)[-1]
 
 
 # What a source's block may say about the station it is, as opposed to about the
