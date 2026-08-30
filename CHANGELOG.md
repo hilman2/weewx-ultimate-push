@@ -14,6 +14,10 @@ rather than leaving somebody to look for a Vantage catalog. Security is about a 
 that a station on a cable is not on. Troubleshooting and Diagnostics assumed something
 had failed to arrive, and now cover the case where nothing was asked for.
 
+`tools/publish_wiki.py` also takes out a wiki page whose source has gone. It only ever
+wrote, so a renamed page stayed in the wiki for ever under both names, and the old one
+is the one search engines already know about.
+
 **A page for every protocol and every driver, for setting one up by hand.** Twenty
 pages: the smallest configuration that works, everything the console has to be told,
 every option that is only that one's, what is worth knowing before starting, and what to

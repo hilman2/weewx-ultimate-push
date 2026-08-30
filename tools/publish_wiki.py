@@ -107,12 +107,16 @@ def for_wiki(text):
 def publish(docs, wiki):
     """Write every page of docs/ into the wiki working copy.
 
+    A page whose source has gone is taken out. Without that a renamed page stays in
+    the wiki for ever under both names, and the old one is the one search engines
+    already know about.
+
     Args:
         docs (str): The docs directory in this repository.
         wiki (str): A clone of the wiki repository.
 
     Returns:
-        list: The names written.
+        tuple: (written, removed), the page names of each.
     """
     written = []
     for name in sorted(os.listdir(docs)):
@@ -126,7 +130,14 @@ def publish(docs, wiki):
     io.open(os.path.join(wiki, '_Sidebar.md'), 'w', encoding='utf-8', newline='').write(
         SIDEBAR
     )
-    return written
+    removed = []
+    for name in sorted(os.listdir(wiki)):
+        # _Sidebar.md is the wiki's own, and .git is not a page.
+        if not name.endswith('.md') or name.startswith('_') or name in written:
+            continue
+        os.remove(os.path.join(wiki, name))
+        removed.append(name)
+    return written, removed
 
 
 def main(argv=None):
@@ -149,8 +160,13 @@ def main(argv=None):
     if not os.path.isdir(args.wiki):
         print('No such directory: %s' % args.wiki, file=sys.stderr)
         return 1
-    written = publish(args.docs, args.wiki)
+    written, removed = publish(args.docs, args.wiki)
     print('%d pages and a sidebar into %s' % (len(written), args.wiki))
+    if removed:
+        print(
+            'took out %d page(s) whose source has gone: %s'
+            % (len(removed), ', '.join(removed))
+        )
     print('Now: cd %s && git add -A && git commit && git push' % args.wiki)
     return 0
 
