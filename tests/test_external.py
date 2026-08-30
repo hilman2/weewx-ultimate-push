@@ -6,11 +6,11 @@
 """Hosting drivers WeeWX does not ship.
 
 The stock drivers are written to one house style, and a host that only ever met
-those has not been tested against much. The five here were each written by somebody
+those has not been tested against much. The four here were each written by somebody
 else, years apart: one has no configuration editor at all, one ships an editor with
 every option commented out, one is reached over the network rather than over a wire,
-two do not touch the hardware but run a program that does, and one needs a library
-WeeWX does not. Each broke something that looked settled.
+and two do not touch the hardware but run a program that does. Each broke something
+that looked settled.
 
 They are fetched into the image at a stated commit rather than vendored, so nothing
 here ships in a release. Without that image this whole file skips, which is why the
@@ -56,14 +56,6 @@ EXTERNAL = {
         'name': 'MQTTSubscribeDriver',
         'connects': hardware.BY_NETWORK,
         'offers': ('genArchiveRecords', 'archive_interval'),
-    },
-    # The Ecowitt gateway API, on port 45000, which is the pull side of the hardware
-    # this driver already reads over HTTP. Its editor names two options and no
-    # address, on purpose: it finds the gateway by broadcasting for it.
-    'user.gw1000': {
-        'name': 'GW1000',
-        'connects': hardware.BY_NOTHING,
-        'offers': (),
     },
     'user.rtldavis': {
         'name': 'Rtldavis',
