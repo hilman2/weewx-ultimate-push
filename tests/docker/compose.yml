@@ -75,6 +75,20 @@ services:
         python tools/build_reference.py
         python tools/build_hardware.py
 
+  # The same suite on a machine with no WeeWX, which is what CI does on six Python
+  # versions and what nothing here did until it had gone wrong.
+  tests-bare:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile
+      target: bare
+      args:
+        PYTHON: "3.12"
+    volumes:
+      - ../..:/src:ro
+    tmpfs:
+      - /tmp
+
   # A broker for the one external driver that needs something to talk to. No
   # password: it is reachable from this network and nowhere else, and it holds
   # three readings for as long as a test takes.

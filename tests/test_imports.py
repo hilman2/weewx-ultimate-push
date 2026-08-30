@@ -41,6 +41,22 @@ WITHOUT_WEEWX = [
     'ultimatepush.protocols.lacrosse',
     'ultimatepush.protocols.weatherflow',
     'ultimatepush.protocols.wunderground',
+    'ultimatepush.protocols.purpleair',
+    'ultimatepush.protocols.airlink',
+    'ultimatepush.protocols.rtl433',
+    'ultimatepush.catalogs.purpleair',
+    'ultimatepush.catalogs.airlink',
+    'ultimatepush.catalogs.rtl433',
+    'ultimatepush.owners',
+    'ultimatepush.consoles',
+    'ultimatepush.report',
+    'ultimatepush.simulate',
+    # Asking a sensor over HTTP is the standard library and nothing else. It used to
+    # import the listener here, for the class an answer is handed over in, and that
+    # drags WeeWX in through the back door: this module was unimportable without it
+    # for eleven commits and one release, because every check was run where WeeWX
+    # happened to be installed.
+    'ultimatepush.polling',
 ]
 # The listener is WeeWX's own file, bundled here for older installations. It uses
 # weeutil, as the core copy does, so it needs WeeWX like the driver does.
@@ -49,6 +65,9 @@ WITH_WEEWX = [
     'ultimatepush.server',
     'ultimatepush.admin',
     'ultimatepush.__main__',
+    # Hosting somebody else's driver means being a WeeWX engine to it, so this one
+    # needs WeeWX by its nature rather than by accident.
+    'ultimatepush.hardware',
     'user.listener',
 ]
 
@@ -56,6 +75,41 @@ WITH_WEEWX = [
 @pytest.mark.parametrize('name', WITHOUT_WEEWX)
 def test_imports_without_weewx(name):
     assert importlib.import_module(name)
+
+
+def test_every_module_says_which_list_it_is_in():
+    """A new module has to be put in one of the two lists, or this fails.
+
+    The lists above were written by hand and nothing checked that they were
+    complete, so a module added later was simply not covered. That is how
+    ultimatepush.polling came to need WeeWX to import: the machine it was written on
+    had WeeWX, the container the tests run in has WeeWX, and the one job that does
+    not have it tests only what these lists name.
+
+    Deciding which list a module belongs in is a real decision and stays a person's.
+    Noticing that nobody made it is not.
+    """
+    import os.path
+    import pkgutil
+
+    import ultimatepush
+
+    named = set(WITHOUT_WEEWX) | set(WITH_WEEWX)
+    root = os.path.dirname(ultimatepush.__file__)
+    found = {'ultimatepush'}
+    for where, package in ((root, 'ultimatepush'),):
+        for _, name, is_package in pkgutil.iter_modules([where]):
+            found.add('%s.%s' % (package, name))
+            if is_package:
+                inner = os.path.join(where, name)
+                for _, deeper, _ in pkgutil.iter_modules([inner]):
+                    found.add('%s.%s.%s' % (package, name, deeper))
+
+    missing = sorted(found - named)
+    assert not missing, (
+        "these modules are in neither list, so nothing says whether they may need "
+        "WeeWX: %s" % ', '.join(missing)
+    )
 
 
 @pytest.mark.parametrize('name', WITH_WEEWX)

@@ -102,6 +102,9 @@ def pollers():
 
 
 def test_a_source_is_asked_and_the_answer_arrives(sensor, pollers):
+    # An answer is handed on as the request object the listener would have built,
+    # and that class comes from WeeWX. Asking works without it; handing on does not.
+    pytest.importorskip('weewx', reason="WeeWX is not installed")
     poller = pollers({'air': {'url': sensor.url, 'interval': '5'}})
     request = poller.get(timeout=10)
     assert request is not None, "nothing came back"
@@ -126,6 +129,7 @@ def test_an_address_is_enough_when_the_protocol_says_what_to_ask_for(sensor, pol
         {'air': {'address': sensor.address, 'protocol': 'purpleair', 'interval': '5'}}
     )
     assert poller.sources[0].url == 'http://%s/json' % sensor.address
+    pytest.importorskip('weewx', reason="WeeWX is not installed")
     assert poller.get(timeout=10) is not None
 
 
@@ -182,6 +186,7 @@ def test_a_source_that_cannot_be_reached_says_so_once(pollers, caplog):
 
 def test_one_source_that_is_away_does_not_hold_up_another(pollers, sensor):
     """One thread each, so the sensor that is there is still read every interval."""
+    pytest.importorskip('weewx', reason="WeeWX is not installed")
     poller = pollers(
         {
             'air': {'url': sensor.url, 'interval': '5'},

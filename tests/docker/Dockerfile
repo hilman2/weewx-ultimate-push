@@ -52,6 +52,31 @@ USER tester
 CMD ["python", "-m", "pytest", "tests", "-q", "--timeout=60", "-n", "auto"]
 
 
+# The same suite on a machine that has no WeeWX.
+#
+# Most of this driver has to work without it: the transport, the catalogs, the
+# protocols and the inference are meant to be exercised from a captured payload on
+# any machine, and CI runs them that way on six Python versions. Nothing local ever
+# did, because every container here has WeeWX in it, and that is how
+# ultimatepush.polling came to need WeeWX to import and stayed that way for eleven
+# commits and one release.
+#
+#     docker compose -f tests/docker/compose.yml run --rm tests-bare
+FROM python:${PYTHON}-slim AS bare
+
+RUN pip install --no-cache-dir pytest pytest-timeout pytest-randomly pytest-xdist
+
+WORKDIR /src
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+RUN useradd --create-home --uid 1000 tester
+USER tester
+
+# Everything that needs WeeWX skips itself. What must not happen is a collection
+# error, which is what a module importing WeeWX at the top of the file causes.
+CMD ["python", "-m", "pytest", "tests", "-q", "--timeout=60", "-n", "auto"]
+
+
 # Drivers that WeeWX does not ship, for the tests that host them.
 #
 # They are fetched at a stated commit rather than at whatever their branch says

@@ -48,11 +48,6 @@ from . import protocols
 if TYPE_CHECKING:
     import weewx.listener
 
-try:  # WeeWX 5.6 and later
-    from weewx.listener import Request
-except ImportError:  # the copy this driver carries for older WeeWX
-    from user.listener import Request
-
 log = logging.getLogger(__name__)
 
 # How often to ask, when nobody says. Air quality moves over minutes, not seconds,
@@ -253,7 +248,7 @@ class Poller:
             body (bytes): What it said.
             headers (dict): The response headers, with lowercased keys.
         """
-        request = Request('GET', source.path, '', body, headers, source.host)
+        request = _request_class()('GET', source.path, '', body, headers, source.host)
         try:
             self.queue.put_nowait(request)
         except queue.Full:
@@ -266,6 +261,26 @@ class Poller:
                 self.queue.put_nowait(request)
             except (queue.Empty, queue.Full):
                 pass
+
+
+def _request_class():
+    """The class an upload is handed over in, from whichever listener is installed.
+
+    Imported at first use rather than at the top of this module. Everything else
+    here is asking over HTTP and needs no WeeWX at all, and importing the listener
+    would drag it in: `user.listener` imports weewx, and so does the core copy. That
+    made this module unimportable on a machine without WeeWX, and the tests that
+    exercise the asking on its own could not even be collected.
+
+    Returns:
+        type: The Request class.
+    """
+    try:  # WeeWX 5.6 and later
+        from weewx.listener import Request
+    except ImportError:  # the copy this driver carries for older WeeWX
+        from user.listener import Request
+
+    return Request
 
 
 def _fetch(source):
