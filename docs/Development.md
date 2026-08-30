@@ -69,6 +69,11 @@ docker compose -f tests/docker/compose.yml run --rm tests
 | `tests-oldest` | the suite on the oldest Python WeeWX supports |
 | `build-docs` | the four generators, the only service that may write to `docs/` |
 | `shell` | a shell in the same environment |
+| `external` | drivers WeeWX does not ship, fetched into that image |
+
+The suite runs one worker per core, which takes it from a little over two minutes to
+about ten seconds. `watch` stays on one, because interleaved output from eight
+workers is not worth reading.
 
 The source is mounted read-only and everything written goes to `/tmp`. The container
 runs as a normal user rather than root: two tests make a file unwritable and check the

@@ -11,6 +11,7 @@ services:
     build:
       context: ../..
       dockerfile: tests/docker/Dockerfile
+      target: base
       args:
         PYTHON: "3.12"
         WEEWX: "5.5.0"
@@ -73,6 +74,47 @@ services:
         python tools/build_drivers.py
         python tools/build_reference.py
         python tools/build_hardware.py
+
+  # A broker for the one external driver that needs something to talk to. No
+  # password: it is reachable from this network and nowhere else, and it holds
+  # three readings for as long as a test takes.
+  broker:
+    image: eclipse-mosquitto:2.0
+    command: ["mosquitto", "-c", "/mosquitto-no-auth.conf"]
+
+  # Drivers WeeWX does not ship, hosted the same way the stock ones are. Its image
+  # fetches them, so this is the one service that needs the network to build.
+  external:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile
+      target: external
+      args:
+        PYTHON: "3.12"
+        WEEWX: "5.5.0"
+    depends_on:
+      - broker
+    environment:
+      # Where the test finds a broker. Nothing else in the suite needs one, so a
+      # run without this service still passes: those tests skip.
+      MQTT_BROKER: broker
+    volumes:
+      - ../..:/src:ro
+    tmpfs:
+      - /tmp
+
+  # The same, saying what it is doing while it does it.
+  external-watch:
+    extends: external
+    command:
+      - python
+      - -m
+      - pytest
+      - tests/test_external.py
+      - -v
+      - -s
+      - --log-cli-level=INFO
+      - --timeout=90
 
   # A shell in the same environment, for when something needs looking at.
   shell:

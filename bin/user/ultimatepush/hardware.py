@@ -63,6 +63,7 @@ Configuration, in the driver's own section:
 import collections
 import ast
 import importlib
+import importlib.util
 import inspect
 import io
 import logging
@@ -155,6 +156,12 @@ def available():
         try:
             module = importlib.import_module(module_name)
         except Exception as e:
+            if not _reads_as_a_driver(module_name):
+                # An extension that is not hardware at all. That it will not import
+                # is worth knowing, but not here: a service missing a library it
+                # needs is not a console missing from the list of consoles.
+                log.debug("%s is not a driver and will not import: %s", module_name, e)
+                continue
             found.append(
                 {
                     'module': module_name,
@@ -177,6 +184,40 @@ def available():
             )
         )
     return sorted(found, key=lambda one: one['name'].lower())
+
+
+def _reads_as_a_driver(module_name):
+    """Whether a module that will not import was meant to be a driver.
+
+    Read rather than imported, because the module has already refused to import
+    once. WeeWX asks two things of a driver, a `loader` and a `DRIVER_NAME`, and
+    both are visible in the source without running any of it.
+
+    Args:
+        module_name (str): The import path.
+
+    Returns:
+        bool: Whether it holds both. True as well when the source cannot be read or
+        parsed at all, because then the import error is the useful thing to say.
+    """
+    try:
+        spec = importlib.util.find_spec(module_name)
+        origin = getattr(spec, 'origin', None)
+        if not origin:
+            return True
+        with io.open(origin, encoding='utf-8') as handle:
+            tree = ast.parse(handle.read())
+    except Exception:
+        return True
+    named = False
+    loaded = False
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == 'loader':
+            loaded = True
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                named = named or getattr(target, 'id', '') == 'DRIVER_NAME'
+    return named and loaded
 
 
 def _driver_modules():
@@ -252,6 +293,9 @@ CHOICES = {
 BY_USB = 'usb'
 BY_CABLE = 'cable'
 BY_EITHER = 'either'
+BY_BROADCAST = 'broadcast'
+BY_NETWORK = 'network'
+BY_COMMAND = 'command'
 BY_NOTHING = 'nothing'
 
 CONNECTS = {
@@ -266,6 +310,19 @@ CONNECTS = {
     BY_EITHER: (
         "It is read over a cable or over the network, and which of the two decides "
         "which of the settings below apply."
+    ),
+    BY_BROADCAST: (
+        "It is not asked for anything. The hub sends its readings out to the whole "
+        "local network and the driver listens, so the one thing that has to be true "
+        "is that both are on that same network."
+    ),
+    BY_NETWORK: (
+        "It is asked over the network. The address below is the one setting that "
+        "has to be right."
+    ),
+    BY_COMMAND: (
+        "It does not reach the hardware itself. It runs another program that does, "
+        "and the path to that program is the one setting that has to be right."
     ),
     BY_NOTHING: "",
 }
@@ -366,7 +423,7 @@ def template_for(module):
     }
     bare = {'fields': plain, 'connects': BY_NOTHING, 'about': ''}
     if not hasattr(module, 'confeditor_loader'):
-        return bare
+        return _from_the_class(module, plain) or bare
     try:
         import configobj
 
@@ -377,7 +434,11 @@ def template_for(module):
         return bare
     choices = CHOICES.get(module.__name__, {})
     when = _conditions(module)
-    reach = _connects(module, parsed)
+    written = {}
+    for section in parsed.sections:
+        for key in parsed[section].scalars:
+            written[key] = parsed[section][key]
+    reach = _connects(module, written)
     fields = {}
     for section in parsed.sections:
         held = parsed[section]
@@ -401,30 +462,226 @@ def template_for(module):
     return {'fields': fields, 'connects': reach, 'about': CONNECTS[reach]}
 
 
-def _connects(module, parsed):
+def _connects(module, options):
     """How a driver reaches its hardware, from what the module needs to do it.
+
+    What separates a cable from a network is the default `port` rather than the
+    name: every driver WeeWX ships defaults it to a device under `/dev`, and an
+    MQTT client defaults it to 1883. Both are called `port`, and telling somebody
+    with a broker to go and look in `/dev/serial/by-id/` helps nobody.
 
     Args:
         module (types.ModuleType): The driver module.
-        parsed (configobj.ConfigObj): Its default stanza.
+        options (dict): Option name to its default, as template_for has them.
 
     Returns:
-        str: One of BY_USB, BY_CABLE, BY_EITHER or BY_NOTHING.
+        str: One of BY_USB, BY_CABLE, BY_EITHER, BY_BROADCAST, BY_NETWORK,
+        BY_COMMAND or BY_NOTHING.
     """
-    keys = set()
-    for section in parsed.sections:
-        keys |= set(parsed[section].scalars)
-    if 'host' in keys or ('mode' in keys and 'port' in keys):
+    cabled = str(options.get('port', '')).startswith('/dev/')
+    # A second way in beside the cable, which is what makes the choice a setting.
+    # Not 'type': a WMR9x8 has one of those and only ever means serial by it.
+    if cabled and ('host' in options or 'mode' in options):
         return BY_EITHER
+    # A driver that names a UDP port of its own is waiting to be sent to rather than
+    # reading something. Asked before the rest, because 'udp_port' is not 'port'
+    # and would otherwise fall past every test here.
+    if any(key.startswith('udp_') for key in options):
+        return BY_BROADCAST
     try:
         source = inspect.getsource(module)
     except Exception:
         source = ''
     if re.search(r'^\s*import (usb|hid)\b|usb\.core', source, re.M):
         return BY_USB
-    if 'port' in keys:
+    if cabled:
         return BY_CABLE
+    # A driver that shells out to a radio receiver has no hardware setting at all.
+    # What has to be found is the program, which is a path like any other and
+    # nothing like an address.
+    if 'cmd' in options or 'command' in options:
+        return BY_COMMAND
+    if 'host' in options or 'port' in options:
+        return BY_NETWORK
     return BY_NOTHING
+
+
+def _from_the_class(module, plain):
+    """The form a driver describes in its constructor, when it ships no editor.
+
+    A driver from elsewhere often has no `confeditor_loader`, and then WeeWX has
+    nothing to write into a configuration file and this has nothing to build a form
+    from. The constructor does hold the list: WeeWX hands a driver its stanza as
+    keyword arguments, and the constructor reads them one at a time, which names
+    every option the driver takes and the default it falls back on. That is the same
+    list an editor would have carried, read out of the one place that cannot
+    describe a version nobody has.
+
+    What this cannot recover is what each option means, because the author wrote
+    that in a README rather than beside the option. The fields come out named and
+    defaulted but unexplained, which is worth more than the one line a driver
+    without an editor would otherwise show.
+
+    Args:
+        module (types.ModuleType): The driver module.
+        plain (dict): The 'driver' field template_for falls back on.
+
+    Returns:
+        dict: The shape template_for returns, or None when the module holds no
+        driver class, or that class does not read a stanza.
+    """
+    asked = _asked_of(module)
+    if not asked:
+        return None
+    choices = CHOICES.get(module.__name__, {})
+    fields = {}
+    for key, value in asked.items():
+        options = _offered(choices.get(key))
+        fields[key] = {
+            'value': value,
+            'help': [],
+            'choices': options,
+            'kind': _kind_for(options, key, value),
+            'when': None,
+            'rarely': False,
+        }
+    fields.setdefault('driver', plain['driver'])
+    reach = _connects(module, asked)
+    return {'fields': fields, 'connects': reach, 'about': CONNECTS[reach]}
+
+
+def _asked_of(module):
+    """Every option a driver's constructor reads out of the stanza it is handed.
+
+    Only the constructor's own keyword argument is followed, so that a `.get` on
+    some other dictionary in the same method is not taken for an option.
+
+    Args:
+        module (types.ModuleType): The driver module.
+
+    Returns:
+        collections.OrderedDict: Option name to the default written the way a
+        configuration file writes it, in the order the constructor reads them.
+        Empty when there is nothing to read.
+    """
+    try:
+        tree = ast.parse(inspect.getsource(module))
+    except Exception as e:
+        log.debug("Cannot read %s to see what it asks for: %s", module.__name__, e)
+        return collections.OrderedDict()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        named = [_base_name(base) for base in node.bases]
+        if not any(name.endswith('AbstractDevice') for name in named):
+            continue
+        found = _stanza_reads(node)
+        if found:
+            return found
+    return collections.OrderedDict()
+
+
+def _base_name(node):
+    """What a class in a base list is called, without importing anything.
+
+    Args:
+        node (ast.AST): One entry of a ClassDef's bases.
+
+    Returns:
+        str: The name as written, so 'AbstractDevice' for both `AbstractDevice` and
+        `weewx.drivers.AbstractDevice`. Empty for anything else.
+    """
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, ast.Name):
+        return node.id
+    return ''
+
+
+def _stanza_reads(klass):
+    """The options one class's constructor reads, by name and default.
+
+    Args:
+        klass (ast.ClassDef): A driver class.
+
+    Returns:
+        collections.OrderedDict: Option name to default. Empty when the constructor
+        takes no keyword arguments, which means it is not handed the stanza at all.
+    """
+    found = collections.OrderedDict()  # type: Dict[str, str]
+    for node in klass.body:
+        if not isinstance(node, ast.FunctionDef) or node.name != '__init__':
+            continue
+        if not node.args.kwarg:
+            return found
+        held = node.args.kwarg.arg
+        for inner in ast.walk(node):
+            name, value = _one_read(inner, held)
+            if name and name not in found:
+                found[name] = value
+    return found
+
+
+def _one_read(node, held):
+    """One option read out of the stanza, if that is what this expression is.
+
+    There are two ways a driver reads one. `stn_dict.get('x', default)` is an option
+    it can do without, and `stn_dict['x']` is one it cannot. Both name an option.
+
+    Args:
+        node (ast.AST): Any node inside the constructor.
+        held (str): The name of the constructor's keyword argument.
+
+    Returns:
+        tuple: (the option name, its default as a string), or (None, None). The
+        default is empty for an option read without one, and the whole pair is
+        dropped when the default is a section rather than a value.
+    """
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == 'get'
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == held
+        and node.args
+    ):
+        name = _literal(node.args[0])
+        value = _literal(node.args[1]) if len(node.args) > 1 else ''
+        if isinstance(name, str) and isinstance(value, str):
+            return name, value
+        return None, None
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+        if node.value.id != held:
+            return None, None
+        part = node.slice
+        # Python 3.8 and older wrap a subscript in an Index; 3.9 dropped it.
+        if isinstance(part, getattr(ast, 'Index', ())):
+            part = getattr(part, 'value', part)
+        name = _literal(part)
+        if isinstance(name, str):
+            return name, ''
+    return None, None
+
+
+def _literal(node):
+    """One constant out of the source, written the way a configuration file does.
+
+    Args:
+        node (ast.AST): The expression to read.
+
+    Returns:
+        str: The value. None for anything that is not a constant, and for a list or
+        a dictionary, which is a subsection rather than a value.
+    """
+    try:
+        value = ast.literal_eval(node)
+    except Exception:
+        return None
+    if isinstance(value, (dict, list, tuple, set)):
+        return None
+    if value is None:
+        return ''
+    return str(value)
 
 
 def _is_a_rule(lines):

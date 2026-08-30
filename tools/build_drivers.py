@@ -111,6 +111,66 @@ address in your router, or it will move and stop being found.
 
 The web interface offers the serial devices this machine has as a list.
 """,
+    'broadcast': """## Finding it
+
+There is nothing to look up, and that is the whole of the difficulty. The hub sends
+its readings out to the entire local network, and this machine picks them up as they
+pass. Neither end is configured to know about the other, so there is also nothing to
+get wrong, and nothing to check when it does not work.
+
+What has to be true is that both are on the same network. A hub on the guest network,
+or on the other side of a router, is never heard, and the driver cannot say so: from
+where it sits, a hub that is silent and a hub that cannot reach it look the same.
+
+Check that anything is arriving at all:
+
+```bash
+sudo tcpdump -n -i any udp port %(port)s
+```
+
+A line every minute or so means the hub is being heard, and anything that goes wrong
+after that is a setting. Nothing at all means the readings are not reaching this
+machine, and no setting on this page changes that.
+""",
+    'network': """## Finding the address
+
+Nothing is plugged in here. The driver opens a connection to a machine on the
+network, and the address below is that machine.
+
+Give it a fixed address, in the router, under whatever the router calls a reserved
+lease. An address handed out on the day will be a different address next month, and
+the driver will simply stop recording with nothing in the log to say why.
+
+Check that it answers before putting it in the file:
+
+```bash
+ping -c 3 1.2.3.4
+```
+
+A name works in place of an address, and is worth using where the network hands out
+names that stay put.
+""",
+    'command': """## Finding the program
+
+This driver does not talk to the radio itself. It runs another program that does,
+reads what that program prints, and turns it into readings. So the setting below is
+a path, and it has to be the path on this machine.
+
+Find it:
+
+```bash
+which rtldavis
+```
+
+If that prints nothing, the program is not installed, or not on the path, and the
+full path to wherever it was built has to go in instead. Building it is on its
+author's own page, not this one.
+
+Two things go wrong here and neither says much in the log. The program has to be
+executable by the user WeeWX runs as, which is `weewx` and not the user who built
+it. And the receiver it uses is a USB device that belongs to root until a udev rule
+says otherwise, in the same way a console does.
+""",
     'nothing': '',
 }
 
@@ -281,13 +341,23 @@ def page(module_name, module, made):
     ]
     finding = FINDING.get(made['connects'], '')
     if finding:
-        lines.append(finding)
+        # The text for a listening driver names the port to watch, which is the
+        # driver's own rather than a number this could know.
+        port = fields.get('udp_port', {}).get('value', '')
+        lines.append(finding.replace('%(port)s', str(port)))
+    written = any(one['help'] for one in fields.values())
     lines += [
         '## Every option',
         '',
         wrap(
             'Straight out of `%s`, with what its author wrote above each one.'
             % module_name
+            if written
+            else 'Straight out of `%s`. This driver carries no template for a'
+            ' configuration file, so the list is what its code reads and the'
+            ' defaults are what it falls back on. What each one means is not'
+            ' written down beside it, and its author\'s own page is the place'
+            ' to look.' % module_name
         ),
         '',
     ]
