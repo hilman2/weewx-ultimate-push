@@ -140,8 +140,21 @@ none of them can describe a version nobody has:
 | [Simulator](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-Simulator) | none, it makes its readings up | nothing |
 
 Anything installed as an extension works the same way and gets a page of its own when
-the pages are generated on that machine. MQTTSubscribe, weewx-sdr, weewx-rtldavis and
-weatherflow-udp are tested against this driver at stated commits.
+the pages are generated on that machine. These are tested against this driver at
+stated commits:
+
+| Extension | What it reads |
+|---|---|
+| [MQTTSubscribe](https://github.com/bellrichm/WeeWX-MQTTSubscribe) | readings republished over MQTT |
+| [weewx-sdr](https://github.com/matthewwall/weewx-sdr) | rtl_433's output, as a subprocess |
+| [weewx-rtldavis](https://github.com/lheijst/weewx-rtldavis) | a Davis over an RTL-SDR stick |
+| [weatherflow-udp](https://github.com/captain-coredump/weatherflow-udp) | a WeatherFlow hub's broadcasts |
+| [weewx-gw1000](https://github.com/bidord/weewx-gw1000) | an Ecowitt gateway's own API on port 45000 |
+
+The last of those is the pull side of hardware this driver already reads over HTTP.
+Both work, and they can run together: the gateway answers its own API whether or not
+its *Customized* upload is switched on. It needs `six` installed, which WeeWX does not
+bring.
 
 See [Hosted hardware](https://github.com/hilman2/weewx-ultimate-push/wiki/Hosted-hardware).
 
