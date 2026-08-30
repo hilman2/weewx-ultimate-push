@@ -1575,3 +1575,134 @@ def test_a_driver_with_nothing_to_set_says_so(hosting):
     assert 'found over USB' in fields['WMR100']['about']
     assert fields['Vantage']['connects'] == 'either'
     assert fields['WMR9x8']['connects'] == 'cable'
+
+
+def test_a_driver_that_will_not_import_is_reported_with_the_reason(tmp_path):
+    """A module that is a driver by every test that can be made without running it.
+
+    It has a `loader` and a `DRIVER_NAME`, which is all WeeWX asks of one, and it
+    stops at a syntax error. Somebody who installed it should read why it is not in
+    their list rather than wonder where it went. Extensions written for Python 2 are
+    still on GitHub and still linked from forum posts, so this is the ordinary case
+    rather than a strange one.
+
+    Written here rather than pinned to somebody's repository: the behaviour under
+    test is this driver's, and a test for it should not need the network or somebody
+    else keeping a dead branch alive.
+    """
+    package = tmp_path / 'user'
+    package.mkdir()
+    (package / '__init__.py').write_text('')
+    (package / 'legacy_thing.py').write_text(
+        "DRIVER_NAME = 'LegacyThing'\n"
+        "def loader(config_dict, engine):\n"
+        "    return None\n"
+        "print 'this is Python 2'\n"
+    )
+    user = sys.modules['user']
+    user.__path__.append(str(package))
+    try:
+        offered = {one['module']: one for one in hardware.available()}
+    finally:
+        user.__path__.remove(str(package))
+
+    one = offered.get('user.legacy_thing')
+    assert one is not None, "a driver that will not import must still be reported"
+    assert one['problem'], "no reason given"
+    assert 'print' in one['problem'], one['problem']
+    assert one['fields'] == {}, "nothing was read out of a module that did not import"
+
+
+def test_something_that_is_not_a_driver_and_will_not_import_is_left_alone(tmp_path):
+    """The other half of the same rule.
+
+    A service, or anything else somebody put in that directory, is not a console. Its
+    import failure is worth knowing and not here: a list of consoles with a Python
+    error in it is a thing nobody can act on.
+    """
+    package = tmp_path / 'user'
+    package.mkdir()
+    (package / '__init__.py').write_text('')
+    (package / 'legacy_service.py').write_text("print 'this is Python 2'\n")
+    user = sys.modules['user']
+    user.__path__.append(str(package))
+    try:
+        offered = {one['module'] for one in hardware.available()}
+    finally:
+        user.__path__.remove(str(package))
+    assert 'user.legacy_service' not in offered
+
+
+# ---- a driver on a cable, with no cable --------------------------------------
+
+
+# One line from a PeetBros console, out of the WS1 driver's own documentation.
+# Fifty characters: two of header and forty-eight of hex. The outdoor temperature
+# is the fourth field, 0x02EB, in tenths of a degree Fahrenheit.
+PEETBROS = b'!!000000BE02EB000027700000023A023A0025005800000000\r\n'
+
+
+def test_a_stock_driver_on_a_cable_is_hosted_and_read():
+    """The whole way through a cable driver, against a pseudo terminal.
+
+    Every other test of a stock driver here looks at the class and stops, because
+    there is no console on the end of a wire in a container. A pseudo terminal is a
+    real serial device as far as pyserial is concerned, so this one is opened,
+    driven and read like the Simulator is, and it is the only cable driver in the
+    suite that is.
+    """
+    pytest.importorskip('serial', reason="pyserial is not installed")
+    pytest.importorskip('weewx.drivers.ws1')
+    from helpers import Wire
+
+    wire = Wire(speaks=PEETBROS)
+    config = {
+        'WS1': {'driver': 'weewx.drivers.ws1', 'port': wire.name, 'mode': 'serial'},
+        'StdArchive': {'archive_interval': '300'},
+    }
+    host = hardware.build({'station_types': 'WS1'}, config, None)
+    assert host is not None
+    try:
+        host.start_loop()
+        packet = host.get(timeout=20)
+        assert packet is not None, "nothing came out of the driver"
+        assert packet['source'] == 'WS1'
+        # 0x02EB tenths of a degree Fahrenheit.
+        assert packet['outTemp'] == pytest.approx(74.7)
+        assert packet['usUnits'] == weewx.US
+    finally:
+        host.close()
+        wire.close()
+
+
+def test_a_cable_driver_whose_port_is_not_there_leaves_the_others_alone():
+    """A serial port that does not exist, which is the ordinary mistake.
+
+    The station beside it has to keep running. Same promise as the driver whose
+    program is missing, and worth its own test because a serial open fails
+    differently from a subprocess that will not start.
+    """
+    pytest.importorskip('serial', reason="pyserial is not installed")
+    pytest.importorskip('weewx.drivers.ws1')
+    config = {
+        'WS1': {
+            'driver': 'weewx.drivers.ws1',
+            'port': '/dev/nowhere-at-all',
+            'mode': 'serial',
+        },
+        'Simulator': {
+            'driver': 'weewx.drivers.simulator',
+            'loop_interval': '1',
+            'mode': 'simulator',
+        },
+        'StdArchive': {'archive_interval': '300'},
+    }
+    host = hardware.build({'station_types': 'Simulator, WS1'}, config, None)
+    assert host is not None
+    try:
+        host.start_loop()
+        packet = host.get(timeout=20)
+        assert packet is not None, "the station that could be opened produced nothing"
+        assert packet['source'] == 'Simulator'
+    finally:
+        host.close()

@@ -8,7 +8,15 @@
 A mapper needs a dialect, and most tests do not care which one: they are about
 inference, or about a captured payload, and the dialect is scaffolding. These build
 the one they meant.
+
+Wire is here for a different reason: a driver that reads a console over a cable
+cannot be opened without one, so it gets a pseudo terminal instead.
 """
+
+import os
+import select
+import threading
+import tty
 
 from ultimatepush import protocols, transport
 from ultimatepush.mapping import Mapper
@@ -89,3 +97,79 @@ class FakeRequest:
         self.body = text.encode('utf-8') if method != 'GET' else b''
         self.headers = {}
         self.client_address = client_address
+
+
+class Wire:
+    """A serial port with nothing on the end of it but a test.
+
+    A driver that reads a console over a cable can be opened against a pseudo
+    terminal, which is a real serial device as far as pyserial is concerned. The
+    driver opens one end and the test holds the other, so a cable driver can be run
+    through the host, and answered, without a cable.
+
+    This is the only way any of it can be exercised. There is no serial port in a
+    container and there is no console on the end of one anywhere in this suite, and
+    a driver that has only ever been imported has not been shown to work.
+
+    Args:
+        answers (dict | None): What to reply to each command the driver sends, as
+            bytes to bytes. A driver that sends nothing and only listens needs none
+            of this; give it `speaks` instead.
+        speaks (bytes | None): A line to send over and over, for a driver that does
+            not ask for anything.
+        every (float): Seconds between lines, for a driver that does not ask.
+    """
+
+    def __init__(self, answers=None, speaks=None, every=0.2):
+        self.answers = answers or {}
+        self.speaks = speaks
+        self.every = every
+        self.asked = []
+        self.master, self.slave = os.openpty()
+        # Raw, or the terminal line discipline rewrites what goes past: it echoes
+        # what the driver writes back at it, and turns \n into \r\n. Both would be
+        # read as readings.
+        tty.setraw(self.master)
+        tty.setraw(self.slave)
+        self.name = os.ttyname(self.slave)
+        self.stopped = threading.Event()
+        self.thread = threading.Thread(target=self._talk, daemon=True)
+        self.thread.start()
+
+    def _talk(self):
+        """Answer what the driver asks, or talk regardless. On its own thread."""
+        while not self.stopped.is_set():
+            if self.speaks is not None:
+                try:
+                    os.write(self.master, self.speaks)
+                except OSError:
+                    return
+                self.stopped.wait(self.every)
+                continue
+            ready, _, _ = select.select([self.master], [], [], 0.2)
+            if not ready:
+                continue
+            try:
+                asked = os.read(self.master, 256)
+            except OSError:
+                return
+            if not asked:
+                return
+            self.asked.append(asked)
+            for wanted, said in self.answers.items():
+                if wanted in asked:
+                    try:
+                        os.write(self.master, said)
+                    except OSError:
+                        return
+                    break
+
+    def close(self):
+        """Let go of both ends."""
+        self.stopped.set()
+        self.thread.join(5)
+        for handle in (self.master, self.slave):
+            try:
+                os.close(handle)
+            except OSError:
+                pass

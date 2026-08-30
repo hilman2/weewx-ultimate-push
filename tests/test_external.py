@@ -9,9 +9,15 @@ The stock drivers are written to one house style, and a host that only ever met
 those has not been tested against much. The ones here were each written by somebody
 else, years apart. One has no configuration editor at all, one ships an editor with
 every option commented out, one is reached over the network rather than over a wire,
-two do not touch the hardware but run a program that does, one has a clock it can set
-and cannot read, and one will not run on any Python WeeWX supports. Each broke
-something that looked settled, or is here so that it stays broken visibly.
+two do not touch the hardware but run a program that does, and one has a clock it can
+set and cannot read. Each broke something that looked settled.
+
+What is checked here is that the host reads them correctly: that each is offered,
+named, classed by how it is reached, and asked only for what it implements. Three of
+them are also opened and pulled from, because those three can be: a UDP socket, a
+broker in a container beside this one, and one whose program is missing on purpose.
+The rest cannot be opened without a serial port or a USB device, and a test that
+claimed otherwise would be claiming something it had not done.
 
 They are fetched into the image at a stated commit rather than vendored, so nothing
 here ships in a release. Without that image this whole file skips, which is why the
@@ -530,20 +536,6 @@ def test_a_clock_that_can_be_set_and_not_read():
     assert offered_by(module) == ('genStartupRecords', 'setTime')
 
 
-def test_a_driver_that_will_not_run_on_python_3_says_so():
-    """weewx-sds011 is a print statement away from Python 2 and has been since 2020.
-
-    It is a driver by every test that can be made without running it, so the import
-    failure is reported rather than swallowed. Somebody who installed it should read
-    why it is not in their list, not wonder where it went.
-    """
-    one = found().get('user.sds011')
-    assert one is not None, "a driver that will not import must still be reported"
-    assert one['problem'], "no reason given"
-    assert 'print' in one['problem']
-    assert one['fields'] == {}, "nothing was read out of a module that did not import"
-
-
 def test_a_usb_driver_with_no_editor_describes_itself_from_its_constructor():
     """The second driver to need the fallback, and the first that is not on a socket.
 
@@ -558,3 +550,92 @@ def test_a_usb_driver_with_no_editor_describes_itself_from_its_constructor():
     assert 'driver' in fields
     assert 'model' in fields
     assert not any(one['help'] for one in fields.values())
+
+
+# ---- one of them on a cable, with no cable ----------------------------------
+
+
+# What a WXT520 answers a composite query with. Vaisala's own format: the address,
+# the command, then name=value with the unit as the last character of each value.
+VAISALA = (
+    b'0R0,Dn=000#,Dm=106D,Dx=182D,Sn=0.0M,Sm=0.1M,Sx=0.4M,'
+    b'Ta=25.9C,Ua=15.0P,Pa=1017.0H,Rc=0.00M,Rd=0s,Ri=0.0M,'
+    b'Hc=0.0M,Hd=0s,Hi=0.0M,Rp=0.0M,Hp=0.0M\r\n'
+)
+
+
+def test_a_driver_from_elsewhere_on_a_cable_is_hosted_and_read():
+    """wxt5x0 all the way through, against a pseudo terminal.
+
+    It asks before it reads, which the stock cable driver tested in test_hardware.py
+    does not: it writes a query and waits for the answer. So this exercises a
+    conversation over a wire rather than a driver that only listens, and it is the
+    only test here that does.
+    """
+    pytest.importorskip('serial', reason="pyserial is not installed")
+    from helpers import Wire
+
+    wire = Wire(answers={b'R0': VAISALA})
+    config = {
+        'WXT5x0': {
+            'driver': 'user.wxt5x0',
+            'protocol': 'serial',
+            'port': wire.name,
+            'address': '0',
+            'model': 'WXT520',
+        },
+        'StdArchive': {'archive_interval': '300'},
+    }
+    host = hardware.build({'station_types': 'WXT5x0'}, config, None)
+    assert host is not None
+    try:
+        host.start_loop()
+        packet = host.get(timeout=20)
+        assert packet is not None, "nothing came out of the driver"
+        assert packet['source'] == 'WXT5x0'
+        assert packet['outTemp'] == pytest.approx(25.9)
+        assert packet['outHumidity'] == pytest.approx(15.0)
+        assert packet['pressure'] == pytest.approx(1017.0)
+        assert packet['windSpeed'] == pytest.approx(0.1)
+        assert packet['windDir'] == pytest.approx(106)
+    finally:
+        host.close()
+        wire.close()
+    assert wire.asked, "the driver never asked for anything"
+
+
+def test_a_usb_driver_with_no_device_leaves_the_others_alone():
+    """The third way opening a station fails, and it has to look like the other two.
+
+    A serial port that is not there, a program that is not installed, and a USB
+    device nobody plugged in are three different exceptions from three different
+    libraries. All three have to end the same way: that station is left out, the
+    ones beside it keep running, and nothing waits for ever.
+
+    This is as far as a USB driver can be taken without the hardware. Opening one
+    would mean standing in for the USB stack and inventing traffic for a protocol
+    nobody here knows, which would test the invention rather than the host.
+    """
+    config = {
+        'WS6in1': {'driver': 'user.ws6in1', 'model': 'WS6in1'},
+        'Simulator': {
+            'driver': 'weewx.drivers.simulator',
+            'loop_interval': '1',
+            'mode': 'simulator',
+        },
+        'StdArchive': {'archive_interval': '300'},
+    }
+    host = hardware.build({'station_types': 'Simulator, WS6in1'}, config, None)
+    assert host is not None
+    try:
+        host.start_loop()
+        seen = []
+        until = time.time() + 20
+        while time.time() < until and not seen:
+            packet = host.get(timeout=5)
+            if packet is not None:
+                seen.append(packet)
+        assert seen, "the station that could be opened produced nothing"
+        assert seen[0]['source'] == 'Simulator'
+    finally:
+        host.close()

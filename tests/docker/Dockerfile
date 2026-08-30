@@ -78,7 +78,6 @@ ARG PURPLE=7c4e11724eadea51f1a0d98261e3907801402709
 # things nothing else does: a clock that can be set, startup records, and a form
 # built from a driver that ships no editor.
 ARG WXT5X0=d64d39747f3b446ca5706bc8c492dbb39b0aa261
-ARG SDS011=f268900993c7804d873737302a49126ce8bdf96c
 ARG WS6IN1=1fb840239a1bbc2caee2e663208ea0c7bffe54cb
 ARG KLIMALOGG=9b70be25bc1650ae109de8fa9071ae9ce384e352
 
@@ -93,7 +92,6 @@ RUN set -e; \
         "https://github.com/matthewwall/weewx-sdr ${SDR}" \
         "https://github.com/chaunceygardiner/weewx-purple ${PURPLE}" \
         "https://github.com/matthewwall/weewx-wxt5x0 ${WXT5X0}" \
-        "https://github.com/matthewwall/weewx-sds011 ${SDS011}" \
         "https://github.com/BobAtchley/weewx-ws6in1 ${WS6IN1}" \
         "https://github.com/matthewwall/weewx-klimalogg ${KLIMALOGG}" \
     ; do \

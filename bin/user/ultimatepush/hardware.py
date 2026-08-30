@@ -197,8 +197,9 @@ def _reads_as_a_driver(module_name):
         module_name (str): The import path.
 
     Returns:
-        bool: Whether it holds both. True as well when the source cannot be read or
-        parsed at all, because then the import error is the useful thing to say.
+        bool: Whether it holds both. True as well when the source cannot be found or
+        opened at all, because then nothing is known and the import error is the
+        only thing there is to say.
     """
     try:
         spec = importlib.util.find_spec(module_name)
@@ -206,9 +207,21 @@ def _reads_as_a_driver(module_name):
         if not origin:
             return True
         with io.open(origin, encoding='utf-8') as handle:
-            tree = ast.parse(handle.read())
+            source = handle.read()
     except Exception:
         return True
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        # Written for Python 2, most likely, and there are still extensions like
+        # that on GitHub and in forum posts. It cannot be parsed and it can still be
+        # read: the two things WeeWX asks a driver for are in the text either way.
+        # Without this, every Python 2 module in that directory was offered as a
+        # console, service or not, with a syntax error where its settings should be.
+        return bool(
+            re.search(r'^\s*DRIVER_NAME\s*=', source, re.M)
+            and re.search(r'^\s*def\s+loader\s*\(', source, re.M)
+        )
     named = False
     loaded = False
     for node in tree.body:
