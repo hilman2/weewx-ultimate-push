@@ -4,8 +4,13 @@ A catalog is one module per protocol, holding nothing but data: which raw name m
 what, in which unit, and which WeeWX field it belongs in. Around 900 raw names are
 covered.
 
+There is one per protocol and none for a driver this machine reads: a driver hands over
+WeeWX fields already, so there is nothing to translate. See
+[Hosted hardware](Hosted-hardware.md).
+
 This page is about where those names come from and how the placements were decided. To
-look up where a single field goes, use [Sensors](Sensors.md); to follow one reading from
+look up where a single field goes, use [Ecowitt sensors](Ecowitt-sensors.md); to follow
+one reading from
 the station to a column, use [Field map](Field-map.md).
 
 ## Generated or written out
@@ -54,7 +59,8 @@ the user then sees is in [Unknown fields](Unknown-fields.md).
 
 ## The generated pages
 
-[Sensors](Sensors.md) and [Hardware](Hardware.md) are generated from the catalog:
+[Ecowitt sensors](Ecowitt-sensors.md) and [Hardware](Hardware.md) are generated from
+the catalog:
 
 ```
 python tools/build_reference.py

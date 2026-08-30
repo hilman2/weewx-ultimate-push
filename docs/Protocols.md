@@ -76,7 +76,7 @@ An upload it cannot acknowledge is retried and eventually given up on, which is 
 answer is exact rather than an empty 200.
 
 The catalog has 532 fields and is generated from `ecowittcustom`. See
-[Sensors](Sensors.md).
+[Ecowitt sensors](Ecowitt-sensors.md).
 
 ## Weather Underground
 

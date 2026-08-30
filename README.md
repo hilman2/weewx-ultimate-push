@@ -1,13 +1,14 @@
 # weewx-ultimate-push
 
-A WeeWX driver for weather stations that push their readings instead of waiting to be
-polled. Ecowitt, Weather Underground, Ambient Weather, WeatherFlow, Acurite and LaCrosse,
-all on one port. It reads what your hardware actually sends, and it comes with a web
-interface that shows every reading and where it is being written.
+A WeeWX driver for more than one weather station at once.
 
-It also runs the drivers WeeWX ships with. A Vantage on a serial port and an Ecowitt
-gateway on the network are one station in one database, rather than two WeeWX
-instances.
+Stations that push their readings instead of waiting to be polled: Ecowitt, Weather
+Underground, Ambient Weather, WeatherFlow, Acurite and LaCrosse, all on one port. It
+reads what your hardware actually sends, and it comes with a web interface that shows
+every reading and where it is being written.
+
+And the drivers WeeWX ships with. A Vantage on a serial port and an Ecowitt gateway on
+the network are one station in one database, rather than two WeeWX instances.
 
 ![The setup checklist, with six stations on five protocols](docs/img/01-setup.png)
 

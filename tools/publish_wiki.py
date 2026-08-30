@@ -73,7 +73,7 @@ SIDEBAR = """* [Home](Home)
 
 * [Protocols](Protocols)
 * [Field map](Field-map)
-* [Sensors](Sensors)
+* [Ecowitt sensors](Ecowitt-sensors)
 * [Unknown fields](Unknown-fields)
 * [Catalogs](Catalogs)
 * [Architecture](Architecture)

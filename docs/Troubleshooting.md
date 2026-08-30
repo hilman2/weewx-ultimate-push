@@ -277,6 +277,53 @@ The checklist lists them, with the station that holds each column. To keep a rea
 give it a field of its own on the Fields tab and add the column if the database has
 none. See [Stations](Stations.md).
 
+## A station on a cable records nothing
+
+Everything above is about hardware that uploads. A station this machine reads is a
+different case: nothing arrives because nothing was asked for, and the log says which.
+
+The driver names what it is running at startup:
+
+```
+INFO user.ultimatepush.hardware: Hosting 1 driver(s): Vantage. The archive station is
+Vantage.
+```
+
+If that line is missing, the section is not being read. Check `station_types` under
+`[[hardware]]`, and that the name matches a top-level section exactly.
+
+If the driver cannot be opened, it says so and keeps trying:
+
+```
+ERROR user.ultimatepush.hardware: The Vantage driver failed (1 so far): could not open
+port /dev/ttyUSB0. Trying again in 10 seconds.
+```
+
+The wait doubles to five minutes. Nothing else stops: the stations that upload keep
+being recorded and the web interface stays up.
+
+The usual causes, in order:
+
+- **The port is wrong.** `ls -l /dev/serial/by-id/` lists what is actually there.
+- **The port moved.** `/dev/ttyUSB0` becomes `/dev/ttyUSB1` when something else is
+  plugged in. The name under `by-id` does not.
+- **WeeWX cannot open it.** The `weewx` user has to be in the group that owns the
+  device, which is usually `dialout`. `ls -l /dev/ttyUSB0` says which.
+- **Something else has it.** Another program holding the port makes it look absent.
+
+## The driver will not start at all, with a wired station
+
+If the archive station cannot be opened, the driver does not start. That is deliberate:
+the archive record would otherwise be worked out from software while the console's
+logger held the real ones, and those records would be wrong rather than missing.
+
+A station that is not the archive station is logged and left out, and the rest run.
+
+```
+ERROR user.ultimatepush.hardware: The WMR100 driver could not be opened, so it is left
+out: no device found.
+```
+
 ## A station records nothing at all after a restart
 
 Once, and only until the main station's next upload:

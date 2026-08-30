@@ -3,7 +3,7 @@
 #
 #    See the file LICENSE for your full rights.
 #
-"""Write docs/Sensors.md from the catalog.
+"""Write docs/Ecowitt-sensors.md from the catalog.
 
 The sensor reference is 500 lines of table. Keeping it by hand would mean it is wrong
 within a release, so it is generated from the same catalog the driver uses.
@@ -47,7 +47,7 @@ def sensor_of(raw, channels):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--out', default='docs/Sensors.md')
+    parser.add_argument('--out', default='docs/Ecowitt-sensors.md')
     args = parser.parse_args(argv)
 
     sys.path.insert(0, os.path.join('bin', 'user'))

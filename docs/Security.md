@@ -3,6 +3,10 @@
 The driver opens a port that accepts weather readings. Anyone who can reach it can
 post readings, and most of this hardware has no way to prove it is the station.
 
+None of this applies to a station this machine reads over a cable. Nothing is listening
+for it and nothing can be sent to it, so the whole of this page is about the stations
+that upload. See [Hosted hardware](Hosted-hardware.md).
+
 One protocol is an exception. Weather Underground sends `PASSWORD` in every upload,
 which is a shared secret and can be checked. A station set up in the web interface is
 given one of its own, along with the `ID` that names it, and both are shown once so they

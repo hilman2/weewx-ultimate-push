@@ -8,6 +8,11 @@ hold readings. See [Web interface](Web-interface.md).
 
 The rest of this page is what to do without it, or before WeeWX is running at all.
 
+All of it is about hardware that uploads. A station this machine reads over a cable
+sends nothing to inspect: there is no upload, no raw payload and no port to test. What
+it has instead is the log, which says whether the driver opened and what it is doing.
+See [Troubleshooting](Troubleshooting.md#a-station-on-a-cable-records-nothing).
+
 ## When a sensor is missing
 
 The driver writes out what it could not place, by itself:

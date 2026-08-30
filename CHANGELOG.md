@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+**The documentation no longer describes an earlier version of this driver.** It began
+as an Ecowitt driver, became one for six push protocols, and then learned to run the
+drivers WeeWX ships. Several pages were still written for one of those stages.
+
+`Sensors.md` is now `Ecowitt-sensors.md`. It only ever covered the Ecowitt catalog, and
+the name promised every sensor. Home, the README and Installation described a driver for
+hardware that pushes, which stopped being the whole truth. Field map, Catalogs and
+Unknown fields describe a path that a station on a cable does not take, and now say so
+rather than leaving somebody to look for a Vantage catalog. Security is about a port
+that a station on a cable is not on. Troubleshooting and Diagnostics assumed something
+had failed to arrive, and now cover the case where nothing was asked for.
+
 **A page for every protocol and every driver, for setting one up by hand.** Twenty
 pages: the smallest configuration that works, everything the console has to be told,
 every option that is only that one's, what is worth knowing before starting, and what to

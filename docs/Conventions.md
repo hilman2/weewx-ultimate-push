@@ -100,7 +100,7 @@ them lives in the tool that writes them, so that the page and the code cannot dr
 
 | Pages | Written by | From |
 |---|---|---|
-| `Sensors.md` | `tools/build_reference.py` | the catalogs |
+| `Ecowitt-sensors.md` | `tools/build_reference.py` | the Ecowitt catalog |
 | `Hardware.md` | `tools/build_hardware.py` | the catalogs, plus prose in the tool |
 | `Protocol-*.md` | `tools/build_protocols.py` | the protocol classes, plus prose in the tool |
 | `Driver-*.md` | `tools/build_drivers.py` | the WeeWX drivers installed on the machine that runs it |

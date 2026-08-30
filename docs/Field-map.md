@@ -7,8 +7,13 @@ station  ──►  protocol   ──►  raw field  ──►  WeeWX field  ─
               ecowitt        tf_ch1          extraTemp9        extraTemp9
 ```
 
-The protocol is determined first, because the same raw name means different things in
-different catalogs. `UV` is an index in one and microwatts per square
+A station this machine reads over a cable skips the first three boxes. Its driver hands
+over WeeWX fields directly, so there is no protocol to recognise, no raw name and no
+catalog. Nothing on this page applies to it, and where its readings go is decided by its
+role and by who owns the column. See [Several stations](Several-stations.md).
+
+For everything that uploads, the protocol is determined first, because the same raw name
+means different things in different catalogs. `UV` is an index in one and microwatts per square
 centimetre in another. See [Protocols](Protocols.md) for how an upload is recognised, and
 check the log line that says which catalog was used before reading anything below as a
 bug.
@@ -39,7 +44,8 @@ decision made in front of what it costs. See [Stations](Stations.md).
 
 ## 2. The catalog
 
-One per protocol. The Ecowitt one has 532 raw fields; see [Sensors](Sensors.md) for the
+One per protocol. The Ecowitt one has 532 raw fields; see
+[Ecowitt sensors](Ecowitt-sensors.md) for the
 full list, or ask the driver:
 
 ```

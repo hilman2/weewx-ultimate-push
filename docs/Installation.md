@@ -4,8 +4,10 @@
 
 - WeeWX 5.0 or later
 - Python 3.7 or later
-- Hardware that pushes its readings. See [Protocols](Protocols.md) for the six protocols
-  supported.
+- A weather station. Either one that pushes its readings, which is what this driver
+  was written for, or one WeeWX already has a driver for, which this driver can run.
+  [Hardware](Hardware.md) lists the first kind and
+  [Hosted hardware](Hosted-hardware.md) explains the second.
 
 There are no other requirements: no pip packages and no compiler.
 

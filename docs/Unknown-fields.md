@@ -3,6 +3,10 @@
 A field the catalog does not cover is examined rather than dropped. Two things can be
 said about one without guessing, and they are kept apart.
 
+Only hardware that uploads has a catalog. A station this machine reads over a cable
+hands over WeeWX fields directly, so it has no unknown fields and nothing here happens
+to it.
+
 ## Derived
 
 The field continues a series the catalog describes. If `zz_ch1` and `zz_ch2` are

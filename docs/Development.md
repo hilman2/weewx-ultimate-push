@@ -45,7 +45,7 @@ CI runs both, across Python 3.8 to 3.13, plus a vermin check against 3.7.
 |---|---|
 | `tools/import_catalog.py` | generates the Ecowitt catalog |
 | `tools/import_ambient.py` | generates the Ambient catalog |
-| `tools/build_reference.py` | generates `docs/Sensors.md` |
+| `tools/build_reference.py` | generates `docs/Ecowitt-sensors.md` |
 | `tools/build_hardware.py` | generates `docs/Hardware.md` |
 | `tools/build_protocols.py` | generates `docs/Protocol-*.md`, one per protocol |
 | `tools/build_drivers.py` | generates `docs/Driver-*.md`, one per WeeWX driver installed here |
