@@ -21,6 +21,34 @@ jobs:
       - run: pip install pytest
       - run: python -m pytest tests -q
 
+  # Formatting is black's, with the project's single quotes kept. The settings are
+  # in pyproject.toml, so this job and a developer's editor cannot disagree.
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install black
+      - run: black --check --diff bin tools tests install.py
+
+  # Two checkers, because the types live in two places. mypy reads the code; the
+  # second reads the Google docstrings, which no command line checker looks at and
+  # which are where this project, like WeeWX, declares its parameter types.
+  types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install mypy weewx
+      - run: mypy
+      - name: Docstring types against the signatures
+        run: |
+          python tools/check_docstring_types.py \n            $(find bin/user/ultimatepush tools -name '*.py') install.py
+
   # The driver has to keep running on the Python versions WeeWX still supports,
   # which is older than anything the runners will install.
   compatibility:
@@ -31,7 +59,12 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install vermin
-      - run: vermin --target=3.7 --violations bin tools install.py
+      # tools/check_docstring_types.py is left out on purpose. It is a development
+      # tool, is in no release zip and is imported by nothing that ships, and its
+      # --mypy stage needs ast.unparse, which arrived in 3.9. Everything the driver
+      # loads has to clear 3.7.
+      - run: |
+          vermin --target=3.7 --violations bin install.py \n            $(find tools -name '*.py' ! -name 'check_docstring_types.py')
 
   # With WeeWX installed, the tests can also check that the bundled listener is
   # still identical to the one in the core.
