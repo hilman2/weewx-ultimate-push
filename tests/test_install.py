@@ -102,8 +102,14 @@ def test_every_protocol_says_which_counter_has_to_be_differenced():
 
     for protocol in protocols.registry():
         counter = protocol.rain_counter
+        fields = protocol.dialect({}).fields.values()
         if counter is None:
-            assert 'rain' in protocol.dialect({}).fields.values(), (
+            # An air quality sensor measures no rain at all, and then there is
+            # nothing to difference and nothing to send. What must not happen is a
+            # protocol that names no counter and sends a counter anyway.
+            if not any(field.endswith('Rain') or field == 'rain' for field in fields):
+                continue
+            assert 'rain' in fields, (
                 "%s differences nothing and sends no 'rain' either" % protocol.name
             )
             continue

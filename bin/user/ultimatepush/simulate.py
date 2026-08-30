@@ -1,0 +1,196 @@
+#
+#    Copyright (c) 2026 Manuel Hilgert
+#
+#    See the file LICENSE for your full rights.
+#
+"""Hardware that is not there, for trying the polled setup without any.
+
+A polled source is the one kind of station somebody cannot try out before they own
+the hardware. A console that pushes can be imitated with `curl`, and a driver on a
+serial port has the WeeWX simulator; a sensor that has to be asked has nothing,
+because there is nothing to ask.
+
+So this answers. It is a small web server that says what a PurpleAir says, on a
+port of your choosing, with readings that move the way readings move:
+
+    python -m user.ultimatepush --fake-purpleair 8081
+
+and then point a source at it:
+
+    [UltimatePush]
+        [[polling]]
+            [[[air]]]
+                address = 127.0.0.1:8081
+                protocol = purpleair
+                interval = 10
+
+The same answer is what the tests are written against, so what this serves and what
+the driver is known to read are one thing rather than two that can drift apart.
+
+Nothing here is a model of air quality. The numbers wander around plausible values
+so that a graph is not a flat line, and that is the whole of the ambition.
+"""
+
+import http.server
+import json
+import math
+import socketserver
+
+# What the sensor is called. Deliberately not a real MAC: anybody reading a log or a
+# page has to be able to tell at a glance that this is not their sensor.
+SENSOR_ID = 'aa:bb:cc:00:11:22'
+
+# What each reading sits at, and how far it wanders either side of that. The periods
+# are different for each so that two readings do not move together, which is the one
+# thing that makes a made-up graph look made up.
+WANDERS = {
+    'current_temp_f': (71.0, 6.0, 900.0),
+    'current_humidity': (44.0, 12.0, 1100.0),
+    'current_dewpoint_f': (48.0, 5.0, 1300.0),
+    'pressure': (1013.2, 4.0, 3600.0),
+    'pm1_0_atm': (4.1, 2.5, 300.0),
+    'pm2_5_atm': (7.2, 4.0, 420.0),
+    'pm10_0_atm': (8.0, 4.5, 540.0),
+    'pm2_5_cf_1': (7.6, 4.0, 420.0),
+}
+
+
+def purpleair_answer(seconds):
+    """What a PurpleAir says, at one moment.
+
+    Args:
+        seconds (float): The time, in seconds. Any clock will do: the readings are
+            a function of it, so the same number twice gives the same answer, which
+            is what makes a test repeatable.
+
+    Returns:
+        dict: The answer, as the sensor's own /json endpoint gives it.
+    """
+    answer = {
+        'SensorId': SENSOR_ID,
+        'DateTime': _stamp(seconds),
+        'hardwareversion': '2.0',
+        'hardwarediscovered': '2.0+BME280+PMSX003-B+PMSX003-A',
+        'version': '7.02',
+        'place': 'outside',
+        'rssi': -58,
+        'uptime': int(seconds) % 1000000,
+        'current_temp_f_680': 0,
+    }
+    for name, (middle, spread, period) in WANDERS.items():
+        answer[name] = _wander(seconds, middle, spread, period)
+    # The integers the sensor sends as integers. A reader that turns everything into
+    # a float would not notice; one that checks the type would.
+    for name in ('current_temp_f', 'current_humidity', 'current_dewpoint_f'):
+        answer[name] = int(round(answer[name]))
+    # The second laser counter, a little behind the first, the way a real pair are.
+    answer['pm1_0_atm_b'] = round(answer['pm1_0_atm'] * 0.96, 2)
+    answer['pm2_5_atm_b'] = round(answer['pm2_5_atm'] * 0.96, 2)
+    answer['pm10_0_atm_b'] = round(answer['pm10_0_atm'] * 0.96, 2)
+    answer['pm2_5_cf_1_b'] = round(answer['pm2_5_cf_1'] * 0.96, 2)
+    answer['pm2.5_aqi'] = _aqi(answer['pm2_5_atm'])
+    answer['pm2.5_aqi_b'] = _aqi(answer['pm2_5_atm_b'])
+    return answer
+
+
+def _wander(seconds, middle, spread, period):
+    """One reading, somewhere near where it belongs.
+
+    Two waves of different lengths rather than one, so that the result does not
+    repeat every period and look like the sine wave it is.
+
+    Args:
+        seconds (float): The time.
+        middle (float): What it sits at.
+        spread (float): How far either side it goes.
+        period (float): Seconds for one turn of the slower wave.
+
+    Returns:
+        float: The reading, to two decimals.
+    """
+    slow = math.sin(2.0 * math.pi * seconds / period)
+    quick = math.sin(2.0 * math.pi * seconds / (period / 7.0))
+    return round(middle + spread * (0.75 * slow + 0.25 * quick), 2)
+
+
+def _aqi(micrograms):
+    """The US air quality index for a PM2.5 concentration.
+
+    Only the two lowest bands, because a sensor that is making its readings up has
+    no business claiming the air is dangerous.
+
+    Args:
+        micrograms (float): PM2.5, in micrograms per cubic metre.
+
+    Returns:
+        int: The index.
+    """
+    if micrograms <= 12.0:
+        return int(round(micrograms * 50.0 / 12.0))
+    return int(round(51 + (micrograms - 12.1) * 49.0 / 23.3))
+
+
+def _stamp(seconds):
+    """The time, written the way this hardware writes it.
+
+    Args:
+        seconds (float): The time.
+
+    Returns:
+        str: e.g. '2026/08/30T19:04:12z'.
+    """
+    import time
+
+    return time.strftime('%Y/%m/%dT%H:%M:%Sz', time.gmtime(seconds))
+
+
+def serve(port, address='127.0.0.1'):
+    """Answer like a PurpleAir until interrupted.
+
+    Args:
+        port (int): The port to listen on.
+        address (str): The address to bind to. The loopback by default, because a
+            sensor that does not exist has no business being on the network.
+
+    Returns:
+        int: The exit status, which is 0 unless the port could not be had.
+    """
+    import time
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        """Answers anything with the same reading, which is what the real one does."""
+
+        def do_GET(self):
+            body = json.dumps(purpleair_answer(time.time())).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, fmt, *args):
+            """One line per question, which is the point of watching this run."""
+            print("asked: %s" % (fmt % args))
+
+    try:
+        server = socketserver.TCPServer((address, port), Handler)
+    except OSError as e:
+        print("Cannot listen on %s:%d: %s" % (address, port, e))
+        return 1
+    print(
+        "Answering like a PurpleAir at http://%s:%d/json\n"
+        "Point a source at it:\n"
+        "\n"
+        "    [[polling]]\n"
+        "        [[[air]]]\n"
+        "            address = %s:%d\n"
+        "            protocol = purpleair\n"
+        "            interval = 10\n" % (address, port, address, port)
+    )
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Stopped.")
+    finally:
+        server.server_close()
+    return 0

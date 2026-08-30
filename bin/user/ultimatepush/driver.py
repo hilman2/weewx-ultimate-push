@@ -53,6 +53,7 @@ from . import (
     mapping,
     overrides,
     owners,
+    polling,
     protocols,
     report,
     roles,
@@ -284,6 +285,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.max_ahead = int(stn_dict.get('max_ahead', transport.MAX_AHEAD))
 
         self.enabled = self._read_protocols(stn_dict.get('protocols'))
+        # A source under [[polling]] names the protocol to read its answer with, and
+        # naming it there switches it on. Writing it in two places would only make
+        # somewhere for the two to disagree. The sources recorded by the interface
+        # are added further down, once the file holding them has been read.
+        self._enable_for(stn_dict.get('polling'))
         self._apply_protocol_options(stn_dict)
         log.info(
             "Driver version is %s, listening with %s for %s",
@@ -305,8 +311,6 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # from one, so without this a WN34 on channel 1 of each would overwrite the
         # other, and afterwards neither could be recovered.
         self.conf_extensions = dict(stn_dict.get('field_map_extensions', {}))
-        self.stations = self._read_stations(stn_dict.get('stations'))
-
         # What the web interface shows, and where what it changes is kept. Both are
         # built whether or not the interface is switched on: the activity log costs a
         # few kilobytes and is what makes a question about last Tuesday answerable,
@@ -322,6 +326,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             reserved=self._reserved_fields(stn_dict),
         )
         self.overrides.read()
+
+        # Read after the settings file, because a source set up in the interface is
+        # recorded there and is a finished station in its own right.
+        self.asking = self._polling_config(stn_dict)
+        self._enable_for(self.asking)
+        self.stations = self._read_stations(
+            self._with_polled(stn_dict.get('stations'), self.asking)
+        )
 
         # Hardware that has to be asked rather than waited for, each on a thread of
         # its own. Built before the default station below, because a station with
@@ -681,6 +693,69 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 self._register_units(mapper.wanted_groups())
         log.info("Took up the settings from %s.", self.overrides.path)
 
+    def _enable_for(self, being_asked):
+        """Switch on the protocols the polled sources ask for.
+
+        Args:
+            being_asked (dict | None): A `[[polling]]` subsection.
+        """
+        for name in polling.named(being_asked):
+            protocol = protocols.by_name(name)
+            if protocol is not None and protocol not in self.enabled:
+                self.enabled.append(protocol)
+
+    def _polling_config(self, stn_dict):
+        """Every source to ask: the ones in weewx.conf and the ones set up here.
+
+        Same arrangement as a hosted driver's stanza, and for the same reason. A
+        source written into weewx.conf is never covered over: it wins, so that the
+        file somebody edits is the file that decides.
+
+        Args:
+            stn_dict (dict): The driver section of weewx.conf.
+
+        Returns:
+            dict: Source name to its block.
+        """
+        written = dict(stn_dict.get('polling') or {})
+        for name, settings in self.overrides.polled().items():
+            written.setdefault(name, settings)
+        return written
+
+    def _with_polled(self, configured, being_asked):
+        """The configured stations, plus the ones that are polled sources.
+
+        A source this driver asks is a finished station the moment it is written
+        down. There is no console to recognise: the answer came back from the
+        address that was asked, so nothing has to be learned on a first upload and
+        nothing has to be adopted. So its block under [[polling]] carries the role
+        and the channel too, and one block is the whole of it.
+
+        Args:
+            configured (dict | None): The [[stations]] subsection.
+            being_asked (dict | None): The [[polling]] subsection.
+
+        Returns:
+            dict: The two together, in the shape [[stations]] uses.
+
+        Raises:
+            ValueError: If a name is used by both, because then two blocks describe
+                one station and neither can be said to win.
+        """
+        polled = polling.stations(being_asked)
+        if not polled:
+            return configured
+        together = dict(configured or {})
+        for name, settings in polled.items():
+            if name in together:
+                raise ValueError(
+                    "'%s' is both a station and a polled source. A polled source is "
+                    "already a station: put the role and the channel in its "
+                    "[[polling]] block and take the [[stations]] one out." % name
+                )
+            together[name] = settings
+        return together
+
     def _read_stations(self, configured):
         """Return {identity: Station} for an installation with several consoles.
 
@@ -994,9 +1069,15 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             listeners.append(web)
 
         # Last, so that the port a Fan reports is still the one hardware uploads
-        # to. Hosted drivers have no port to report.
+        # to. Neither of these two has a port to report.
         if self.hardware is not None:
             listeners.append(self.hardware)
+
+        # Sources this driver asks rather than waits for. No socket of its own: the
+        # answers come back shaped as uploads and go the same way from there.
+        self.polling = polling.build(self.asking, keep_empty=bool(stn_dict.get('web')))
+        if self.polling is not None:
+            listeners.append(self.polling)
 
         return listeners
 
@@ -1458,7 +1539,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         path, is turned away rather than mixed into the first one's columns.
 
         A protocol whose payload names nothing is left alone: there is nothing to
-        pin, and the path is the whole of the answer.
+        pin, and the path is the whole of the answer. So is one this driver goes and
+        asks. There the path is not a secret somebody could learn, it is the record
+        of a question this driver put to an address it was given, and whatever
+        answers there is by definition what was asked. Pinning it would only mean
+        that replacing a broken sensor stopped the readings.
 
         Args:
             ident (str): The station, as it was set up.
@@ -1468,6 +1553,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         Returns:
             bool: Whether the upload may be kept.
         """
+        if protocol.fetched:
+            return True
         seen = protocol.station_of(raw)
         if not seen:
             return True
@@ -3524,6 +3611,12 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
     ARRIVES = 'arrives'
     FETCH = 'fetch'
 
+    # Which group of the setup flow a protocol belongs in. A protocol that is asked
+    # goes in with the hardware this machine reads over a cable, because from where
+    # somebody is standing those are the same thing: nothing has to find its way
+    # here. See protocols.Protocol.reached.
+    WAY_IN = {'point': POINT, 'fetch': FETCH, 'broadcast': ARRIVES, 'redirect': ARRIVES}
+
     def web_ways(self):
         """Every way a station can be set up, in one list.
 
@@ -3558,9 +3651,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                     # its own. A Weather Underground console is pointed here like any
                     # other and still cannot be given one, because its path is in the
                     # firmware. See protocols.Protocol.reached and secret_kind.
-                    'how': (
-                        self.POINT if protocol.reached == 'point' else self.ARRIVES
-                    ),
+                    'how': self.WAY_IN.get(protocol.reached, self.ARRIVES),
                     # Read by the page to decide whether there is anything to name
                     # yet. Under its own name rather than worked out from 'how'
                     # again: it is checklist.py's answer, and there is one of it.
@@ -3614,6 +3705,152 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             # text box, so the form offers the devices rather than describing them.
             'ports': hardware.serial_ports(),
         }
+
+    def web_add_polled(
+        self,
+        protocol,
+        address=None,
+        url=None,
+        interval=None,
+        role=None,
+        channel=None,
+        name=None,
+    ):
+        """Set a polled source up, ask it once, and start asking. No restart.
+
+        It is asked before anything is written, so that a wrong address is a message
+        on the page rather than an entry somebody has to take out again. The answer
+        has to be one the named protocol recognises, which is what catches an
+        address that belongs to something else on the network.
+
+        Nothing is identified beyond that. The driver knows which sensor answered
+        because it knows which address it asked, so the source is a finished station
+        the moment it is written down: nothing to learn, nothing to adopt.
+
+        Args:
+            protocol (str): Which protocol reads the answer. It has to be one that
+                is asked rather than waited for.
+            address (str | None): Where the sensor is. The protocol says what to ask
+                it for.
+            url (str | None): The whole URL, for a source that is not at the usual
+                place. Used instead of the address when both are given.
+            interval (float | None): Seconds between questions.
+            role (str | None): MAIN or EXTRA. Default is MAIN.
+            channel (int | None): Which extra channel. One of the free ones is
+                picked when the role is EXTRA and none is given.
+            name (str | None): What to call it. Default is the protocol's name.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        wanted = protocols.by_name(str(protocol or '').strip())
+        if wanted is None or not wanted.fetched:
+            return False, (
+                "'%s' is not a protocol this driver goes and asks." % protocol
+            )
+        name = str(name or wanted.name).strip()
+        if name in self.asking:
+            return False, "There is already a source called '%s'." % name
+        if any(one.name == name for one in self.stations.values()):
+            return False, "There is already a station called '%s'." % name
+        if role == roles.EXTRA and not channel:
+            channel = self._free_channel()
+            if channel is None:
+                return False, (
+                    "Every extra channel from 1 to %d is taken, so there is "
+                    "nowhere for this station's temperature to go." % roles.CHANNELS
+                )
+        block = {'protocol': wanted.name}
+        if url:
+            block['url'] = str(url).strip()
+        else:
+            block['address'] = str(address or '').strip()
+        if interval:
+            block['interval'] = str(interval)
+        block['role'] = role or roles.MAIN
+        if channel:
+            block['channel'] = str(channel)
+
+        try:
+            source = polling.source_for(name, block)
+        except ValueError as e:
+            return False, str(e)
+        ok, message = self._ask_once(source, wanted)
+        if not ok:
+            return False, message
+
+        ok, message = self.overrides.set_polled(name, block)
+        if not ok:
+            return False, message
+
+        self.asking[name] = block
+        self._enable_for({name: block})
+        try:
+            station = self._read_stations(polling.stations({name: block}))
+        except ValueError as e:
+            return False, str(e)
+        self.stations.update(station)
+        # So that the answer is recognised by the path it is delivered on. That
+        # table is built from the stations, and this one was not there when it last
+        # was built.
+        self._apply_overrides()
+        if self.polling is not None:
+            self.polling.adopt(source)
+        self._check_one_main()
+        log.info("'%s' was set up through the web interface and is being asked.", name)
+        return True, message
+
+    def _ask_once(self, source, protocol):
+        """Ask a source once, and say whether the answer was what was expected.
+
+        Args:
+            source (polling.Source): What to ask.
+            protocol (type): The protocol that should recognise the answer.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        try:
+            body, _ = polling._fetch(source)
+        except Exception as e:
+            return False, (
+                "Nothing answered at %s: %s. Nothing has been saved." % (source.url, e)
+            )
+        try:
+            raw = transport.parse(body.decode('utf-8', 'replace'))
+        except Exception as e:
+            return False, "The answer from %s could not be read: %s" % (source.url, e)
+        if not protocol.claims(None, raw):
+            return False, (
+                "Something answered at %s, and it is not a %s. Nothing has been "
+                "saved." % (source.url, protocol.label)
+            )
+        return True, "Asked %s and it answered." % source.url
+
+    def web_remove_polled(self, name):
+        """Stop asking a source, and take the station it is with it.
+
+        Args:
+            name (str): The source's name.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        name = str(name or '').strip()
+        if name not in self.asking:
+            return False, "There is no source called '%s'." % name
+        ok, message = self.overrides.forget_polled(name)
+        if not ok:
+            return False, message
+        block = self.asking.pop(name)
+        ident = 'path:' + polling.path_for(name, block).rstrip('/')
+        self.stations.pop(ident, None)
+        self.known.discard(ident)
+        self._apply_overrides()
+        if self.polling is not None:
+            self.polling.dismiss(name)
+        log.info("'%s' is no longer being asked.", name)
+        return True, message
 
     def web_add_hardware(
         self, station_type, options, role=None, channel=None, name=None

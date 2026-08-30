@@ -53,6 +53,41 @@ INTERFACE = """> **There is a web interface for all of this.** It is on by defau
 # What cannot be read off the protocol class: what is worth knowing before setting one
 # up, and what to look at when nothing arrives.
 WRITTEN = {
+    'purpleair': {
+        'good': """Give the sensor a fixed address in your router, under whatever the
+router calls a reserved lease. A sensor whose address changes stops being found, and
+the log is the only place that says so.
+
+Sixty seconds is a sensible interval. The sensor averages over two minutes anyway, so
+asking every ten buys nothing but traffic on your own network.
+
+Set it up as an extra station. Its thermometer sits inside the housing next to
+electronics that are warm and reads several degrees above the air outside; PurpleAir
+correct it before showing it on their map and this driver does not, because a reading
+adjusted by an amount nobody wrote down is worse than a reading that is plainly the
+inside of a box. As an extra station it lands in `extraTemp`, where nothing mistakes
+it for the air temperature.
+
+Two laser counters means two of every particle reading. The second arrives in its own
+columns rather than being averaged in, because two counters disagreeing is the one
+thing that says a sensor is failing.
+
+No sensor yet? `python -m user.ultimatepush --fake-purpleair` answers like one, and
+the whole of the above can be tried against it first.""",
+        'wrong': """Nothing is recorded and the log says the sensor cannot be reached:
+the address is wrong, or has moved. `curl http://1.2.3.4/json` from this machine
+settles which. It is said once and then the driver stays quiet, so look at the start
+of the log rather than the end.
+
+Something answers and it is refused: whatever is at that address is not a PurpleAir.
+The usual cause is that the address now belongs to something else.
+
+The temperature is too high: it is measured inside the housing. See above.
+
+No temperature, humidity or pressure at all, and the particle counts are fine: the
+BME280 on the board has failed or was never fitted. `hardwarediscovered` in the
+answer names the chips the sensor found.""",
+    },
     'ecowitt': {
         'good': """Choose a path of your own rather than leaving it at `/`. The path is
 what tells this console from the next one, and it is a secret: a PASSKEY can be read
@@ -184,6 +219,21 @@ def minimal(protocol):
     ]
     if protocol.datagram:
         lines.append('    protocols = %s' % protocol.name)
+    if protocol.fetched:
+        # Not a station under [[stations]]: a source under [[polling]], which is
+        # both at once. There is nothing to identify, so there is nothing to say
+        # twice.
+        lines += [
+            '',
+            '    [[polling]]',
+            '        [[[air]]]',
+            '            address = %s' % ADDRESS,
+            '            protocol = %s' % protocol.name,
+            '            interval = 60',
+            '            role = extra',
+            '            channel = 3',
+        ]
+        return '\n'.join(lines)
     lines += ['', '    [[stations]]', '        [[[garden]]]']
     if protocol.secret_kind == 'path':
         lines.append('            path = %s' % PATH)
@@ -227,6 +277,15 @@ ABOUT_MINIMAL = {
     " cannot be written until the station has uploaded once. The log prints it the"
     " first time, ready to copy, and until then the station shows in the web"
     " interface as one waiting to be let in.",
+    # A source that is asked has no identity question at all, so this says what it
+    # does have instead: an address, and a station that is finished when it is
+    # written down.
+    'fetch': "There is nothing to identify and nothing to wait for. The driver knows"
+    " which sensor answered because it knows which address it asked, so the block"
+    " above is the whole of the station: it is recording from the first answer, with"
+    " nothing to adopt and nothing to let in. `role = extra` puts its readings in"
+    " columns of their own, which is what you want for a sensor whose thermometer is"
+    " inside its own housing.",
 }
 
 
@@ -322,9 +381,25 @@ def page(protocol):
         str: The whole page.
     """
     written = WRITTEN[protocol.name]
-    in_auto = 'yes' if not protocol.datagram else 'no, it has to be named'
+    if protocol.fetched:
+        # Not in it and not missing from it: 'auto' is the list of protocols to
+        # listen for, and nothing arrives from this one on its own.
+        in_auto = (
+            'no, and it does not need to be: naming it under `[[polling]]` '
+            'is what switches it on'
+        )
+    elif protocol.datagram:
+        in_auto = 'no, it has to be named'
+    else:
+        in_auto = 'yes'
     early = (
-        'Yes' if protocol.secret_kind in ('path', 'password') else 'No, it is adopted'
+        'Nothing to name: it is asked'
+        if protocol.fetched
+        else (
+            'Yes'
+            if protocol.secret_kind in ('path', 'password')
+            else 'No, it is adopted'
+        )
     )
     lines = [
         '# %s' % protocol.label,
@@ -345,8 +420,19 @@ def page(protocol):
         '| | |',
         '|---|---|',
         '| In `protocols = auto` | %s |' % in_auto,
-        '| Named by | its `%s` |' % protocol.identity[0],
-        '| Can be set up before it uploads | %s |' % early,
+    ]
+    lines += (
+        [
+            '| Named by | the name you give the block |',
+            '| Recording from | its first answer |',
+        ]
+        if protocol.fetched
+        else [
+            '| Named by | its `%s` |' % protocol.identity[0],
+            '| Can be set up before it uploads | %s |' % early,
+        ]
+    )
+    lines += [
         '',
         '## The smallest configuration that works',
         '',
@@ -354,7 +440,11 @@ def page(protocol):
         minimal(protocol),
         '```',
         '',
-        wrap(ABOUT_MINIMAL[protocol.secret_kind]),
+        wrap(
+            ABOUT_MINIMAL['fetch']
+            if protocol.fetched
+            else ABOUT_MINIMAL[protocol.secret_kind]
+        ),
         '',
     ]
     lines += console(protocol)

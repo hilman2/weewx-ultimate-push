@@ -472,6 +472,20 @@ class Site:
         if route == 'forget':
             ok, message = self.driver.web_forget(body.get('ident', ''))
             return _json({'ok': ok, 'message': message})
+        if route == 'polling/add':
+            ok, message = self.driver.web_add_polled(
+                body.get('protocol', ''),
+                address=body.get('address') or None,
+                url=body.get('url') or None,
+                interval=body.get('interval') or None,
+                role=body.get('role') or None,
+                channel=body.get('channel') or None,
+                name=body.get('name') or None,
+            )
+            return _json({'ok': ok, 'message': message})
+        if route == 'polling/remove':
+            ok, message = self.driver.web_remove_polled(body.get('name', ''))
+            return _json({'ok': ok, 'message': message})
         if route == 'hardware/add':
             ok, message = self.driver.web_add_hardware(
                 body.get('station_type', ''),

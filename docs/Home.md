@@ -24,6 +24,7 @@ for understanding the machine behind it. **Development** is for changing it.
 - **[Stations](Stations.md)** — setting one up, roles, and column ownership
 - **[Several stations](Several-stations.md)** — growing the file, and saying which reading comes from which station
 - **[Hosted hardware](Hosted-hardware.md)** — a Vantage or a USB console beside the stations that upload
+- **[Sensors this driver asks](Polled-sources.md)** — a PurpleAir and anything else with a local API
 - **[Database columns](Database-columns.md)** — which columns a station needs, and how to add them
 - **[Configuration](Configuration.md)** — every option, with worked examples
 - **[Diagnostics](Diagnostics.md)** — one command that answers most questions
@@ -39,6 +40,7 @@ Setting each kind up by hand, with everything that is only its own.
 - **[Ambient](Protocol-Ambient.md)**
 - **[Ecowitt](Protocol-Ecowitt.md)**
 - **[Lacrosse](Protocol-Lacrosse.md)**
+- **[PurpleAir](Protocol-Purpleair.md)**
 - **[Weatherflow](Protocol-Weatherflow.md)**
 - **[Wunderground](Protocol-Wunderground.md)**
 
@@ -87,6 +89,7 @@ Generated from the drivers installed here, so they cannot describe a version nob
 | Where does `tf_ch1` go? | [Field map](Field-map.md), and [Ecowitt sensors](Ecowitt-sensors.md) for the full list |
 | The driver says it cannot place a field | [Unknown fields](Unknown-fields.md), then [Reporting a new sensor](New-sensors.md) |
 | I have a second console | [Several stations](Several-stations.md) |
+| I have an air quality sensor | [Sensors this driver asks](Polled-sources.md) |
 | My station is on a cable, not the network | [Hosted hardware](Hosted-hardware.md) |
 | A reading vanishes at the archive interval | [Database columns](Database-columns.md) |
 | This port is on the internet | [Keeping strangers out](Security.md) |

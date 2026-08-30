@@ -681,7 +681,8 @@ function hardwareBody(s) {
   picked = wayKey(one);
   return GROUPS.map(function (g) { return groupOfWays(g, one); }).join('') +
     '<p class="dim">' + esc(one.hardware) + '</p>' +
-    (one.kind === 'driver' ? fetchBody(one) : pointBody(one));
+    (one.kind === 'driver' ? fetchBody(one)
+      : (one.how === 'fetch' ? askBody(one) : pointBody(one)));
 }
 
 function wayKey(one) {
@@ -755,6 +756,30 @@ function fetchBody(one) {
     '">Try it and set it up</button></p>' +
     '<p class="dim">The driver is opened before anything is saved. If the port is ' +
     'not there, nothing is written and the reason is shown here.</p>' + roleNote();
+}
+
+function askBody(one) {
+  /* Hardware with nowhere to type an address into. Nothing is set on it at all, so
+     the whole of the form is where to find it and how often to ask. And that is the
+     whole of the station too: what answered is what was asked, so there is nothing
+     to recognise, nothing to learn and nothing to let in afterwards. */
+  return '<table class="settings">' +
+    '<tr><th>address</th><td><input data-askaddr placeholder="1.2.3.4" size="24">' +
+    '</td></tr>' +
+    '<tr><th>asked every</th><td><input data-askevery value="60" size="5"> seconds' +
+    '</td></tr>' +
+    '<tr><th>role</th><td>' + hostedRoleSelect(mainStation() ? 'extra' : 'main') +
+    '</td></tr>' +
+    '<tr><th>name</th><td><input data-askname value="' + esc(one.name) + '"></td>' +
+    '</tr></table>' +
+    (one.notes || []).map(function (note) {
+      return '<p class="dim">' + esc(note) + '</p>';
+    }).join('') +
+    '<p><button class="act" data-askadd="' + esc(one.name) +
+    '">Ask it and set it up</button></p>' +
+    '<p class="dim">It is asked once before anything is saved. If nothing answers ' +
+    'at that address, or something answers that is not a ' + esc(one.label) +
+    ', nothing is written and the reason is shown here.</p>' + roleNote();
 }
 
 function driverForm(fields, values, ports, attribute, about) {
@@ -1385,6 +1410,20 @@ document.addEventListener('click', function (e) {
     // Back to whatever the list has, rather than to a value the list does not.
     delete formValues[t.dataset.relist];
     draw();
+    return;
+  }
+  if (t.dataset.askadd) {
+    api('polling/add', {
+      protocol: t.dataset.askadd,
+      address: (document.querySelector('[data-askaddr]') || {}).value || '',
+      interval: (document.querySelector('[data-askevery]') || {}).value || '',
+      role: hostedRole(),
+      name: (document.querySelector('[data-askname]') || {}).value || null
+    }).then(hostedThen);
+    return;
+  }
+  if (t.dataset.askremove) {
+    api('polling/remove', { name: t.dataset.askremove }).then(hostedThen);
     return;
   }
   if (t.dataset.hostedadd) {

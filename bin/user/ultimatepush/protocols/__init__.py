@@ -210,7 +210,19 @@ class Protocol:
     #                only a DNS entry on the network can move it.
     #   'broadcast'  there is nothing to set at all. It talks to the whole network
     #                segment and this driver listens.
+    #   'fetch'      it does not send anything anywhere. It answers a question, and
+    #                this driver asks it on a schedule. What is needed is its
+    #                address, and nothing at all is set on the hardware.
     reached = 'point'
+
+    # Whether this protocol is asked rather than waited for. One that is asked opens
+    # no socket and never claims an upload that arrived on its own, so it is out of
+    # 'auto': it is configured under [[polling]] or it does nothing.
+    fetched = False
+
+    # What to ask for, appended to the address somebody gives. Only a fetched
+    # protocol has one.
+    fetch_path = ''
 
     # The catalog, as class attributes, for a protocol with only one dialect.
     fields = {}  # type: Dict[str, str]
@@ -301,7 +313,15 @@ def registry():
     reported against itself, and so that a tool that only wants the base class does
     not drag in six catalogs.
     """
-    from . import acurite, ambient, ecowitt, lacrosse, weatherflow, wunderground
+    from . import (
+        acurite,
+        ambient,
+        ecowitt,
+        lacrosse,
+        purpleair,
+        weatherflow,
+        wunderground,
+    )
 
     return [
         # Order decides a tie, and a tie means two protocols were equally sure. The
@@ -312,6 +332,7 @@ def registry():
         lacrosse.LW30x,
         wunderground.WeatherUnderground,
         weatherflow.WeatherFlow,
+        purpleair.PurpleAir,
     ]
 
 
@@ -320,9 +341,24 @@ def posting():
 
     These are what 'protocols = auto' listens for. A protocol that broadcasts needs a
     second socket on a port of its own, and opening one for hardware nobody has is
-    not something to do by default, so it is named or it is off.
+    not something to do by default, so it is named or it is off. A protocol that is
+    asked rather than waited for is out for a different reason: nothing arrives on
+    its own, so listening for it could only ever match somebody else's upload.
     """
-    return [protocol for protocol in registry() if not protocol.datagram]
+    return [
+        protocol
+        for protocol in registry()
+        if not protocol.datagram and not protocol.fetched
+    ]
+
+
+def fetched():
+    """The protocols this driver goes and asks.
+
+    Returns:
+        list: The protocol classes that are polled rather than listened for.
+    """
+    return [protocol for protocol in registry() if protocol.fetched]
 
 
 def by_name(name):

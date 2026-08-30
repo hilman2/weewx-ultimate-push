@@ -280,6 +280,66 @@ class Store:
             self._keep_order(held)
             return self._save()
 
+    def polled(self):
+        """The sources this file says to go and ask.
+
+        Returns:
+            dict: Source name to its settings, in the shape a `[[polling]]` block
+            takes: what to ask and how often, and the role and channel of the
+            station it is.
+        """
+        held = self.settings.get('polling', {})
+        return {
+            name: dict(value) for name, value in held.items() if isinstance(value, dict)
+        }
+
+    def set_polled(self, name, settings):
+        """Record a source to ask, or change one.
+
+        Unlike a console, a polled source needs nothing recognised: the driver knows
+        what answered because it knows what it asked. So one block holds the whole
+        of it, and this writes that block rather than merging one setting at a time.
+
+        Args:
+            name (str): What to call it. A section heading, so it is checked as one.
+            settings (dict): What to ask and what station it is.
+
+        Returns:
+            tuple: (ok, message), where the message is the path written or the
+            reason nothing was.
+        """
+        with self.lock:
+            clean = _as_name(name)
+            if not clean:
+                return False, (
+                    "A name may hold letters, digits, dashes and underscores."
+                )
+            if not settings.get('url') and not settings.get('address'):
+                return False, "A source needs an address to ask, or a whole url."
+            held = self.settings.setdefault('polling', {})
+            held[clean] = {
+                str(key): str(value)
+                for key, value in settings.items()
+                if str(value) != ''
+            }
+            return self._save()
+
+    def forget_polled(self, name):
+        """Stop asking a source, and take the station it was with it.
+
+        Args:
+            name (str): The source's name.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        with self.lock:
+            held = self.settings.get('polling', {})
+            if name not in held:
+                return False, "This file does not have that source."
+            del held[name]
+            return self._save()
+
     def set_hardware_order(self, types):
         """Say which hosted driver answers for the archive.
 

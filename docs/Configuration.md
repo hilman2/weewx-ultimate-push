@@ -263,6 +263,56 @@ Required when `role = extra`. Default is none.
 What to call the station in the log and in the web interface. Default is the section
 name.
 
+## Sensors this driver asks
+
+Hardware with nowhere to type a server address into, fetched on a schedule. One block
+is the whole of it: what to ask, how often, and what station it is. See
+[Sensors this driver asks](Polled-sources.md).
+
+```ini
+[UltimatePush]
+    [[polling]]
+        [[[air]]]
+            address = 1.2.3.4
+            protocol = purpleair
+            interval = 60
+            role = extra
+            channel = 3
+```
+
+There is no matching block under `[[stations]]` and there is nothing to let in. The
+driver knows which sensor answered because it knows which address it asked.
+
+#### address
+
+Where the sensor is. The protocol says what to ask it for, so this is a host or an
+address and nothing more. Required, unless `url` is given.
+
+#### url
+
+The whole URL, for a sensor that answers somewhere other than the usual place. Used
+instead of `address`. Default is none.
+
+#### protocol
+
+How to read the answer. Naming it here also switches it on, so it does not have to be
+added to `protocols` as well. Required when `address` is used, because that is what
+says what to ask for.
+
+#### interval
+
+Seconds between one answer and the next question. Default is 60, and 5 is the shortest
+allowed.
+
+#### timeout
+
+Seconds to wait for an answer before treating the sensor as away. Default is 10.
+
+#### role, channel, name, field_map_extensions
+
+Exactly as under `[[stations]]`, and meaning the same. The block name is the station
+name unless `name` says otherwise.
+
 ## What the web interface does not write here
 
 Settings made in the web interface never reach `weewx.conf`. They go to

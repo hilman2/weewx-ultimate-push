@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+**Hardware that answers, rather than sends.** A PurpleAir cannot be pointed at
+anything. It has no field for a server address, because it was never meant to send:
+it sits on the network and answers whoever asks. So does a Davis AirLink, and most of
+what is sold with a local API. None of it could be recorded here, because this driver
+only listened.
+
+Now it asks. `[[polling]]` names an address, how often to ask, and which protocol
+reads the answer, and after that nothing is different: the same detection, the same
+catalog, the same field map, the same rule about which station owns which column. A
+protocol becomes pollable by saying `fetched = True`, and everything it already had
+keeps working.
+
+One block is the whole of it. A polled source is the one kind of station that needs
+nothing recognised, because the driver knows which sensor answered: it knows which
+address it asked. So there is no second block naming it, nothing learned on a first
+answer, and nothing waiting to be let in. The role and the channel go in the same
+block.
+
+```ini
+[UltimatePush]
+    [[polling]]
+        [[[air]]]
+            address = 1.2.3.4
+            protocol = purpleair
+            interval = 60
+            role = extra
+            channel = 3
+```
+
+PurpleAir is the first, PA-II and PA-I, over the sensor's own `/json`. Its
+temperature is measured inside the housing next to electronics that are warm and
+reads several degrees high; nothing here corrects it, and `role = extra` puts it in a
+column where it cannot be mistaken for the air temperature. Its two laser counters
+each get their own columns rather than being averaged, because two counters
+disagreeing is the one thing that says a sensor is failing.
+
+It can also be set up in the web interface, under *This machine reads it*, beside the
+hardware on a cable. It is asked once before anything is saved, so a wrong address is
+a message on the screen rather than something to undo.
+
+**A sensor to try it against.** `python -m user.ultimatepush --fake-purpleair` answers
+like one, on the loopback, with readings that move. It is the one kind of station
+nobody could try before owning the hardware. The tests read the same answer, so what
+is shipped and what is known to work are one thing.
+
 **A path is enough to set a station up.** Setting one up by hand asked for the
 `passkey` its console sends, which nobody knows before that console has uploaded. So
 the documented way of doing it could not be followed, and the one thing a path is for,

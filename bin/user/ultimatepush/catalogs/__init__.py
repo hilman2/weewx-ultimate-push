@@ -23,8 +23,25 @@ to generate from:
     weatherflow   from WeatherFlow's UDP reference, which is current and public
     acurite       from frames captured off a bridge, by way of the interceptor driver
     lacrosse      likewise, off an LW301
+    purpleair     from the answer the sensor's own web server gives
 """
 
-from . import acurite, ambient, ecowitt, lacrosse, weatherflow, wunderground
+from . import (
+    acurite,
+    ambient,
+    ecowitt,
+    lacrosse,
+    purpleair,
+    weatherflow,
+    wunderground,
+)
 
-__all__ = ['acurite', 'ambient', 'ecowitt', 'lacrosse', 'weatherflow', 'wunderground']
+__all__ = [
+    'acurite',
+    'ambient',
+    'ecowitt',
+    'lacrosse',
+    'purpleair',
+    'weatherflow',
+    'wunderground',
+]

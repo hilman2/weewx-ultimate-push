@@ -162,13 +162,33 @@ def test_the_unit_systems_are_the_numbers_weewx_uses():
 
 
 def test_every_protocol_says_how_it_is_reached():
-    """Three ways, and each protocol declares which.
+    """Four ways, and each protocol declares which.
 
     The web interface groups the hardware by this, because it is the first thing
     somebody has to do and the only thing they have to decide before anything else.
     """
     for protocol in protocols.registry():
-        assert protocol.reached in ('point', 'redirect', 'broadcast'), protocol.name
+        assert protocol.reached in (
+            'point',
+            'redirect',
+            'broadcast',
+            'fetch',
+        ), protocol.name
+
+
+def test_only_a_fetched_protocol_says_what_to_ask_for():
+    """'fetch' and 'fetched' are two halves of one fact and must not part.
+
+    One decides where the interface puts the hardware and the other decides whether
+    a socket is opened for it. A protocol that had one without the other would be
+    offered under 'we go and ask it' and then never asked.
+    """
+    for protocol in protocols.registry():
+        assert protocol.fetched == (protocol.reached == 'fetch'), protocol.name
+        if protocol.fetched:
+            assert protocol.fetch_path, (
+                "%s is asked and does not say what to ask for" % protocol.name
+            )
 
 
 def test_nothing_to_type_in_means_it_cannot_be_pointed_here():

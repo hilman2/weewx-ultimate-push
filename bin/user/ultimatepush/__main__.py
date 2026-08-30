@@ -90,6 +90,15 @@ def main(argv=None):
         help="Print a secret to put in the configuration and nothing else. "
         "Default length %d." % SECRET_LENGTH,
     )
+    parser.add_argument(
+        '--fake-purpleair',
+        nargs='?',
+        const=8081,
+        type=int,
+        metavar='PORT',
+        help="Answer like a PurpleAir sensor on this port, so that a polled source "
+        "can be tried without owning one. Default port 8081.",
+    )
     parser.add_argument('--port', default=8000, help="Port to listen on. Default 8000.")
     parser.add_argument('--address', default='', help="Address to bind to.")
     parser.add_argument('--path', help="Accept this path only.")
@@ -134,6 +143,11 @@ def main(argv=None):
     if args.secret is not None:
         print(make_secret(args.secret))
         return 0
+
+    if args.fake_purpleair is not None:
+        from .simulate import serve
+
+        return serve(args.fake_purpleair)
 
     if args.url:
         return _say_url(args.config)
