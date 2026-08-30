@@ -100,6 +100,15 @@ def main(argv=None):
         "can be tried without owning one. Default port 8081.",
     )
     parser.add_argument(
+        '--fake-airlink',
+        nargs='?',
+        const=8082,
+        type=int,
+        metavar='PORT',
+        help="Answer like a Davis AirLink on this port, so that a polled source "
+        "can be tried without owning one. Default port 8082.",
+    )
+    parser.add_argument(
         '--fake-rtl433',
         nargs='?',
         const=1433,
@@ -157,6 +166,16 @@ def main(argv=None):
         from .simulate import serve
 
         return serve(args.fake_purpleair)
+
+    if args.fake_airlink is not None:
+        from .simulate import airlink_answer, serve
+
+        return serve(
+            args.fake_airlink,
+            answer=airlink_answer,
+            what='airlink',
+            at='/v1/current_conditions',
+        )
 
     if args.fake_rtl433 is not None:
         from .simulate import send_rtl433

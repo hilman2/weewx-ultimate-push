@@ -100,6 +100,7 @@ class UltimatePushInstaller(ExtensionInstaller):
                     [
                         'bin/user/ultimatepush/catalogs/__init__.py',
                         'bin/user/ultimatepush/catalogs/acurite.py',
+                        'bin/user/ultimatepush/catalogs/airlink.py',
                         'bin/user/ultimatepush/catalogs/ambient.py',
                         'bin/user/ultimatepush/catalogs/ecowitt.py',
                         'bin/user/ultimatepush/catalogs/lacrosse.py',
@@ -114,6 +115,7 @@ class UltimatePushInstaller(ExtensionInstaller):
                     [
                         'bin/user/ultimatepush/protocols/__init__.py',
                         'bin/user/ultimatepush/protocols/acurite.py',
+                        'bin/user/ultimatepush/protocols/airlink.py',
                         'bin/user/ultimatepush/protocols/purpleair.py',
                         'bin/user/ultimatepush/protocols/rtl433.py',
                         'bin/user/ultimatepush/protocols/ambient.py',

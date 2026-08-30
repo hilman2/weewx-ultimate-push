@@ -496,3 +496,112 @@ def test_the_simulator_stays_within_reason():
         assert 0 <= answer['current_humidity'] <= 100
         assert 0 <= answer['pm2_5_atm'] <= 60
         assert 0 <= answer['pm2.5_aqi'] <= 200
+
+
+# ---- a sensor whose readings are two levels down ----------------------------
+
+
+AIRLINK = simulate.airlink_answer(AT)
+
+
+def test_a_davis_answer_is_unwrapped():
+    """Davis puts the readings in the first entry of a conditions list.
+
+    Everything above that says which device answered. The rest of the driver sees
+    one flat set of names, the same as for every other protocol, because unwrapping
+    is what a protocol's readings() is for.
+    """
+    from ultimatepush.protocols.airlink import AirLink
+
+    assert AirLink.claims(None, AIRLINK) == 5
+    assert AirLink.station_of(AIRLINK) == simulate.AIRLINK_DID
+    named = AirLink.readings(None, AIRLINK)
+    assert 'conditions' not in named
+    assert named['temp'] == AIRLINK['data']['conditions'][0]['temp']
+    # What is above the readings comes with them, because it names the device.
+    assert named['did'] == simulate.AIRLINK_DID
+
+
+def test_another_davis_device_is_not_read_with_this_catalog():
+    """A WeatherLink Live speaks the same API and sends a different shape.
+
+    Reading its conditions with this catalog would place a handful of names and
+    drop the rest, and nothing would say so.
+    """
+    from ultimatepush.protocols.airlink import AirLink
+
+    assert (
+        AirLink.claims(
+            None,
+            {'data': {'did': 'x', 'conditions': [{'data_structure_type': 1}]}},
+        )
+        == 0
+    )
+    assert AirLink.claims(None, {'data': {'did': 'x'}}) == 0
+    assert AirLink.claims(None, {'SensorId': 'a', 'pm2_5_atm': 1.0}) == 0
+
+
+def test_an_airlink_records_through_the_whole_driver(tmp_path):
+    """One block of configuration, and a loop packet out of the far end."""
+    pytest.importorskip('weewx', reason="WeeWX is not installed")
+    from ultimatepush.driver import UltimatePushDriver
+
+    sensor = Sensor(json.dumps(AIRLINK).encode('utf-8'))
+    driver = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        weewx_root=str(tmp_path),
+        polling={
+            'air': {
+                'url': sensor.url,
+                'protocol': 'airlink',
+                'interval': '5',
+                'role': 'extra',
+                'channel': '4',
+            }
+        },
+    )
+    try:
+        got = []
+
+        def pull():
+            for packet in driver.genLoopPackets():
+                got.append(packet)
+                return
+
+        reader = threading.Thread(target=pull, daemon=True)
+        reader.start()
+        reader.join(20)
+        assert got, "nothing came out of the driver"
+        packet = got[0]
+        assert packet['station'] == 'air'
+        first = AIRLINK['data']['conditions'][0]
+        assert packet['extraTemp4'] == pytest.approx(first['temp'])
+        assert packet['extraHumid4'] == pytest.approx(first['hum'])
+        assert packet['pm2_5'] == pytest.approx(first['pm_2p5'])
+        assert packet['pm10_0'] == pytest.approx(first['pm_10'])
+        # Fahrenheit and micrograms per cubic metre, which is what Davis sends.
+        assert packet['usUnits'] == 1
+    finally:
+        driver.closePort()
+        sensor.close()
+
+
+def test_the_address_alone_is_enough_for_an_airlink():
+    """Davis fixes the path, so nobody has to know it."""
+    from ultimatepush.protocols.airlink import AirLink
+
+    poller = polling.build({'air': {'address': '1.2.3.4', 'protocol': 'airlink'}})
+    try:
+        assert poller.sources[0].url == 'http://1.2.3.4' + AirLink.fetch_path
+    finally:
+        poller.close()
+
+
+def test_the_pretend_airlink_stays_within_reason():
+    for step in range(0, 86400, 337):
+        first = simulate.airlink_answer(AT + step)['data']['conditions'][0]
+        assert 50 <= first['temp'] <= 95
+        assert 0 <= first['hum'] <= 100
+        assert 0 <= first['pm_2p5'] <= 60
+        assert isinstance(first['pm_2p5_last'], int)

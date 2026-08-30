@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+**Davis AirLink.** The one thing Vince Skahan named in
+[weewx#1124](https://github.com/weewx/weewx/issues/1124) that this driver could not
+read. He queries his with Home Assistant because there was no way to get it into
+WeeWX beside everything else.
+
+It is asked like a PurpleAir, but its answer is not flat: Davis wraps every local
+API reply in `data.conditions[0]`, and that is unwrapped in the protocol so the rest
+of the driver sees one set of names like every other. The wrapper also carries the
+device id, which is what the page shows.
+
+Nothing is stamped from the device's own clock, though it sends two of them.
+`last_report_time` is seconds since boot on some firmware rather than an epoch,
+which weewx-airlink found the hard way. The driver's clock is within one interval of
+the reading, because it just asked.
+
+A WeatherLink Live speaks the same API and sends a different shape. It is turned
+away rather than read with this catalog, which would place a handful of names and
+drop the rest.
+
+`python -m user.ultimatepush --fake-airlink` answers like one.
+
+**The front page lists every driver WeeWX ships**, with what each one reads and how
+it is reached, each linking to its own generated page.
+
 ## 0.15.0
 
 **Cheap radio sensors, by way of rtl_433.** A twenty-five euro USB stick hears

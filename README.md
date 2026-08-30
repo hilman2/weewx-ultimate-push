@@ -89,6 +89,7 @@ port. See [Web interface](https://github.com/hilman2/weewx-ultimate-push/wiki/We
 | Acurite | smartHUB and Access, with a 5-in-1, towers, Pro sensors, the 899 gauge | POST, requires a DNS entry |
 | LaCrosse | LW301 and LW302 gateways | POST, requires a DNS entry |
 | PurpleAir | PA-II, PA-II-SD and PA-I | asked over HTTP, on a schedule |
+| Davis AirLink | AirLink | asked over HTTP, on a schedule |
 | rtl_433 | any 433, 868 or 915 MHz sensor it decodes | UDP from rtl_433, which does the radio |
 
 Every device by name, with what it takes to reach each one, is in
@@ -119,6 +120,29 @@ Its own section is read by its own loader, so `weectl device` is unaffected. Wit
 `record_generation = hardware` the archive record comes from that station's logger, and
 what the other stations sent during the period is added to it.
 
+Every driver WeeWX ships, with a page each generated from the driver as installed, so
+none of them can describe a version nobody has:
+
+| Driver | Hardware | Reached |
+|---|---|---|
+| [Vantage](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-Vantage) | Davis Vantage Pro, Pro2 and Vue | a cable, or the network |
+| [AcuRite](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-AcuRite) | AcuRite consoles with a USB port | USB |
+| [CC3000](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-CC3000) | RainWise CC3000 data logger | a cable |
+| [FineOffsetUSB](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-FineOffsetUSB) | Fine Offset WH1080 and its rebadges: Ambient, Elecsa, Maplin, Watson | USB |
+| [TE923](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-TE923) | Hideki TE923 and its rebadges: Meade, Irox, Mebus, Honeywell | USB |
+| [Ultimeter](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-Ultimeter) | Peet Bros Ultimeter, except the Ultimeter II | a cable |
+| [WMR100](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-WMR100) | Oregon Scientific WMR100 and WMR200 | USB |
+| [WMR300](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-WMR300) | Oregon Scientific WMR300 | USB |
+| [WMR9x8](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-WMR9x8) | Oregon Scientific WM-918, WMR9x8 and WMR-968 | a cable |
+| [WS1](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-WS1) | ADS WS1 | a cable, or the network |
+| [WS23xx](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-WS23xx) | La Crosse WS-23xx | a cable |
+| [WS28xx](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-WS28xx) | La Crosse WS-28xx | a USB transceiver |
+| [Simulator](https://github.com/hilman2/weewx-ultimate-push/wiki/Driver-Simulator) | none, it makes its readings up | nothing |
+
+Anything installed as an extension works the same way and gets a page of its own when
+the pages are generated on that machine. MQTTSubscribe, weewx-sdr, weewx-rtldavis and
+weatherflow-udp are tested against this driver at stated commits.
+
 See [Hosted hardware](https://github.com/hilman2/weewx-ultimate-push/wiki/Hosted-hardware).
 
 ## Hardware that answers rather than sends
@@ -142,7 +166,15 @@ answered because it knows which address it asked.
             channel = 3
 ```
 
-No sensor yet? `python -m user.ultimatepush --fake-purpleair` answers like one.
+Two so far, and both are air quality sensors because that is what tends to be sold
+with a local API and no way to point it anywhere.
+
+| `purpleair` | PurpleAir PA-II, PA-II-SD, PA-I |
+|---|---|
+| `airlink` | Davis AirLink |
+
+No sensor yet? `python -m user.ultimatepush --fake-purpleair` and
+`--fake-airlink` answer like one each.
 
 See [Sensors this driver asks](https://github.com/hilman2/weewx-ultimate-push/wiki/Polled-sources).
 

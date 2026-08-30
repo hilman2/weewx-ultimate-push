@@ -53,6 +53,40 @@ INTERFACE = """> **There is a web interface for all of this.** It is on by defau
 # What cannot be read off the protocol class: what is worth knowing before setting one
 # up, and what to look at when nothing arrives.
 WRITTEN = {
+    'airlink': {
+        'good': """Give the sensor a fixed address in your router, under whatever the
+router calls a reserved lease. One whose address changes stops being found, and the
+log is the only place that says so.
+
+Sixty seconds is a sensible interval. The device averages over longer than that
+anyway, and the readings that matter are the averages.
+
+Set it up as an extra station. Its thermometer is inside the housing and reads above
+the air outside, by less than a PurpleAir's but by enough to matter. As an extra
+station it lands in `extraTemp`, where nothing mistakes it for the air temperature.
+
+Two kinds of particle reading arrive and they are not the same thing. `pm_2p5` and
+its relatives are averages the device worked out; `pm_2p5_last` is the last raw count
+from the laser. Both are recorded, in columns of their own, and the averages are what
+the device is for. `pct_pm_data_*` says how much of each averaging window actually had
+data in it: below about 90 the average over it is worth less than it looks.
+
+The readings are Fahrenheit and micrograms per cubic metre, which is what Davis sends
+and what WeeWX keeps those columns in when it is reading US. Nothing is converted.
+
+No sensor yet? `python -m user.ultimatepush --fake-airlink` answers like one.""",
+        'wrong': """Nothing is recorded and the log says the sensor cannot be
+reached: the address is wrong, or has moved. `curl http://1.2.3.4/v1/current_conditions`
+from this machine settles which. It is said once and then the driver stays quiet, so
+look at the start of the log rather than the end.
+
+Something answers and it is refused. Another Davis device speaks this same API and
+sends a different shape of reading, a WeatherLink Live in particular. Reading one of
+those with this catalog would place a handful of names and drop the rest, so it is
+turned away instead.
+
+The temperature is too high. It is measured inside the housing. See above.""",
+    },
     'rtl433': {
         'good': """rtl_433 is a separate program and none of it is part of this
 driver. Install it, and have it send here:

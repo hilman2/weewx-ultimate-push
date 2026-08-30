@@ -48,6 +48,7 @@ SIDEBAR = """* [Home](Home)
 ### One page per protocol
 
 * [Acurite](Protocol-Acurite)
+* [Davis AirLink](Protocol-Airlink)
 * [Ambient](Protocol-Ambient)
 * [Ecowitt](Protocol-Ecowitt)
 * [Lacrosse](Protocol-Lacrosse)

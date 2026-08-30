@@ -325,6 +325,7 @@ def registry():
     """
     from . import (
         acurite,
+        airlink,
         ambient,
         ecowitt,
         lacrosse,
@@ -345,6 +346,7 @@ def registry():
         weatherflow.WeatherFlow,
         rtl433.Rtl433,
         purpleair.PurpleAir,
+        airlink.AirLink,
     ]
 
 

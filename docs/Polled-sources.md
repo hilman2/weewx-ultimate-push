@@ -76,9 +76,10 @@ long for anything on your own network.
 | Protocol | Hardware | Page |
 |---|---|---|
 | `purpleair` | PurpleAir PA-II, PA-II-SD and PA-I | [PurpleAir](Protocol-Purpleair.md) |
+| `airlink` | Davis AirLink | [Davis AirLink](Protocol-Airlink.md) |
 
-One so far. Adding another is a catalog and a protocol class, both small, and the
-asking is already written. See [New sensors](New-sensors.md).
+Adding another is a catalog and a protocol class, both small, and the asking is
+already written. See [New sensors](New-sensors.md).
 
 ## Trying it without the hardware
 
@@ -86,13 +87,17 @@ A sensor that has to be asked is the one kind of station nobody can try before t
 own it. A console that uploads can be imitated with `curl` and hardware on a cable
 has the WeeWX simulator; there is nothing to ask when there is nothing there.
 
-So there is one to ask:
+So there is one of each to ask:
 
 ```bash
 python -m user.ultimatepush --fake-purpleair
 ```
 
-It answers on port 8081, like a PurpleAir, with readings that move. Point a source at
+```bash
+python -m user.ultimatepush --fake-airlink
+```
+
+They answer on ports 8081 and 8082, with readings that move. Point a source at
 `127.0.0.1:8081` and the whole of this page can be walked through before the real
 sensor arrives.
 
@@ -102,8 +107,9 @@ An air quality sensor sends particle counts nothing else sends, and a temperatur
 that fights with your weather station for `outTemp`.
 
 The particle counts have nowhere to collide, so they arrive as themselves:
-`pm1_0`, `pm2_5`, `pm10_0`, and the same three again for the sensor's second laser
-counter. WeeWX has columns for the first three; the rest need adding, and
+`pm1_0`, `pm2_5`, `pm10_0`, and more besides. A PurpleAir has two laser counters and
+sends both, and an AirLink sends averages over an hour, three hours and a day beside
+the current reading. WeeWX has columns for the first three; the rest need adding, and
 [Database columns](Database-columns.md) says how.
 
 The temperature and humidity are the reason for `role = extra`. On a PurpleAir the

@@ -24,11 +24,13 @@ to generate from:
     acurite       from frames captured off a bridge, by way of the interceptor driver
     lacrosse      likewise, off an LW301
     purpleair     from the answer the sensor's own web server gives
+    airlink       from Davis's own local API description
     rtl433        from rtl_433's own DATA_FORMAT.md and its decoders
 """
 
 from . import (
     acurite,
+    airlink,
     ambient,
     ecowitt,
     lacrosse,
@@ -40,6 +42,7 @@ from . import (
 
 __all__ = [
     'acurite',
+    'airlink',
     'ambient',
     'ecowitt',
     'lacrosse',

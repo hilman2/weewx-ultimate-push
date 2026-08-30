@@ -13,16 +13,18 @@ there is no receiver.
 So there is one of each here.
 
     python -m user.ultimatepush --fake-purpleair 8081
+    python -m user.ultimatepush --fake-airlink 8082
 
-answers like a PurpleAir at `http://127.0.0.1:8081/json`, for a `[[polling]]` source
-to be pointed at.
+each answer like the sensor they are named after, for a `[[polling]]` source to be
+pointed at. The AirLink wraps its readings the way Davis wraps everything, which is
+the part of that protocol worth exercising.
 
     python -m user.ultimatepush --fake-rtl433 1433
 
 sends what rtl_433 sends, three sensors at a time, one of them a neighbour's,
 because letting in the ones that are yours is the part worth trying out.
 
-The tests read the same two, so what is shipped and what is known to work are one
+The tests read the same three, so what is shipped and what is known to work are one
 thing rather than two that can drift apart.
 
 Nothing here is a model of anything. The numbers wander around plausible values so
@@ -143,24 +145,32 @@ def _stamp(seconds):
     return time.strftime('%Y/%m/%dT%H:%M:%Sz', time.gmtime(seconds))
 
 
-def serve(port, address='127.0.0.1'):
-    """Answer like a PurpleAir until interrupted.
+def serve(port, address='127.0.0.1', answer=None, what='purpleair', at='/json'):
+    """Answer like a sensor with a local API, until interrupted.
 
     Args:
         port (int): The port to listen on.
         address (str): The address to bind to. The loopback by default, because a
             sensor that does not exist has no business being on the network.
+        answer (Callable[[float], dict] | None): Called as ``answer(seconds)``.
+            Returns what the sensor says at that moment. A PurpleAir's when nothing
+            is given.
+        what (str): The protocol to name in the lines printed at startup.
+        at (str): The path the real one answers on, for the same lines.
 
     Returns:
         int: The exit status, which is 0 unless the port could not be had.
     """
     import time
 
+    if answer is None:
+        answer = purpleair_answer
+
     class Handler(http.server.BaseHTTPRequestHandler):
         """Answers anything with the same reading, which is what the real one does."""
 
         def do_GET(self):
-            body = json.dumps(purpleair_answer(time.time())).encode('utf-8')
+            body = json.dumps(answer(time.time())).encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(body)))
@@ -177,14 +187,14 @@ def serve(port, address='127.0.0.1'):
         print("Cannot listen on %s:%d: %s" % (address, port, e))
         return 1
     print(
-        "Answering like a PurpleAir at http://%s:%d/json\n"
+        "Answering like a %s at http://%s:%d%s\n"
         "Point a source at it:\n"
         "\n"
         "    [[polling]]\n"
         "        [[[air]]]\n"
         "            address = %s:%d\n"
-        "            protocol = purpleair\n"
-        "            interval = 10\n" % (address, port, address, port)
+        "            protocol = %s\n"
+        "            interval = 10\n" % (what, address, port, at, address, port, what)
     )
     try:
         server.serve_forever()
@@ -340,3 +350,81 @@ def send_rtl433(port, address='127.0.0.1', every=10.0, rounds=None):
     finally:
         out.close()
     return 0
+
+
+# ---- a Davis AirLink that is not there --------------------------------------
+
+# What the device calls itself. Davis prints this on the back of the case; this one
+# is deliberately not a real one.
+AIRLINK_DID = '001D0A000000'
+
+# What each reading sits at, how far it wanders, and over how long. Fahrenheit and
+# micrograms per cubic metre, which is what an AirLink reports.
+AIRLINK_WANDERS = {
+    'temp': (71.6, 6.0, 950.0),
+    'hum': (44.2, 12.0, 1150.0),
+    'dew_point': (48.9, 5.0, 1350.0),
+    'wet_bulb': (57.4, 4.0, 1250.0),
+    'heat_index': (70.6, 6.0, 950.0),
+    'pm_1': (4.1, 2.5, 320.0),
+    'pm_2p5': (7.2, 4.0, 440.0),
+    'pm_10': (8.0, 4.5, 560.0),
+}
+
+
+def airlink_answer(seconds):
+    """What a Davis AirLink says, at one moment.
+
+    Wrapped the way Davis wraps every local API answer, because unwrapping that is
+    the part of this protocol worth exercising.
+
+    Args:
+        seconds (float): The time, in seconds.
+
+    Returns:
+        dict: The answer, as /v1/current_conditions gives it.
+    """
+    conditions = {
+        'lsid': 405284,
+        'data_structure_type': 6,
+        'last_report_time': int(seconds),
+    }  # type: Dict[str, Any]
+    for name, (middle, spread, period) in AIRLINK_WANDERS.items():
+        conditions[name] = _wander(seconds, middle, spread, period)
+    # The last raw count from the laser is an integer, and the averages are not.
+    for name, source in (
+        ('pm_1_last', 'pm_1'),
+        ('pm_2p5_last', 'pm_2p5'),
+        ('pm_10_last', 'pm_10'),
+    ):
+        conditions[name] = int(round(conditions[source]))
+    # The longer averages, each a little flatter than the one before it, which is
+    # what averaging over longer does.
+    for name, source, pull in (
+        ('pm_2p5_last_1_hour', 'pm_2p5', 0.15),
+        ('pm_2p5_last_3_hours', 'pm_2p5', 0.3),
+        ('pm_2p5_last_24_hours', 'pm_2p5', 0.6),
+        ('pm_2p5_nowcast', 'pm_2p5', 0.1),
+        ('pm_10_last_1_hour', 'pm_10', 0.15),
+        ('pm_10_last_3_hours', 'pm_10', 0.3),
+        ('pm_10_last_24_hours', 'pm_10', 0.6),
+        ('pm_10_nowcast', 'pm_10', 0.1),
+    ):
+        middle = AIRLINK_WANDERS[source][0]
+        conditions[name] = round(conditions[source] * (1.0 - pull) + middle * pull, 2)
+    for name in (
+        'pct_pm_data_last_1_hour',
+        'pct_pm_data_last_3_hours',
+        'pct_pm_data_last_24_hours',
+        'pct_pm_data_nowcast',
+    ):
+        conditions[name] = 100
+    return {
+        'data': {
+            'did': AIRLINK_DID,
+            'name': 'pretend AirLink',
+            'ts': int(seconds),
+            'conditions': [conditions],
+        },
+        'error': None,
+    }
