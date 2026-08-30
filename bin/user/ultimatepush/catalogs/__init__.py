@@ -25,6 +25,7 @@ to generate from:
     lacrosse      likewise, off an LW301
     purpleair     from the answer the sensor's own web server gives
     airlink       from Davis's own local API description
+    homeassistant from Home Assistant's own device classes and units
     rtl433        from rtl_433's own DATA_FORMAT.md and its decoders
 
 `ecowitt_gateway` is written out too, from Ecowitt's own TCP API document. It is
@@ -38,6 +39,7 @@ from . import (
     ambient,
     ecowitt,
     ecowitt_gateway,
+    homeassistant,
     lacrosse,
     purpleair,
     rtl433,
@@ -51,6 +53,7 @@ __all__ = [
     'ambient',
     'ecowitt',
     'ecowitt_gateway',
+    'homeassistant',
     'lacrosse',
     'purpleair',
     'rtl433',

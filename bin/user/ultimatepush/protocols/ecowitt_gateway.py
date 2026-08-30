@@ -902,10 +902,9 @@ class EcowittGateway(Protocol):
     )
 
     # Asked rather than waited for, and asked over a socket of its own rather than
-    # over HTTP, which is what fetcher is for.
+    # over HTTP, which is what fetch() is for.
     fetched = True
     reached = 'fetch'
-    fetcher = staticmethod(fetch)
     # Not a path: this is not HTTP. It is what completes an address somebody types,
     # which for this hardware is the port Ecowitt fixed.
     fetch_path = ':%d' % DEFAULT_PORT
@@ -942,6 +941,25 @@ class EcowittGateway(Protocol):
         "This and the console's *Customized* upload are independent. A gateway "
         "answers here whether or not that upload is switched on, so both can run.",
     )
+
+    @classmethod
+    def fetch(cls, source, ask):
+        """Hold the whole conversation, and hand back one reading.
+
+        `ask` goes unused: it makes an HTTP request, and this hardware answers a
+        binary protocol on a socket. What it is for is being the one way a protocol
+        assembles its own answer, whether that means several HTTP requests or a
+        conversation on a socket, so that the poller has one thing to call rather
+        than one per kind of hardware.
+
+        Args:
+            source (polling.Source): Where the gateway is, and how long to wait.
+            ask (callable): Unused here. See polling.ask.
+
+        Returns:
+            tuple: (the body as bytes, the headers as a dict).
+        """
+        return fetch(source)
 
     @classmethod
     def claims(cls, request, raw):

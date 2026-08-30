@@ -83,6 +83,13 @@ long for anything on your own network.
 | `purpleair` | PurpleAir PA-II, PA-II-SD and PA-I | [PurpleAir](Protocol-Purpleair.md) |
 | `airlink` | Davis AirLink | [Davis AirLink](Protocol-Airlink.md) |
 | `ecowitt_gateway` | Ecowitt GW1000, GW1100, GW1200, GW2000, GW3000, WH2650, WN1900 | [Ecowitt gateway API](Protocol-Ecowitt-gateway.md) |
+| `homeassistant` | anything Home Assistant can read | [Home Assistant](Protocol-Homeassistant.md) |
+
+The last one is not a make of hardware. Home Assistant has an integration for very
+nearly every sensor sold, so if it can read your thermometer, this can record it: an
+Aqara in the bedroom, a soil probe on Zigbee, the sensor inside a Shelly or a Tado.
+It needs two things no other source here does, an address and a token, and it has a
+page of its own.
 
 Adding another is a catalog and a protocol class, both small, and the asking is
 already written. See [New sensors](New-sensors.md).
@@ -107,10 +114,21 @@ python -m user.ultimatepush --fake-airlink
 python -m user.ultimatepush --fake-gw1000
 ```
 
-The first two answer on ports 8081 and 8082 and the gateway on 45000, which is the
-port the real hardware uses. All three send readings that move. Point a source at
+```bash
+python -m user.ultimatepush --fake-homeassistant
+```
+
+The first two answer on ports 8081 and 8082, the gateway on 45000 and the Home
+Assistant on 8123, which are the ports the real ones use. All four send readings
+that move. Point a source at
 `127.0.0.1:8081` and the whole of this page can be walked through before the real
 sensor arrives.
+
+The last one insists on a token, the way the real one does, and prints the block to
+copy when it starts. It has two devices, one outdoors and one indoors, and three
+sensors that are not reporting a number: one unavailable, one unknown, and one whose
+reading is an hour old. None of those three should reach the database, and watching
+that happen is the point of them.
 
 ## Where the readings go
 

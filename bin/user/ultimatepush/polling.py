@@ -22,7 +22,7 @@ Nearly all of it is HTTP, because nearly everything with a local API has a small
 web server on it. An Ecowitt gateway does not: it answers a binary protocol on a
 socket of its own, and a body decoded as text would no longer be the bytes that
 arrived. So a protocol may bring its own way of fetching and the rest of this is
-unchanged; see protocols.Protocol.fetcher.
+unchanged; see protocols.Protocol.fetch.
 
 Shaped like a listener on purpose: `get`, `close`, `closed` and a `port`. The driver
 merges its sources with server.Fan, which asks nothing of them beyond those four, so
@@ -45,7 +45,7 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import List, TYPE_CHECKING
+from typing import Any, Dict, List, TYPE_CHECKING
 
 from . import protocols
 
@@ -90,10 +90,13 @@ class Source:
         timeout (float): Seconds to wait for an answer.
         path (str): What to put in the request handed on, which is where the log
             and the page of raw uploads say the reading came from.
-        fetcher (Callable[[Any], Tuple[bytes, Dict[str, str]]] | None): How to go and
-            ask, for hardware that does not answer over HTTP. Called as
-            ``fetcher(source)``, returning (the body, the headers). HTTP when
-            there is none, which is what a sensor with a web server on it wants.
+        protocol (type | None): The protocol that reads the answer, when the block
+            named one. Only a protocol that assembles its own answer out of several
+            requests needs it here; see `_fetch`.
+        headers (dict | None): Headers to send with every request to this source,
+            beyond the ones every request carries.
+        settings (dict | None): The block this source was built from, for a
+            protocol that has settings of its own to read out of it.
     """
 
     __slots__ = (
@@ -104,7 +107,10 @@ class Source:
         'path',
         'host',
         'stopped',
-        'fetcher',
+        'protocol',
+        'headers',
+        'settings',
+        'held',
     )
 
     def __init__(
@@ -114,7 +120,9 @@ class Source:
         interval=DEFAULT_INTERVAL,
         timeout=DEFAULT_TIMEOUT,
         path='',
-        fetcher=None,
+        protocol=None,
+        headers=None,
+        settings=None,
     ):
         self.name = name
         self.url = url
@@ -122,7 +130,15 @@ class Source:
         self.timeout = float(timeout)
         self.path = path or ('/poll/' + name)
         self.host = _host_of(url)
-        self.fetcher = fetcher
+        self.protocol = protocol
+        # A source that has to authenticate itself keeps its credential here and
+        # nowhere else. Nothing prints this: it is repeated on every request, so a
+        # single log line holding it is a password in somebody's bug report.
+        self.headers = dict(headers or {})
+        self.settings = dict(settings or {})
+        # Whatever the protocol worked out once and would rather not work out
+        # again. Its own, and untouched by anything here.
+        self.held = {}  # type: Dict[str, Any]
         # Set when this one source is taken out while the others carry on. Its
         # thread is asleep for most of an interval and notices on its next turn.
         self.stopped = threading.Event()
@@ -312,6 +328,11 @@ def _request_class():
 def _fetch(source):
     """Ask one source and read its answer, however this one has to be asked.
 
+    Most sources are one question and one answer, and that is what happens here.
+    A protocol whose reading takes more than one request supplies its own asking
+    instead: it is handed `ask`, makes whatever requests it needs, and gives back
+    one body, so that everything after this point is the ordinary path.
+
     Args:
         source (Source): What to ask.
 
@@ -322,16 +343,26 @@ def _fetch(source):
         Exception: Whatever the asking raised. The caller sits in the failure rather
             than passing it on.
     """
-    if source.fetcher is not None:
-        return source.fetcher(source)
-    return _over_http(source)
+    if source.protocol is not None:
+        assembled = source.protocol.fetch(source, ask)
+        if assembled is not None:
+            return assembled
+    return ask(source, source.url)
 
 
-def _over_http(source):
-    """Ask one source over HTTP, which is how anything with a web server answers.
+def ask(source, url, body=None, content_type='application/json', limit=MAX_BODY):
+    """One request to a source, and its answer.
+
+    Handed to a protocol that assembles its own answer, so that every request it
+    makes carries this source's headers and this source's timeout rather than a
+    second set that could drift from them.
 
     Args:
-        source (Source): What to ask.
+        source (Source): Whose headers and timeout to use.
+        url (str): What to ask for.
+        body (bytes | None): What to send, which makes it a POST. None asks.
+        content_type (str): What to call the body, when there is one.
+        limit (int): Largest answer to read.
 
     Returns:
         tuple: (the body as bytes, the headers as a dict with lowercased keys).
@@ -339,22 +370,24 @@ def _over_http(source):
     Raises:
         Exception: Whatever urllib raised.
     """
-    asking = urllib.request.Request(
-        source.url, headers={'User-Agent': 'weewx-ultimate-push'}
-    )
+    headers = {'User-Agent': 'weewx-ultimate-push'}
+    headers.update(source.headers)
+    if body is not None:
+        headers['Content-Type'] = content_type
+    asking = urllib.request.Request(url, data=body, headers=headers)
     answer = urllib.request.urlopen(asking, timeout=source.timeout)
     try:
         # Read one byte past the limit, so that an answer at exactly the limit is
         # not silently the truncated one.
-        body = answer.read(MAX_BODY + 1)
-        if len(body) > MAX_BODY:
+        read = answer.read(limit + 1)
+        if len(read) > limit:
             raise ValueError(
-                "the answer is longer than %d bytes, which is not a reading" % MAX_BODY
+                "the answer is longer than %d bytes, which is not a reading" % limit
             )
-        headers = {}
+        got = {}
         for name, value in getattr(answer, 'headers', {}).items():
-            headers[name.lower()] = value
-        return body, headers
+            got[name.lower()] = value
+        return read, got
     finally:
         answer.close()
 
@@ -468,13 +501,16 @@ def _source_from(name, block):
                 "which 'protocol' to ask for." % name
             )
         url = _url_for(address, protocol)
+    settings = {str(key): block[key] for key in block}
     return Source(
         name,
         url,
         interval=block.get('interval', DEFAULT_INTERVAL),
         timeout=block.get('timeout', DEFAULT_TIMEOUT),
         path=path_for(name, block),
-        fetcher=protocol.fetcher if protocol is not None else None,
+        protocol=protocol,
+        headers=protocol.headers_for(settings) if protocol is not None else None,
+        settings=settings,
     )
 
 
@@ -486,17 +522,20 @@ def _url_for(address, protocol):
 
     Args:
         address (str): What was typed in: a hostname, an address, or a whole URL.
-        protocol (type): The protocol class, for its fetch_path and whether it is
-            asked over HTTP at all.
+        protocol (type): The protocol class, for its fetch_path, which says both
+            what to ask for and whether this is asked over HTTP at all.
 
     Returns:
         str: Where to ask.
     """
     address = address.rstrip('/')
-    if '://' not in address and protocol.fetcher is None:
+    over_http = not str(protocol.fetch_path or '').startswith(':')
+    if '://' not in address and over_http:
         # Only for the ones that are asked over HTTP. An Ecowitt gateway is a host
         # and a port and nothing else, and writing http:// in front of it would put
-        # an address into the log that sends somebody to a browser.
+        # an address into the log that sends somebody to a browser. What says which
+        # is the shape of fetch_path: a path for one that is asked over HTTP, and a
+        # port for one that is not.
         address = 'http://' + address
     path = protocol.fetch_path or ''
     if path.startswith(':') and _has_port(address):
@@ -526,7 +565,8 @@ def _has_port(address):
 # both and there is nothing to keep in step.
 ABOUT_THE_STATION = ('role', 'channel', 'field_map_extensions', 'infer_unknown')
 
-# What it may say about the asking.
+# What it may say about the asking. A protocol may want more than this; whatever
+# else is in the block is handed to it as the source's settings.
 ABOUT_THE_ASKING = ('url', 'address', 'protocol', 'interval', 'timeout', 'path')
 
 

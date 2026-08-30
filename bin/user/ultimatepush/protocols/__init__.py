@@ -35,7 +35,13 @@ no WeeWX on it.
 """
 
 import logging
-from typing import Any, Callable, Dict, FrozenSet, Optional, Tuple
+from typing import Dict, FrozenSet, Optional, TYPE_CHECKING, Tuple
+
+# For the docstring types only. A protocol that assembles its own answer is handed
+# the source it is assembling for, and polling imports this package, so naming the
+# class at run time would be a circle. Nothing here imports it.
+if TYPE_CHECKING:
+    from ..polling import Source
 
 log = logging.getLogger(__name__)
 
@@ -233,25 +239,22 @@ class Protocol:
     # What to ask for, appended to the address somebody gives. Only a fetched
     # protocol has one. A path for a protocol that is asked over HTTP, and whatever
     # else completes an address for one that is not: an Ecowitt gateway's is the port
-    # its API is on, because a host and a port is the whole of where it lives.
+    # its API is on, because a host and a port is the whole of where it lives. Empty
+    # for a protocol whose reading takes more than one request, because then there is
+    # no single thing to ask for; see fetch().
     fetch_path = ''
 
-    # How to go and ask, for a protocol that is not asked over HTTP.
-    #
-    # The poller fetches with urllib and hands the body to transport.parse, which
-    # reads text. That is right for everything with a local web server and wrong for
-    # anything else: a binary answer decoded as UTF-8 with errors replaced is no
-    # longer the bytes that arrived.
-    #
-    # So a protocol whose hardware speaks something else supplies its own, and it is
-    # given the source and hands back what the poller would otherwise have read off a
-    # socket. Doing the whole exchange there rather than one request at a time is on
-    # purpose: an Ecowitt gateway takes several commands to make one reading, so only
-    # something that knows the protocol can say when a reading is finished.
-    #
-    # Called as ``fetcher(source)``, returning (the body as bytes, the headers as a
-    # dict with lowercased keys). None means HTTP, which is what every other one is.
-    fetcher = None  # type: Optional[Callable[[Any], Tuple[bytes, Dict[str, str]]]]
+    # What a [[polling]] block for this protocol needs beyond an address and an
+    # interval, as (key, an example value) pairs. Only for the generated page: the
+    # smallest configuration that works has to be a block somebody can copy, and a
+    # block missing the one line without which nothing answers is not that.
+    fetch_settings = ()  # type: Tuple[Tuple[str, str], ...]
+
+    # Whether what to read has to be chosen rather than being whatever answers. A
+    # sensor with a local API has one answer and there is nothing to choose; a Home
+    # Assistant has everything in the house in it and reading all of it would be
+    # wrong. So the interface asks first, and this is what tells it to.
+    discovers = False
 
     # The catalog, as class attributes, for a protocol with only one dialect.
     fields = {}  # type: Dict[str, str]
@@ -272,6 +275,63 @@ class Protocol:
     # at all. None means the protocol already sends 'rain' and must not be
     # differenced again.
     rain_counter = 'dayRain'  # type: Optional[str]
+
+    @classmethod
+    def headers_for(cls, settings):
+        """Headers every request to a source of this protocol carries.
+
+        Where a credential goes. It is put here rather than into the URL because a
+        URL is printed: the log says which address could not be reached, and the
+        page of raw uploads says where a reading came from.
+
+        Args:
+            settings (dict): The source's block, as it was written down.
+
+        Returns:
+            dict: Header name to value. Empty for the protocols that need none,
+            which is all but one of them.
+        """
+        return {}
+
+    @classmethod
+    def fetch(cls, source, ask):
+        """Assemble one answer, for a protocol whose reading is several requests.
+
+        The default returns None, which says that the ordinary single request is
+        the right one and lets the poller make it.
+
+        A protocol that overrides this makes whatever requests it needs with `ask`
+        and hands back one body, so that everything downstream of the poller sees
+        an upload of the usual shape and nothing else has to know.
+
+        Args:
+            source (Source): What to ask, with its headers, its timeout and its
+                own settings. See polling.Source.
+            ask (callable): `ask(source, url, body=None)`, which makes one request
+                and returns (body, headers). See polling.ask.
+
+        Returns:
+            tuple | None: (the body as bytes, the headers as a dict), or None to
+            say that one plain request to the source's URL is the whole of it.
+        """
+        return None
+
+    @classmethod
+    def discover(cls, source, ask):
+        """What a source of this protocol has to offer, for somebody to choose from.
+
+        Only a protocol that says `discovers` has anything here. Asking changes
+        nothing and records nothing: what comes back is a list to show.
+
+        Args:
+            source (Source): Where to look, with its headers. See polling.Source.
+            ask (callable): How to make one request. See polling.ask.
+
+        Returns:
+            list: What was found, shaped by the protocol that found it. Empty for
+            the protocols that read whatever answers them.
+        """
+        return []
 
     @classmethod
     def claims(cls, request, raw):
@@ -348,6 +408,7 @@ def registry():
         ambient,
         ecowitt,
         ecowitt_gateway,
+        homeassistant,
         lacrosse,
         purpleair,
         rtl433,
@@ -368,6 +429,7 @@ def registry():
         purpleair.PurpleAir,
         airlink.AirLink,
         ecowitt_gateway.EcowittGateway,
+        homeassistant.HomeAssistant,
     ]
 
 

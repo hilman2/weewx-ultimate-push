@@ -182,13 +182,23 @@ def test_only_a_fetched_protocol_says_what_to_ask_for():
     One decides where the interface puts the hardware and the other decides whether
     a socket is opened for it. A protocol that had one without the other would be
     offered under 'we go and ask it' and then never asked.
+
+    Saying what to ask for is one of two ways to be askable. The other is assembling
+    the answer yourself, which is what a source that is several requests does, and
+    then there is no single path to name. What must not happen is neither.
     """
     for protocol in protocols.registry():
         assert protocol.fetched == (protocol.reached == 'fetch'), protocol.name
         if protocol.fetched:
-            assert protocol.fetch_path, (
-                "%s is asked and does not say what to ask for" % protocol.name
+            assert protocol.fetch_path or _has_own_fetch(protocol), (
+                "%s is asked and neither says what to ask for nor assembles its "
+                "own answer" % protocol.name
             )
+
+
+def _has_own_fetch(protocol):
+    """Whether a protocol makes its own requests rather than taking the plain one."""
+    return protocol.fetch.__func__ is not protocols.Protocol.fetch.__func__
 
 
 def test_nothing_to_type_in_means_it_cannot_be_pointed_here():

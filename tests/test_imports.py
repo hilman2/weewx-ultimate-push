@@ -44,6 +44,7 @@ WITHOUT_WEEWX = [
     'ultimatepush.protocols.purpleair',
     'ultimatepush.protocols.airlink',
     'ultimatepush.protocols.rtl433',
+    'ultimatepush.protocols.homeassistant',
     'ultimatepush.catalogs.purpleair',
     'ultimatepush.catalogs.airlink',
     'ultimatepush.catalogs.rtl433',
@@ -51,6 +52,7 @@ WITHOUT_WEEWX = [
     # whole of what that takes is socket and struct.
     'ultimatepush.protocols.ecowitt_gateway',
     'ultimatepush.catalogs.ecowitt_gateway',
+    'ultimatepush.catalogs.homeassistant',
     'ultimatepush.owners',
     'ultimatepush.consoles',
     'ultimatepush.report',

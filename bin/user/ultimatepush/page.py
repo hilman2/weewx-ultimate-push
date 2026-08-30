@@ -123,6 +123,8 @@ select { background: var(--bg); color: var(--ink); border: 1px solid var(--line)
   max-width: 220px; width: 100%; }
 select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .taken { color: var(--warn); font-size: 12px; }
+.askentities { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+.askentities label { display: flex; gap: 6px; align-items: baseline; }
 .newcol { font-size: 12px; margin-top: 4px; }
 .newcol code { background: var(--code); padding: 2px 5px; border-radius: 4px; }
 .add { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
@@ -202,6 +204,11 @@ var pending = null, editing = null, pendingDraw = false, unfolded = {};
 /* The options a driver's author ruled off as rarely needing attention start
    folded, which is what ruling them off meant. */
 folded.driverrest = true;
+
+/* What a source that has to be told what to read has been told, and what looking
+   found. Held here rather than in the DOM because looking redraws the page, and a
+   redraw would otherwise empty the two fields that were used to look. */
+var asked = { what: '', address: '', token: '', found: null, chosen: {}, device: '' };
 
 function busy() {
   /* Somebody is in the middle of something on this page. A redraw would empty the
@@ -787,10 +794,23 @@ function askBody(one) {
   /* Hardware with nowhere to type an address into. Nothing is set on it at all, so
      the whole of the form is where to find it and how often to ask. And that is the
      whole of the station too: what answered is what was asked, so there is nothing
-     to recognise, nothing to learn and nothing to let in afterwards. */
+     to recognise, nothing to learn and nothing to let in afterwards.
+
+     Unless it has to be told what to read. A sensor answers with whatever it
+     measures and there is nothing to choose; something that reads a whole house has
+     everything in it, and which of that is weather is a question only its owner can
+     answer. So that one gets a token, a look, and a list to tick. */
+  if (asked.what !== one.name) {
+    asked = { what: one.name, address: '', token: '', found: null,
+              chosen: {}, device: '' };
+  }
   return '<table class="settings">' +
-    '<tr><th>address</th><td><input data-askaddr placeholder="1.2.3.4" size="24">' +
-    '</td></tr>' +
+    '<tr><th>address</th><td><input data-askaddr placeholder="1.2.3.4" size="24"' +
+    ' value="' + esc(asked.address) + '"></td></tr>' +
+    (one.discovers
+      ? '<tr><th>token</th><td><input data-asktoken type="password" size="24"' +
+        ' value="' + esc(asked.token) + '"></td></tr>'
+      : '') +
     '<tr><th>asked every</th><td><input data-askevery value="60" size="5"> seconds' +
     '</td></tr>' +
     '<tr><th>role</th><td>' + hostedRoleSelect(mainStation() ? 'extra' : 'main') +
@@ -800,11 +820,67 @@ function askBody(one) {
     (one.notes || []).map(function (note) {
       return '<p class="dim">' + esc(note) + '</p>';
     }).join('') +
+    (one.discovers ? askFound(one) : '') +
     '<p><button class="act" data-askadd="' + esc(one.name) +
     '">Ask it and set it up</button></p>' +
     '<p class="dim">It is asked once before anything is saved. If nothing answers ' +
     'at that address, or something answers that is not a ' + esc(one.label) +
     ', nothing is written and the reason is shown here.</p>' + roleNote();
+}
+
+function askFound(one) {
+  /* What is there, for somebody to pick from. Nothing is recorded by looking, and
+     nothing is ticked that was not offered: a sensor is read because it was chosen.
+
+     The first device's sensors come ticked, because that is the suggestion and
+     because a list of thirty with nothing ticked is work rather than help. */
+  if (!asked.found) {
+    return '<p><button class="act" data-askfind="' + esc(one.name) +
+      '">Find the sensors</button></p>' +
+      '<p class="dim">Nothing is saved by looking. What comes back is a list of ' +
+      'the sensors this driver can record, grouped by the device they belong to.' +
+      '</p>';
+  }
+  return '<p><button class="act" data-askfind="' + esc(one.name) +
+    '">Look again</button></p>' +
+    asked.found.map(askDevice).join('') +
+    '<p class="dim">One station is one device. Ticking a sensor of another device ' +
+    'unticks the first, because two devices in one station would take turns ' +
+    'writing the same column. Set the second one up as a station of its own.</p>';
+}
+
+function askDevice(group) {
+  /* One device and its sensors. A device Home Assistant could not name is still
+     shown: its sensors are as real as any other's, and leaving them out would be
+     this page deciding they do not exist. */
+  return '<p><b>' + esc(group.device || 'Not part of any device') + '</b></p>' +
+    '<div class="askentities">' + group.entities.map(function (e) {
+      return '<label><input type="checkbox" data-askentity="' + esc(e.entity_id) +
+        '" data-askdevice="' + esc(group.device_id) + '"' +
+        (asked.chosen[e.entity_id] ? ' checked' : '') + '> ' +
+        esc(e.name || e.entity_id) + ' <span class="dim">' + esc(e.device_class) +
+        (e.unit ? ', ' + esc(e.unit) : '') +
+        (e.state ? ', now ' + esc(e.state) : '') + '</span></label>';
+    }).join('') + '</div>';
+}
+
+function askTyped() {
+  /* What is in the two fields right now, kept before a redraw empties them. */
+  var address = document.querySelector('[data-askaddr]');
+  var token = document.querySelector('[data-asktoken]');
+  asked.address = address ? address.value : '';
+  asked.token = token ? token.value : '';
+}
+
+function askChosen() {
+  /* The entity ids that are ticked, in the order they were offered. */
+  var out = [];
+  asked.found ? asked.found.forEach(function (group) {
+    group.entities.forEach(function (e) {
+      if (asked.chosen[e.entity_id]) out.push(e.entity_id);
+    });
+  }) : null;
+  return out;
 }
 
 function driverForm(fields, values, ports, attribute, about) {
@@ -1454,10 +1530,32 @@ document.addEventListener('click', function (e) {
     api('rebind', { was: picked.value, now: t.dataset.moved }).then(hostedThen);
     return;
   }
+  if (t.dataset.askfind) {
+    askTyped();
+    flash('Looking.');
+    api('polling/find', {
+      protocol: t.dataset.askfind,
+      address: asked.address,
+      token: asked.token
+    }).then(function (d) {
+      if (!d.ok) { flash(d.message || 'Nothing was found.', true); return; }
+      asked.found = d.found;
+      asked.chosen = {};
+      asked.device = d.found[0].device_id;
+      /* The first device's sensors, ticked. That is the suggestion; the ticks are
+         somebody's to change and nothing is written until they press the button. */
+      d.found[0].entities.forEach(function (e) { asked.chosen[e.entity_id] = true; });
+      draw();
+    });
+    return;
+  }
   if (t.dataset.askadd) {
+    askTyped();
     api('polling/add', {
       protocol: t.dataset.askadd,
-      address: (document.querySelector('[data-askaddr]') || {}).value || '',
+      address: asked.address,
+      token: asked.token || null,
+      entities: askChosen(),
       interval: (document.querySelector('[data-askevery]') || {}).value || '',
       role: hostedRole(),
       name: (document.querySelector('[data-askname]') || {}).value || null
@@ -1701,6 +1799,19 @@ function placeField(ident, raw, field, force) {
 }
 
 document.addEventListener('change', function (e) {
+  if (e.target.dataset.askentity !== undefined) {
+    /* One station is one device. A tick on another device's sensor starts that
+       device off rather than adding to the first, because a station that drew from
+       two of them would have two thermometers taking turns over one column. */
+    if (e.target.dataset.askdevice !== asked.device) {
+      asked.device = e.target.dataset.askdevice;
+      asked.chosen = {};
+    }
+    asked.chosen[e.target.dataset.askentity] = e.target.checked;
+    askTyped();
+    draw();
+    return;
+  }
   var decides = e.target.dataset.hostedopt || e.target.dataset.hwopt;
   if (decides && dependsOn(decides)) {
     /* This option decides whether others apply, and which of them is what the

@@ -44,6 +44,41 @@ a second one beside it.
 `python -m user.ultimatepush --fake-gw1000` answers like one on port 45000. It builds
 its frames rather than replaying a capture, which is what makes it worth testing
 against.
+**Home Assistant, as a source of readings.** Not a make of hardware: the other
+program on the network that already talks to nearly everything. Home Assistant has
+an integration for very nearly every sensor sold and publishes them all through one
+documented REST API with the type and the unit attached, so one thing built here
+reads an Aqara room thermometer, a sensor inside a Shelly, a Zigbee soil probe, a
+Tado, and whatever comes next.
+
+That is why there is no field table for it. Every other protocol here needs a
+catalog saying what each name means and what unit it arrives in; Home Assistant has
+done both already, so the catalog is fifteen device classes mapped to WeeWX columns
+plus the arithmetic that `unit_of_measurement` calls for. Fahrenheit or Kelvin,
+knots or miles an hour, inches of mercury or hectopascals: converted on the way in.
+
+A block is one Home Assistant device rather than one Home Assistant, because that
+grouping is what makes roles and channels work. The thermometer indoors goes to
+`extraTemp` and the one outdoors to `outTemp`, and they do not fight over a column.
+Two entities of the same kind on one device is the ordinary case, and the order they
+are named in decides which of them is the reading; the second waits in the web
+interface to be given a column of its own rather than being placed on a guess.
+
+`unavailable` and `unknown` are not readings, and neither of them is zero. Neither
+is a reading whose `last_updated` is older than `stale`, which defaults to twice the
+interval: a radio sensor with a flat battery keeps returning its last value for ever,
+and polling that every minute would write one afternoon's temperature into the
+database sixty times an hour.
+
+The token is a long-lived access token and grants everything the account that made it
+can do. It goes in `weewx.conf` or in the settings file the interface writes, and it
+reaches no log line, no error message and no page.
+
+The web interface asks Home Assistant what it has, groups it by device and offers it
+to be ticked. Nothing is recorded unasked.
+
+`python -m user.ultimatepush --fake-homeassistant` answers like one, with two
+devices and three sensors that are not reporting a number.
 
 **Davis AirLink.** The one thing Vince Skahan named in
 [weewx#1124](https://github.com/weewx/weewx/issues/1124) that this driver could not

@@ -26,12 +26,20 @@ because letting in the ones that are yours is the part worth trying out.
 
     python -m user.ultimatepush --fake-gw1000 45000
 
-answers an Ecowitt gateway's binary API on a socket. It is the only one of the four
+answers an Ecowitt gateway's binary API on a socket. It is the only one of the five
 that is not a web server, and the only one that builds its answers rather than
 holding them: the frames are encoded out of the same table the driver decodes them
 with, so a wrong width in that table shows up as a reading that does not come back.
 
-The tests read the same four, so what is shipped and what is known to work are one
+    python -m user.ultimatepush --fake-homeassistant 8123
+
+answers like Home Assistant's REST API: two devices, one outdoors and one indoors,
+a token it insists on, and three entities that are not reporting a number. Those
+three are the point. An installation has an unavailable sensor, an unknown one and
+one whose battery went flat within a week, and a fake without them would never
+exercise the code that deals with any of it.
+
+The tests read the same five, so what is shipped and what is known to work are one
 thing rather than two that can drift apart.
 
 Nothing here is a model of anything. The numbers wander around plausible values so
@@ -789,3 +797,393 @@ def gw1000_request(connection):
         asked += more
     api.payload_of(asked[2], asked, answering=False)
     return asked[2]
+
+
+# ---- a Home Assistant that is not there -------------------------------------
+#
+# Enough of the REST API to set a source up against and watch it record: the two
+# endpoints a reading needs, the one the device names come from, and the token it
+# all hangs on.
+#
+# Three of the entities below are not reporting a number. They are the reason this
+# exists rather than a fixture: an installation has an unavailable sensor within a
+# week, and a fake without one never exercises the code that tells a missing reading
+# from a zero.
+
+# The token this insists on. Deliberately nothing like a real one, which is a signed
+# token several hundred characters long: anybody reading a log or a page has to be
+# able to tell at a glance that this is not their Home Assistant.
+HA_TOKEN = 'pretend-long-lived-access-token'
+
+# The two devices, and what each of their entities is. `every` is the wander, as
+# (what it sits at, how far either side, seconds for one turn); `says` replaces it
+# for an entity that is not reporting a number.
+HA_DEVICES = (
+    {
+        'id': 'aa11bb22cc33dd44ee55ff6600112233',
+        'name': 'Balkon',
+        'entities': (
+            {
+                'entity_id': 'sensor.balkon_temperatur',
+                'name': 'Balkon Temperatur',
+                'device_class': 'temperature',
+                'unit': '°C',
+                'every': (11.5, 7.0, 1500.0),
+            },
+            # A second temperature on one device, which is the ordinary case and not
+            # an edge one: a soil probe on the same transmitter, a second wire on a
+            # Shelly. The block's order decides which of them is the temperature.
+            {
+                'entity_id': 'sensor.balkon_bodentemperatur',
+                'name': 'Balkon Bodentemperatur',
+                'device_class': 'temperature',
+                'unit': '°C',
+                'every': (9.0, 3.0, 4300.0),
+            },
+            {
+                'entity_id': 'sensor.balkon_luftfeuchte',
+                'name': 'Balkon Luftfeuchtigkeit',
+                'device_class': 'humidity',
+                'unit': '%',
+                'every': (68.0, 18.0, 1700.0),
+            },
+            {
+                'entity_id': 'sensor.balkon_luftdruck',
+                'name': 'Balkon Luftdruck',
+                'device_class': 'atmospheric_pressure',
+                'unit': 'hPa',
+                'every': (1013.2, 9.0, 3600.0),
+            },
+            # Kilometres an hour, because that is what a great many integrations
+            # report and because a source that converted nothing would prove nothing.
+            {
+                'entity_id': 'sensor.balkon_wind',
+                'name': 'Balkon Windgeschwindigkeit',
+                'device_class': 'wind_speed',
+                'unit': 'km/h',
+                'every': (11.5, 9.0, 400.0),
+            },
+            # Answering an hour late for ever, which is what a sensor with a flat
+            # battery does: Home Assistant keeps returning the last value it had.
+            {
+                'entity_id': 'sensor.balkon_helligkeit',
+                'name': 'Balkon Helligkeit',
+                'device_class': 'illuminance',
+                'unit': 'lx',
+                'every': (12000.0, 9000.0, 4000.0),
+                'behind': 3600.0,
+            },
+            {
+                'entity_id': 'sensor.balkon_batterie',
+                'name': 'Balkon Batterie',
+                'device_class': 'battery',
+                'unit': '%',
+                'says': 'unavailable',
+            },
+        ),
+    },
+    {
+        'id': 'ff99ee88dd77cc66bb55aa4433221100',
+        'name': 'Wohnzimmer',
+        'entities': (
+            {
+                'entity_id': 'sensor.wohnzimmer_temperatur',
+                'name': 'Wohnzimmer Temperatur',
+                'device_class': 'temperature',
+                'unit': '°C',
+                'every': (21.5, 1.5, 5400.0),
+            },
+            {
+                'entity_id': 'sensor.wohnzimmer_luftfeuchte',
+                'name': 'Wohnzimmer Luftfeuchtigkeit',
+                'device_class': 'humidity',
+                'unit': '%',
+                'every': (46.0, 8.0, 4900.0),
+            },
+            {
+                'entity_id': 'sensor.wohnzimmer_co2',
+                'name': 'Wohnzimmer CO2',
+                'device_class': 'carbon_dioxide',
+                'unit': 'ppm',
+                'says': 'unknown',
+            },
+        ),
+    },
+)  # type: Tuple[Dict[str, Any], ...]
+
+
+def homeassistant_entities():
+    """Every entity the fake has, with the device each belongs to.
+
+    Returns:
+        list[tuple]: (the device, the entity), in the order they are written above.
+    """
+    found = []
+    for device in HA_DEVICES:
+        for entity in device['entities']:
+            found.append((device, entity))
+    return found
+
+
+def homeassistant_state(entity_id, seconds):
+    """What Home Assistant says about one entity, at one moment.
+
+    Args:
+        entity_id (str): Which entity.
+        seconds (float): The time, in seconds. The readings are a function of it, so
+            the same number twice gives the same answer, which is what makes a test
+            repeatable.
+
+    Returns:
+        dict: The state, shaped the way the REST API shapes one, or None when there
+        is no such entity.
+    """
+    for device, entity in homeassistant_entities():
+        if entity['entity_id'] != entity_id:
+            continue
+        if 'says' in entity:
+            state = entity['says']
+        else:
+            middle, spread, period = entity['every']
+            state = '%.1f' % _wander(seconds, middle, spread, period)
+        when = seconds - entity.get('behind', 0.0)
+        return {
+            'entity_id': entity_id,
+            'state': state,
+            'attributes': {
+                'unit_of_measurement': entity['unit'],
+                'device_class': entity['device_class'],
+                'friendly_name': entity['name'],
+                'state_class': 'measurement',
+            },
+            'last_changed': _iso(when),
+            'last_reported': _iso(when),
+            'last_updated': _iso(when),
+            'context': {'id': '01JABCDEF0123456789ABCDEF', 'parent_id': None},
+        }
+    return None
+
+
+def homeassistant_states(seconds):
+    """Every entity at once, which is what the listing endpoint answers.
+
+    Args:
+        seconds (float): The time, in seconds.
+
+    Returns:
+        list: The states, each a dict.
+    """
+    return [
+        homeassistant_state(entity['entity_id'], seconds)
+        for _, entity in homeassistant_entities()
+    ]
+
+
+def homeassistant_devices(entities):
+    """The entity-to-device map, which is what the template renders.
+
+    The real one runs the template through Jinja with Home Assistant's own
+    `device_id` and `device_name` functions. This answers what that would have
+    produced, which is the part a caller can be wrong about.
+
+    Args:
+        entities (list): The entity ids the template asked about, as strings.
+
+    Returns:
+        dict: Entity id to {'id': ..., 'name': ...}, with nulls for an entity no
+        device claims, which is what Home Assistant renders for one.
+    """
+    where = {}
+    for device, entity in homeassistant_entities():
+        where[entity['entity_id']] = {'id': device['id'], 'name': device['name']}
+    return {
+        entity_id: where.get(entity_id, {'id': None, 'name': None})
+        for entity_id in entities
+    }
+
+
+def _iso(seconds):
+    """The time, written the way Home Assistant writes a timestamp.
+
+    Args:
+        seconds (float): The time.
+
+    Returns:
+        str: e.g. '2026-08-31T09:15:00+00:00'.
+    """
+    import datetime
+
+    when = datetime.datetime.fromtimestamp(seconds, datetime.timezone.utc)
+    return when.isoformat()
+
+
+def homeassistant_handler(token=HA_TOKEN, clock=None):
+    """The request handler the fake Home Assistant answers with.
+
+    Handed out on its own so that a test can put it on a port of its own and
+    exercise the same refusals and the same routing that ship. A copy in the tests
+    would be a copy that agrees with the code until the day it stops.
+
+    Args:
+        token (str): The token it insists on.
+        clock (callable | None): What to use for the time. The wall clock by
+            default. A test holds it still instead, so that what it asserts is the
+            reading the fake sent rather than the reading it sent a moment ago.
+
+    Returns:
+        type: A BaseHTTPRequestHandler subclass.
+    """
+    import re
+    import time
+    import urllib.parse
+
+    if clock is None:
+        clock = time.time
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        """Three endpoints and a token, which is the whole of what is read here."""
+
+        def do_GET(self):
+            if not self._allowed():
+                return
+            if self.path in ('/api/', '/api'):
+                self._say(200, {'message': 'API running.'})
+                return
+            if self.path == '/api/states':
+                self._say(200, homeassistant_states(clock()))
+                return
+            if self.path.startswith('/api/states/'):
+                wanted = urllib.parse.unquote(self.path[len('/api/states/') :])
+                state = homeassistant_state(wanted, clock())
+                if state is None:
+                    self._say(404, {'message': 'Entity not found.'})
+                    return
+                self._say(200, state)
+                return
+            self._say(404, {'message': 'Not found.'})
+
+        def do_POST(self):
+            if not self._allowed():
+                return
+            if self.path != '/api/template':
+                self._say(404, {'message': 'Not found.'})
+                return
+            length = int(self.headers.get('Content-Length') or 0)
+            asked = self.rfile.read(length).decode('utf-8', 'replace')
+            try:
+                template = json.loads(asked).get('template', '')
+            except ValueError:
+                self._say(400, {'message': 'Invalid JSON specified.'})
+                return
+            # The real one renders the template. This reads the entity ids out of it
+            # and answers what rendering would have produced, which is the part a
+            # caller can be wrong about; running Jinja here would only test Jinja.
+            wanted = re.findall(r'"([a-z_]+\.[a-z0-9_]+)"', template)
+            # Rendered rather than returned as JSON: Home Assistant renders with
+            # parse_result off, so what comes back is the text the template produced
+            # and its type is text/plain.
+            self._text(200, json.dumps(homeassistant_devices(wanted)))
+
+        def _allowed(self):
+            """Whether the request carried the token. Answers 401 when it did not.
+
+            Returns:
+                bool: Whether to go on.
+            """
+            presented = self.headers.get('Authorization') or ''
+            if presented == 'Bearer ' + token:
+                return True
+            self._say(401, {'message': 'Unauthorized'})
+            return False
+
+        def _say(self, status, body):
+            """Answer with JSON.
+
+            Args:
+                status (int): The status.
+                body (dict | list): What to say.
+            """
+            self._write(status, json.dumps(body).encode('utf-8'), 'application/json')
+
+        def _text(self, status, body):
+            """Answer with text, which is what a rendered template comes back as.
+
+            Args:
+                status (int): The status.
+                body (str): What to say.
+            """
+            self._write(status, body.encode('utf-8'), 'text/plain; charset=utf-8')
+
+        def _write(self, status, body, content_type):
+            """Send one answer.
+
+            Args:
+                status (int): The status.
+                body (bytes): What to say.
+                content_type (str): What to call it.
+            """
+            self.send_response(status)
+            self.send_header('Content-Type', content_type)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, fmt, *args):
+            """One line per question, which is the point of watching this run."""
+            print("asked: %s" % (fmt % args))
+
+    return Handler
+
+
+def serve_homeassistant(port, address='127.0.0.1', token=HA_TOKEN):
+    """Answer like Home Assistant's REST API, until interrupted.
+
+    Args:
+        port (int): The port to listen on. 8123 is Home Assistant's own.
+        address (str): The address to bind to. The loopback by default, because a
+            Home Assistant that does not exist has no business being on the network.
+        token (str): The token it insists on.
+
+    Returns:
+        int: The exit status, which is 0 unless the port could not be had.
+    """
+    try:
+        server = socketserver.TCPServer((address, port), homeassistant_handler(token))
+    except OSError as e:
+        print("Cannot listen on %s:%d: %s" % (address, port, e))
+        return 1
+    outdoors = HA_DEVICES[0]
+    print(
+        "Answering like Home Assistant at http://%s:%d/api/\n"
+        "Two devices, %s outdoors and %s indoors. Point a source at one of them:\n"
+        "\n"
+        "    [[polling]]\n"
+        "        [[[%s]]]\n"
+        "            address = %s:%d\n"
+        "            protocol = homeassistant\n"
+        "            token = %s\n"
+        "            entities = %s\n"
+        "            interval = 10\n"
+        "\n"
+        "Three of its entities are not reporting a number: one unavailable, one "
+        "unknown,\nand one whose reading is an hour old. None of them should reach "
+        "the database.\n"
+        % (
+            address,
+            port,
+            HA_DEVICES[0]['name'],
+            HA_DEVICES[1]['name'],
+            outdoors['name'].lower(),
+            address,
+            port,
+            token,
+            ', '.join(one['entity_id'] for one in outdoors['entities']),
+        )
+    )
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Stopped.")
+    finally:
+        server.server_close()
+    return 0

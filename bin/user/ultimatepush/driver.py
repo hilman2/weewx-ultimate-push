@@ -3671,6 +3671,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                     # notes carry that, because it is the same sentence either way.
                     'enabled': protocol in self.enabled,
                     'taken': False,
+                    # Whether the form has to ask what to read before it can save
+                    # anything. See protocols.Protocol.discovers.
+                    'discovers': protocol.discovers,
                 }
             )
         hosted = set(self.hardware.by_type) if self.hardware else set()
@@ -3696,6 +3699,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                     'about': one['about'],
                     'connects': one['connects'],
                     'problem': one['problem'],
+                    'discovers': False,
                     'taken': one['name'] in hosted
                     or one['name'] in (self.stn_dict.get('config_dict') or {}),
                 }
@@ -3719,6 +3723,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         role=None,
         channel=None,
         name=None,
+        token=None,
+        entities=None,
     ):
         """Set a polled source up, ask it once, and start asking. No restart.
 
@@ -3743,6 +3749,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             channel (int | None): Which extra channel. One of the free ones is
                 picked when the role is EXTRA and none is given.
             name (str | None): What to call it. Default is the protocol's name.
+            token (str | None): The credential, for a source that has to
+                authenticate itself. Written to the settings file, where it is
+                treated as a password and shown to nobody.
+            entities (list | str | None): What to read, for a protocol whose block
+                has to name it. Chosen from what web_discover_polled offered.
 
         Returns:
             tuple: (ok, message).
@@ -3771,6 +3782,16 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             block['address'] = str(address or '').strip()
         if interval:
             block['interval'] = str(interval)
+        if token:
+            block['token'] = str(token).strip()
+        chosen = _as_list(entities)
+        if chosen:
+            block['entities'] = ', '.join(chosen)
+        elif wanted.discovers:
+            return False, (
+                "Nothing was chosen, so there is nothing to read. Find the sensors "
+                "first and tick the ones that belong to this station."
+            )
         block['role'] = role or roles.MAIN
         if channel:
             block['channel'] = str(channel)
@@ -3803,6 +3824,62 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self._check_one_main()
         log.info("'%s' was set up through the web interface and is being asked.", name)
         return True, message
+
+    def web_discover_polled(self, protocol, address=None, url=None, token=None):
+        """What a source has to offer, for somebody to choose from.
+
+        Nothing is written and nothing is asked again afterwards: this is a look, so
+        that the form offers what is there rather than asking somebody to type in
+        names they would have to go and read off another screen.
+
+        Args:
+            protocol (str): Which protocol. It has to be one that is asked, and one
+                that has something to offer.
+            address (str | None): Where it is.
+            url (str | None): The whole URL, used instead of the address.
+            token (str | None): The credential to look with.
+
+        Returns:
+            dict: With 'ok', and either 'found' or a 'message' saying why not.
+        """
+        wanted = protocols.by_name(str(protocol or '').strip())
+        if wanted is None or not wanted.fetched:
+            return {
+                'ok': False,
+                'message': "'%s' is not a protocol this driver goes and asks."
+                % protocol,
+            }
+        if not wanted.discovers:
+            return {
+                'ok': False,
+                'message': "A %s answers with whatever it measures, so there is "
+                "nothing to choose." % wanted.label,
+            }
+        block = {'protocol': wanted.name}
+        if url:
+            block['url'] = str(url).strip()
+        else:
+            block['address'] = str(address or '').strip()
+        if token:
+            block['token'] = str(token).strip()
+        try:
+            source = polling.source_for('looking', block)
+        except ValueError as e:
+            return {'ok': False, 'message': str(e)}
+        try:
+            found = wanted.discover(source, polling.ask)
+        except Exception as e:
+            return {
+                'ok': False,
+                'message': "Nothing could be read from %s: %s" % (source.url, e),
+            }
+        if not found:
+            return {
+                'ok': False,
+                'message': "%s answered, and none of what it has is weather this "
+                "driver can record." % wanted.label,
+            }
+        return {'ok': True, 'found': found}
 
     def _ask_once(self, source, protocol):
         """Ask a source once, and say whether the answer was what was expected.
@@ -4557,6 +4634,33 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         """
         for field, group in groups.items():
             weewx.units.obs_group_dict.setdefault(field, group)
+
+
+def _as_list(given):
+    """Whatever a form or a configuration file gave us, as a list of names.
+
+    A browser sends an array, configobj sends a list when the line had commas in it
+    and a string when it did not, and somebody typing into a box sends one string.
+    All three mean the same thing.
+
+    Args:
+        given (list | tuple | str | None): What arrived.
+
+    Returns:
+        list: The names, stripped, without the empty ones and without repeats.
+    """
+    if given is None:
+        parts = []
+    elif isinstance(given, (list, tuple)):
+        parts = [str(one) for one in given]
+    else:
+        parts = str(given).split(',')
+    found = []
+    for part in parts:
+        name = part.strip()
+        if name and name not in found:
+            found.append(name)
+    return found
 
 
 def _contested_with(station):
