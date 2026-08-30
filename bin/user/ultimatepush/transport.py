@@ -88,6 +88,14 @@ def parse(text):
     if not text:
         return {}
     text = text.strip()
+    if text.startswith('<'):
+        # A syslog frame with the reading inside it: '<165>1 <time> <host> rtl_433
+        # - - - {...}'. rtl_433 has no unframed UDP output, so a driver that only
+        # understood bare JSON could not read it at all. The frame says nothing this
+        # driver wants, so it is stepped over rather than parsed.
+        opened = text.find('{')
+        if opened > 0:
+            text = text[opened:]
     if text.startswith('{'):
         try:
             decoded = json.loads(text)

@@ -377,6 +377,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.reload_wanted = False
         # Secret upload path -> station. Filled by _apply_overrides.
         self.station_paths = {}
+        # Stations somebody has said are not theirs. Refused like any other, and not
+        # asked about again. Filled by _apply_overrides.
+        self.ignored = set()  # type: Set[str]
         # Whether a station's own path has ever been used. Until one has, every path
         # is accepted: somebody who set a station up in the interface but has not
         # finished typing it into their console must not have their existing uploads
@@ -672,6 +675,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 built[ident].mapper_for(was.dialect, announce=False)
         self.web_stations = built
         self.station_paths = paths
+        self.ignored = set(self.overrides.ignored())
         for ident in built:
             self.known.add(ident)
 
@@ -2022,7 +2026,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         return [
             w
             for w in self.activity.unknown_stations(transport.redact)
-            if w['ident'] not in self.known
+            if w['ident'] not in self.known and w['ident'] not in self.ignored
         ]
 
     def web_station(self, ident):
@@ -3852,6 +3856,99 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         log.info("'%s' is no longer being asked.", name)
         return True, message
 
+    def web_ignore(self, ident, yes=True):
+        """Say that a station is not this installation's, or ask about it again.
+
+        A radio receiver hears the neighbours. Their sensors are refused, which is
+        right, and then listed as something to decide about, which after the first
+        time is noise. This takes one off that list for good.
+
+        Nothing else changes: an ignored station is refused exactly as it was, and
+        the count of what has been refused still includes it. What stops is being
+        asked.
+
+        Args:
+            ident (str): The station's identity, as the list shows it.
+            yes (bool): Whether it is being set aside, or being asked about again.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        ident = str(ident or '').strip()
+        if not ident:
+            return False, "Which station?"
+        if ident in self.stations or ident in self.web_stations:
+            return False, (
+                "'%s' is one of this driver's stations. Take it out rather than "
+                "setting it aside." % self._name_of(ident)
+            )
+        ok, message = self.overrides.set_ignored(ident, yes)
+        if not ok:
+            return False, message
+        self.ignored = set(self.overrides.ignored())
+        if yes:
+            self.activity.stop_refusing(ident)
+            log.info(
+                "'%s' is not this installation's and will not be asked about again.",
+                ident,
+            )
+        return True, message
+
+    def web_rebind(self, was, now):
+        """Move a station onto the identity it calls itself by now.
+
+        Cheap radio sensors pick a new id when their batteries are changed. rtl_433's
+        own documentation says so: an id may be programmed in, or it may be chosen at
+        each power on. When that happens the sensor stops being recognised and turns
+        up as a new one waiting to be let in, and letting it in as a new station
+        would leave its columns behind with the old one.
+
+        So this moves the station instead. The name, the role, the channel, the field
+        map and the columns it owns all belong to the sensor and not to the number it
+        happens to be calling itself.
+
+        Args:
+            was (str): The identity it had.
+            now (str): The identity it has, as the log or the page shows it.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        was = str(was or '').strip()
+        now = str(now or '').strip()
+        if not was or not now:
+            return False, "Both the old identity and the new one are needed."
+        if was == now:
+            return False, "Those are the same identity."
+        if was in self.stations:
+            return False, (
+                "'%s' is set up in weewx.conf, so it is that file that decides what "
+                "it is called. Change the identity there." % self._name_of(was)
+            )
+        if was not in self.web_stations:
+            return False, "There is no station with that identity."
+        if now in self.web_stations or now in self.stations:
+            return False, "There is already a station with the new identity."
+
+        ok, message = self.overrides.rebind_station(was, now)
+        if not ok:
+            return False, message
+        self.owners.rename(was, now)
+        self.activity.rename(was, now)
+        self.known.discard(was)
+        # _apply_overrides puts the new one back, because the settings file now
+        # names it. Only the old one has to go, and only from here: the console
+        # file records consoles this driver adopted, and a station set up in the
+        # interface was never one of those.
+        self._apply_overrides()
+        log.info(
+            "Station '%s' now calls itself '%s' and keeps the columns it had. That "
+            "is what a battery change does to one of these sensors.",
+            self._name_of(now),
+            now,
+        )
+        return True, message
+
     def web_add_hardware(
         self, station_type, options, role=None, channel=None, name=None
     ):
@@ -4126,7 +4223,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         """
         ident = protocol.station_of(raw)
 
-        if not self.known:
+        if not self.known and not protocol.overhears:
+            # The first upload from a console somebody pointed here is theirs, and
+            # adopting it saves them a step. Not so for anything overheard: see
+            # protocols.Protocol.overhears.
             self._adopt(ident, client, protocol)
 
         if ident not in self.known:

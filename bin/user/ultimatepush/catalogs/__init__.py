@@ -24,6 +24,7 @@ to generate from:
     acurite       from frames captured off a bridge, by way of the interceptor driver
     lacrosse      likewise, off an LW301
     purpleair     from the answer the sensor's own web server gives
+    rtl433        from rtl_433's own DATA_FORMAT.md and its decoders
 """
 
 from . import (
@@ -32,6 +33,7 @@ from . import (
     ecowitt,
     lacrosse,
     purpleair,
+    rtl433,
     weatherflow,
     wunderground,
 )
@@ -42,6 +44,7 @@ __all__ = [
     'ecowitt',
     'lacrosse',
     'purpleair',
+    'rtl433',
     'weatherflow',
     'wunderground',
 ]

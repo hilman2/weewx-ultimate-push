@@ -220,6 +220,16 @@ class Protocol:
     # 'auto': it is configured under [[polling]] or it does nothing.
     fetched = False
 
+    # Whether this can hear hardware nobody pointed at it.
+    #
+    # Everything else here had to be aimed at this machine, by typing an address into
+    # a console or by moving a DNS entry, so the first upload is the owner's by
+    # construction and the driver adopts it. A radio receiver was aimed at nothing:
+    # it hears whatever is transmitting for a few hundred metres, and the first thing
+    # it hears is as likely to be next door's thermometer as your own. So nothing it
+    # hears is adopted. Every sensor waits to be let in, including yours.
+    overhears = False
+
     # What to ask for, appended to the address somebody gives. Only a fetched
     # protocol has one.
     fetch_path = ''
@@ -319,6 +329,7 @@ def registry():
         ecowitt,
         lacrosse,
         purpleair,
+        rtl433,
         weatherflow,
         wunderground,
     )
@@ -332,6 +343,7 @@ def registry():
         lacrosse.LW30x,
         wunderground.WeatherUnderground,
         weatherflow.WeatherFlow,
+        rtl433.Rtl433,
         purpleair.PurpleAir,
     ]
 

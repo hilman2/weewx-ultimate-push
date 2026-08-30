@@ -52,6 +52,7 @@ SIDEBAR = """* [Home](Home)
 * [Ecowitt](Protocol-Ecowitt)
 * [Lacrosse](Protocol-Lacrosse)
 * [PurpleAir](Protocol-Purpleair)
+* [rtl_433](Protocol-Rtl433)
 * [Weatherflow](Protocol-Weatherflow)
 * [Wunderground](Protocol-Wunderground)
 

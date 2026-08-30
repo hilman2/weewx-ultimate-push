@@ -99,6 +99,15 @@ def main(argv=None):
         help="Answer like a PurpleAir sensor on this port, so that a polled source "
         "can be tried without owning one. Default port 8081.",
     )
+    parser.add_argument(
+        '--fake-rtl433',
+        nargs='?',
+        const=1433,
+        type=int,
+        metavar='PORT',
+        help="Send what rtl_433 sends to this port, so that radio sensors can be "
+        "tried without a receiver. Default port 1433.",
+    )
     parser.add_argument('--port', default=8000, help="Port to listen on. Default 8000.")
     parser.add_argument('--address', default='', help="Address to bind to.")
     parser.add_argument('--path', help="Accept this path only.")
@@ -148,6 +157,11 @@ def main(argv=None):
         from .simulate import serve
 
         return serve(args.fake_purpleair)
+
+    if args.fake_rtl433 is not None:
+        from .simulate import send_rtl433
+
+        return send_rtl433(args.fake_rtl433)
 
     if args.url:
         return _say_url(args.config)

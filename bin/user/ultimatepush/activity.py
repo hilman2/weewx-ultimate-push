@@ -28,6 +28,13 @@ from typing import Any, Deque, Dict
 # nobody has to think about the memory.
 KEEP = 20
 
+# How many refused stations to keep a tally of. One console being refused is the
+# ordinary case and needs one. A radio receiver hears every sensor for a few hundred
+# metres, including cars going past, so this has to be large enough that the sensors
+# somebody actually owns are still in the list when they look, and bounded so that a
+# busy road does not grow it for ever. The least recently heard goes first.
+KEEP_REFUSED = 200
+
 # The longest payload worth storing, in characters. Real uploads are a kilobyte. A
 # listener will accept sixty-four, and there is no reason to hold that in memory
 # twenty times over for whoever sent it.
@@ -178,6 +185,11 @@ class Log:
         self.lock = threading.Lock()
         self.stations = {}
         self.unclaimed = collections.deque(maxlen=keep)  # type: Deque[Upload]
+        # One entry per station being refused, rather than per upload. The deque
+        # above holds the last few uploads whatever they are, which is the right
+        # thing for a console and useless for a radio: twenty uploads spread over
+        # thirty talkers means the one somebody is looking for has already gone.
+        self.refusals = collections.OrderedDict()  # type: collections.OrderedDict
         self.started = time.time()
         self.keep = keep
 
@@ -217,6 +229,28 @@ class Log:
         """
         with self.lock:
             self.unclaimed.append(upload)
+            ident = upload.ident or '(unnamed)'
+            row = self.refusals.pop(ident, None)
+            if row is None:
+                row = {
+                    'ident': ident,
+                    'protocol': upload.protocol,
+                    'client': upload.client,
+                    'uploads': 0,
+                    'first_seen': upload.at,
+                    'last_seen': upload.at,
+                    'sample': upload,
+                }
+            row['uploads'] += 1
+            row['last_seen'] = upload.at
+            row['protocol'] = upload.protocol or row['protocol']
+            row['client'] = upload.client or row['client']
+            row['sample'] = upload
+            # Back to the end, so that the one dropped when the list is full is the
+            # one nothing has been heard from for longest.
+            self.refusals[ident] = row
+            while len(self.refusals) > KEEP_REFUSED:
+                self.refusals.popitem(last=False)
 
     def kept_apart(self, ident, fields):
         """Record readings a station is not writing because another station has them.
@@ -268,6 +302,23 @@ class Log:
             station.undecided = dict(undecided)
 
     # ---- reading, from the web server's thread --------------------------------
+
+    def rename(self, was, now):
+        """Carry what is known about a station over to a new identity.
+
+        Args:
+            was (str): The identity it had.
+            now (str): The identity it has.
+
+        Returns:
+            bool: Whether there was anything to carry over.
+        """
+        station = self.stations.pop(was, None)
+        if station is None:
+            return False
+        station.ident = now
+        self.stations[now] = station
+        return True
 
     def snapshot(self):
         """Every station, as plain data. Safe to hand to another thread."""
@@ -351,32 +402,42 @@ class Log:
         return [u.as_dict(redact) for u in reversed(uploads)]
 
     def unknown_stations(self, redact):
-        """The refused uploads, grouped by whatever named the station.
+        """Every station being refused, the one heard most often first.
 
-        One row per console rather than one per upload, because a console that is
-        being refused sends one every sixteen seconds and the list is otherwise all
-        the same console.
+        One row per station rather than one per upload, and counted as they arrive
+        rather than read back out of the last few, because the last few are no help
+        where a radio is hearing thirty things at once.
+
+        The order is the useful one. Something heard fifty times is close by and
+        transmitting on a schedule, which is what a sensor somebody owns does. A car
+        going past is heard once.
 
         Args:
             redact (callable): Given the upload text, returns it redacted.
 
         Returns:
-            list: One entry per console, each with what named it, how many uploads
-            have been refused, when the last one arrived, and a sample of readings.
+            list: One entry per station, each with what named it, how many uploads
+            have been refused, when the first and last arrived, and a sample of
+            readings. Most often heard first.
         """
-        seen = {}  # type: Dict[str, Dict[str, Any]]
-        for upload in self.waiting(redact, limit=self.keep):
-            ident = upload['ident'] or '(unnamed)'
-            row = seen.setdefault(
-                ident,
-                {
-                    'ident': ident,
-                    'protocol': upload['protocol'],
-                    'client': upload['client'],
-                    'uploads': 0,
-                    'last_seen': upload['at'],
-                    'sample': upload,
-                },
-            )
-            row['uploads'] += 1
-        return list(seen.values())
+        with self.lock:
+            rows = list(self.refusals.values())
+        made = []
+        for row in rows:
+            made.append(dict(row, sample=row['sample'].as_dict(redact)))
+        made.sort(key=lambda row: (-row['uploads'], row['ident']))
+        return made
+
+    def stop_refusing(self, ident):
+        """Forget the tally for one station, so it starts again from nothing.
+
+        Called when a station is let in, and when somebody says it is not theirs.
+
+        Args:
+            ident (str): The station's identity.
+
+        Returns:
+            bool: Whether there was a tally to forget.
+        """
+        with self.lock:
+            return self.refusals.pop(ident, None) is not None

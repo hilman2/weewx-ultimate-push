@@ -53,6 +53,69 @@ INTERFACE = """> **There is a web interface for all of this.** It is on by defau
 # What cannot be read off the protocol class: what is worth knowing before setting one
 # up, and what to look at when nothing arrives.
 WRITTEN = {
+    'rtl433': {
+        'good': """rtl_433 is a separate program and none of it is part of this
+driver. Install it, and have it send here:
+
+```bash
+sudo apt install rtl-433
+rtl_433 -C si -F syslog:127.0.0.1:1433
+```
+
+`-C si` asks it to convert what it can itself, which costs nothing and means one
+less thing that can be wrong. `-F syslog:` is how it sends: one datagram per
+message, which is why nothing has to start or supervise it.
+
+Leave it running with a unit of its own rather than starting it by hand. Put this in
+`/etc/systemd/system/rtl_433.service`:
+
+```ini
+[Unit]
+Description=rtl_433
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/rtl_433 -C si -F syslog:127.0.0.1:1433
+Restart=always
+User=nobody
+
+[Install]
+WantedBy=multi-user.target
+```
+
+then `sudo systemctl enable --now rtl_433`. The receiver is a USB device and belongs
+to root until a udev rule says otherwise; rtl-433's package installs one.
+
+**Everything in range turns up, including the neighbours'.** That is the nature of
+listening rather than being sent to, so nothing is recorded until you say which
+sensors are yours. They appear in the web interface, most often heard first, which
+is a good guide: something heard sixty times an hour is close by and transmitting on
+a schedule, and something heard once was a car going past. *Not mine* takes one off
+the list for good.
+
+**A battery change can rename a sensor.** rtl_433's own documentation says an id may
+be programmed in or may be chosen afresh at each power on. When one of yours does
+that it stops recording and turns up as something new; the web interface can move
+the station onto the new id, which keeps its name, its channel and the columns it
+had.
+
+No receiver yet? `python -m user.ultimatepush --fake-rtl433` sends what rtl_433
+sends, three sensors at a time, one of them a neighbour's.""",
+        'wrong': """Nothing arrives at all. rtl_433 is not running, or is sending
+somewhere else. `rtl_433 -C si -F json` in a terminal prints what it hears, which
+settles whether the radio is working before anything about this driver comes into
+it.
+
+Everything is refused. That is what happens until a sensor is let in, and it is on
+purpose: a receiver hears over the fence. The log names each one.
+
+A sensor was recording and stopped. Look for a new one in the waiting list with the
+same model and a different id: that is what a battery change does.
+
+The temperature is right and the rain is nonsense. Nearly every one of these gauges
+sends the total since its battery went in, and WeeWX has to be told to difference
+it. That is `[StdWXCalculate]` and the driver says so at startup if it is not set.""",
+    },
     'purpleair': {
         'good': """Give the sensor a fixed address in your router, under whatever the
 router calls a reserved lease. A sensor whose address changes stops being found, and
@@ -258,6 +321,7 @@ def _example_identity(protocol):
         'weatherflow': 'HB-000abcde',
         'acurite': '246F28AABBCC',
         'lacrosse': '001D0A712233',
+        'rtl433': 'Bresser-6in1/8455/0',
     }.get(protocol.name, 'the-identity-from-the-log')
 
 
@@ -280,6 +344,15 @@ ABOUT_MINIMAL = {
     # A source that is asked has no identity question at all, so this says what it
     # does have instead: an address, and a station that is finished when it is
     # written down.
+    # A receiver hears everything nearby, so the first thing it hears is as likely
+    # to be next door's as your own, and nothing it hears is adopted.
+    'overheard': "The identity is what the sensor puts on the air and cannot be"
+    " chosen, so this line cannot be written until it has been heard once. The log"
+    " prints it, ready to copy. Nothing is adopted here, not even the first sensor"
+    " heard: a receiver was pointed at nothing and hears over the fence, so every"
+    " sensor waits to be let in and only the ones you let in are recorded. The port"
+    " does not have to be written down either, unless you told rtl_433 to use a"
+    " different one: `udp_port` defaults to the one in the command above.",
     'fetch': "There is nothing to identify and nothing to wait for. The driver knows"
     " which sensor answered because it knows which address it asked, so the block"
     " above is the whole of the station: it is recording from the first answer, with"
@@ -287,6 +360,22 @@ ABOUT_MINIMAL = {
     " columns of their own, which is what you want for a sensor whose thermometer is"
     " inside its own housing.",
 }
+
+
+def _about_minimal(protocol):
+    """What the smallest configuration leaves out, and why.
+
+    Args:
+        protocol (type): The protocol class.
+
+    Returns:
+        str: One paragraph.
+    """
+    if protocol.fetched:
+        return ABOUT_MINIMAL['fetch']
+    if protocol.overhears:
+        return ABOUT_MINIMAL['overheard']
+    return ABOUT_MINIMAL[protocol.secret_kind]
 
 
 def console(protocol):
@@ -421,17 +510,23 @@ def page(protocol):
         '|---|---|',
         '| In `protocols = auto` | %s |' % in_auto,
     ]
-    lines += (
-        [
+    if protocol.fetched:
+        lines += [
             '| Named by | the name you give the block |',
             '| Recording from | its first answer |',
         ]
-        if protocol.fetched
-        else [
+    elif protocol.overhears:
+        # A receiver hears over the fence, so nothing it hears is taken for this
+        # installation's own and the usual sentence about adoption would be wrong.
+        lines += [
+            '| Named by | its `model`, `id` and `channel` together |',
+            '| Recording from | whichever sensors you let in |',
+        ]
+    else:
+        lines += [
             '| Named by | its `%s` |' % protocol.identity[0],
             '| Can be set up before it uploads | %s |' % early,
         ]
-    )
     lines += [
         '',
         '## The smallest configuration that works',
@@ -440,11 +535,7 @@ def page(protocol):
         minimal(protocol),
         '```',
         '',
-        wrap(
-            ABOUT_MINIMAL['fetch']
-            if protocol.fetched
-            else ABOUT_MINIMAL[protocol.secret_kind]
-        ),
+        wrap(_about_minimal(protocol)),
         '',
     ]
     lines += console(protocol)

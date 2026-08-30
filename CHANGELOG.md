@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+**Cheap radio sensors, by way of rtl_433.** A twenty-five euro USB stick hears
+every sensor within a few hundred metres that talks on 433, 868 or 915 MHz: outdoor
+thermometers, soil probes, rain gauges, pool sensors. rtl_433 does the radio and the
+decoding and hands over named JSON. This reads it.
+
+```bash
+rtl_433 -C si -F syslog:127.0.0.1:1433
+```
+
+rtl_433 is a separate program and none of it ships here. It sends one datagram per
+message and this driver already had a socket for datagrams, so nothing had to be
+started, supervised or restarted.
+
+The catalog is 47 names rather than the 531 rtl_433 can send, and that is not a gap.
+The unit is in the field name, which is rtl_433's own documented rule, so
+`temperature_F` and `temperature_C` are the same reading and the protocol converts
+from the suffix rather than from knowledge about any device. Four hundred of the
+names come from one decoder each and are tyre pressure sensors and doorbells. A name
+nothing places still arrives, prefixed, and can be placed in the web interface.
+`tools/check_rtl433.py` reads a stated release and says what it can send that is not
+placed, so a new release is a list to look at rather than something to notice a year
+later.
+
+**Nothing overheard becomes a station.** Everything else here had to be aimed at this
+machine, by typing an address into a console or by moving a DNS entry, so the first
+upload is the owner's and the driver adopts it. A receiver was aimed at nothing. It
+hears over the fence, and the first thing it hears is as likely to be next door's
+thermometer, so every sensor waits to be let in.
+
+Which made two things in the waiting list matter that never had before. It was built
+from the last twenty uploads, which is right for a console and useless where thirty
+things are talking: the sensor somebody is looking for had already fallen off the
+end. It is now counted per station as uploads arrive, most often heard first, because
+something heard sixty times an hour is close by and on a schedule and something heard
+once was a car going past. And *not mine* takes one off the list for good, which
+survives a restart.
+
+**A battery change can rename a sensor.** rtl_433's own documentation says an id may
+be programmed in or chosen afresh at each power on. When one of yours does that it
+stops recording and turns up looking new, and letting it in as a second station would
+leave its name, its channel and its columns behind with a number nothing will ever
+send again. The interface moves the station onto the new id instead.
+
+**A receiver to try it against.** `python -m user.ultimatepush --fake-rtl433` sends
+what rtl_433 sends, three sensors at a time, one of them a neighbour's, because
+letting in the ones that are yours is the part worth trying out.
+
 **Hardware that answers, rather than sends.** A PurpleAir cannot be pointed at
 anything. It has no field for a server address, because it was never meant to send:
 it sits on the network and answers whoever asks. So does a Davis AirLink, and most of

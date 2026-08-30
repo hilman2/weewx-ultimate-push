@@ -486,6 +486,16 @@ class Site:
         if route == 'polling/remove':
             ok, message = self.driver.web_remove_polled(body.get('name', ''))
             return _json({'ok': ok, 'message': message})
+        if route == 'ignore':
+            ok, message = self.driver.web_ignore(
+                body.get('ident', ''), bool(body.get('yes', True))
+            )
+            return _json({'ok': ok, 'message': message})
+        if route == 'rebind':
+            ok, message = self.driver.web_rebind(
+                body.get('was', ''), body.get('now', '')
+            )
+            return _json({'ok': ok, 'message': message})
         if route == 'hardware/add':
             ok, message = self.driver.web_add_hardware(
                 body.get('station_type', ''),

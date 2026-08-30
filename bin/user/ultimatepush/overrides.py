@@ -478,6 +478,77 @@ class Store:
                 station['infer_unknown'] = infer_unknown
             return self._save()
 
+    def ignored(self):
+        """Stations somebody has said are not theirs.
+
+        Returns:
+            list[str]: Their identities.
+        """
+        held = self.settings.get('ignored', {})
+        return sorted(held) if isinstance(held, dict) else []
+
+    def set_ignored(self, ident, yes=True):
+        """Say that a station is not this installation's, or take that back.
+
+        A radio receiver hears every sensor for a few hundred metres, and most of
+        them belong to the neighbours. Refusing them is right and listing them for
+        ever is not: somebody who has looked at next door's thermometer once should
+        not be asked about it again every minute.
+
+        Kept rather than worked out again, because the point is that it survives a
+        restart. Nothing is recorded from an ignored station and nothing about it is
+        kept beyond the identity, which is what it puts on the air anyway.
+
+        Args:
+            ident (str): The station's identity.
+            yes (bool): Whether it is being set aside, or being asked about again.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        with self.lock:
+            ident = str(ident).strip()
+            if not ident:
+                return False, "Which station?"
+            held = self.settings.setdefault('ignored', {})
+            if yes:
+                held[ident] = 'not mine'
+            else:
+                held.pop(ident, None)
+            return self._save()
+
+    def rebind_station(self, was, now):
+        """Move a station onto a new identity, and everything that hangs on it.
+
+        A cheap radio sensor often picks a new id when its batteries are changed.
+        Nothing about it has changed except the number it calls itself by, so what
+        must not happen is that it becomes a second station: its name, its role, its
+        channel, its field map and above all the columns it owns belong to the
+        sensor and not to the number.
+
+        Args:
+            was (str): The identity it had.
+            now (str): The identity it has.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        with self.lock:
+            stations = self.settings.get('stations', {})
+            if was not in stations:
+                return False, "This file does not have that station."
+            if now in stations:
+                return False, "There is already a station called '%s'." % now
+            stations[now] = stations.pop(was)
+            learned = self.settings.get('learned', {})
+            if was in learned:
+                learned[now] = learned.pop(was)
+            columns = self.settings.get('columns', {})
+            for field, owner in list(columns.items()):
+                if owner == was:
+                    columns[field] = now
+            return self._save()
+
     def forget_station(self, ident):
         """Take a station out of this file, and what was learned about it.
 

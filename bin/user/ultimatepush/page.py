@@ -305,6 +305,27 @@ function waitingCards() {
   }).join('');
 }
 
+function movedPicker(ident) {
+  /* A cheap radio sensor picks a new number when its batteries are changed, and
+     then turns up here looking like a sensor nobody has ever seen. It is not one:
+     it already has a name, a role, a channel and columns of its own, and letting it
+     in as a second station would leave all of that behind with the old number.
+
+     Only stations this driver set up are offered. One named in weewx.conf is that
+     file's to change, and one that is a hosted driver has no identity to move. */
+  var mine = (stationList ? stationList.stations : []).filter(function (s) {
+    return s.editable && !s.station_type;
+  });
+  if (!mine.length) return '';
+  return '<select>' +
+    '<option value="">a sensor that changed its id\u2026</option>' +
+    mine.map(function (s) {
+      return '<option value="' + esc(s.ident) + '">' + esc(s.name || s.ident) +
+        '</option>';
+    }).join('') + '</select>' +
+    '<button class="act" data-moved="' + esc(ident) + '">Move it here</button>';
+}
+
 function drawSidebar() {
   var box = document.getElementById('stations');
   var waiting = waitingCards();
@@ -459,7 +480,11 @@ function stepBody(s) {
         '<span class="dim">' + esc(w.protocol || '?') + ' from ' + esc(w.client) +
         '</span><input type="text" placeholder="name it" data-name="' +
         esc(w.ident) + '"><button class="act" data-accept="' + esc(w.ident) +
-        '">Let in</button></div>';
+        '">Let in</button>' + movedPicker(w.ident) +
+        '<button class="act" data-notmine="' + esc(w.ident) +
+        '">Not mine</button>' +
+        (w.uploads > 1 ? '<span class="dim">heard ' + w.uploads + ' times</span>'
+                       : '') + '</div>';
     }).join('');
   }
   if (s.id === 'placements') {
@@ -1410,6 +1435,23 @@ document.addEventListener('click', function (e) {
     // Back to whatever the list has, rather than to a value the list does not.
     delete formValues[t.dataset.relist];
     draw();
+    return;
+  }
+  if (t.dataset.notmine) {
+    api('ignore', { ident: t.dataset.notmine, yes: true }).then(hostedThen);
+    return;
+  }
+  if (t.dataset.moved) {
+    /* The picker is the element just before the button, rather than something
+       looked up by identity: an identity is whatever the hardware says it is, and
+       a selector built out of one would break on the first sensor with a quote in
+       its model name. */
+    var picked = t.previousElementSibling;
+    if (!picked || !picked.value) {
+      flash('Choose which station moved onto this id.', true);
+      return;
+    }
+    api('rebind', { was: picked.value, now: t.dataset.moved }).then(hostedThen);
     return;
   }
   if (t.dataset.askadd) {
