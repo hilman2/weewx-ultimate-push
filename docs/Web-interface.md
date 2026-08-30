@@ -115,16 +115,13 @@ and every station after it is offered as an extra sensor. See [Stations](Station
 and [Hosted hardware](Hosted-hardware.md).
 
 A console this driver can hand something to is named first, and the settings to type
-into it appear once it has been. There are two kinds. An Ecowitt or Ambient console
-lets you choose where it posts, so it is given a path of its own. A Weather Underground
-console cannot be told a path, but it carries an ID and a PASSWORD that are anybody's to
-choose, so it is given those instead; it is known from its first upload just the same,
-and the password is checked on every one. Both go over plain HTTP, so they keep out a
-stranger and not somebody who can watch the network. They are not shown before that: the path does not exist
-until the station is named, and showing the address and the port without it invites
-somebody to type those in and then use the driver's general path, which makes the
-console upload as a stranger while the station they just made sits there having never
-been heard from.
+into it appear once it has been. What it is given differs by hardware: an upload path,
+or an ID and a password. See [Stations](Stations.md).
+
+Nothing is shown before the name. The path does not exist until the station has one,
+and showing the address and the port without it invites somebody to type those in,
+reach the path, and use the driver's general one instead. The console then uploads as a
+stranger while the station they just made sits there having never been heard from.
 
 A driver picked from the middle group shows its own settings, with the defaults its
 author wrote, because they come from the driver's own configuration editor rather than

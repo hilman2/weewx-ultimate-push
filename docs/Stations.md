@@ -1,16 +1,41 @@
 # Stations
 
-A single station requires nothing on this page. It uploads, the driver records it, and
-every reading is written where it belongs. Everything below applies once there is a
-second station.
+How to get a station recorded, and what to do once there is more than one.
+
+With a single station most of this looks after itself: it uploads, the driver records
+it, and every reading is written where a WeeWX report expects it. The sections on roles
+and on columns start to matter when a second one arrives.
 
 ## Setting up a station
 
-Open the [web interface](Web-interface.md), enter a name for the station, and select
-what it is.
+Most hardware can be set up before it has ever sent anything. You give the station a
+name and the driver hands you a few settings. You type those into the app that
+configures the console. The first reading then arrives already knowing which station
+it came from.
 
-For hardware whose upload path is yours to choose, that completes the setup. The driver
-generates a path for that station and displays the settings to enter into its app:
+Three kinds cannot, because there is nothing on them to set. Those have to be heard
+first and let in afterwards.
+
+| What you have | What you give it |
+|---|---|
+| An Ecowitt console | An address and a path, both from this driver |
+| An Ambient Weather console | The same |
+| Anything set to *Wunderground* | An address, an ID and a password, all from this driver |
+| A Tempest or other WeatherFlow hub | Nothing. It shouts to the whole network |
+| An Acurite smartHUB or Access | Nothing. Only a DNS entry can move it |
+| A LaCrosse LW30x gateway | Nothing. The same |
+| A station on a cable or on USB | Its port, and whatever else its own driver asks |
+
+The last of those is [hosted hardware](Hosted-hardware.md): a station this machine reads
+rather than waits for.
+
+### In the web interface
+
+Open the [web interface](Web-interface.md), pick what you have, and give it a name. What
+appears next depends on the kind.
+
+For an Ecowitt or Ambient console the driver makes a path and shows the settings to
+enter into its app:
 
 | | |
 |---|---|
@@ -19,8 +44,64 @@ generates a path for that station and displays the settings to enter into its ap
 | Path | `/E0rbpxexKCsb/report` |
 | Port | 8000 |
 
-From the first upload the driver knows which station sent it. The same settings remain
-available on the **Stations** tab afterwards, for a console that has to be set up again.
+For a Weather Underground console it makes an `ID` and a `PASSWORD` instead, because
+that console cannot be told a path:
+
+| | |
+|---|---|
+| Server | 192.168.1.50 |
+| Port | 8000 |
+| ID | `up-84746199` |
+| PASSWORD | `Qq6V-CmxMLUY` |
+
+Nothing is shown until the station has a name, because the name is what produces the
+path or the ID. From the first upload the driver knows which station sent it. The same
+settings stay on the **Stations** tab afterwards, for a console that has to be set up
+again a year later.
+
+For hardware this machine reads rather than waits for, the form is that driver's own.
+See [Hosted hardware](Hosted-hardware.md).
+
+### In weewx.conf
+
+Anything the interface can do, you can write yourself. A station you put in this file
+belongs to the file: the interface shows it and will not change it, so the two can never
+disagree about it.
+
+An Ecowitt or Ambient console, with a path of your choosing:
+
+```ini
+[UltimatePush]
+    [[stations]]
+        [[[garden]]]
+            passkey = 3178AB6B42A759F51A5A4AD72E37F8DE
+            path = /a8f3c1e0/report
+```
+
+A Weather Underground console, with the ID and password you will type into it:
+
+```ini
+[UltimatePush]
+    [[stations]]
+        [[[garden]]]
+            id = my-garden
+            password = pick-something-long
+```
+
+A WeatherFlow hub, an Acurite bridge or a LaCrosse gateway. You cannot make up what
+these are called. It is the serial number or the MAC address the hardware sends itself,
+so let it upload once and then write the line:
+
+```ini
+[UltimatePush]
+    [[stations]]
+        [[[tempest]]]
+            id = ST-00012345
+```
+
+The log prints it the first time one of them uploads, ready to copy. Every option a
+station takes is listed under
+[Configuring stations in weewx.conf](#configuring-stations-in-weewxconf) below.
 
 ### Why the path rather than the PASSKEY
 
@@ -33,7 +114,16 @@ upload can repeat it. The path is known only to whoever was shown it.
 Where the hardware can be given a path, the path is the identity. Where it cannot, the
 PASSKEY is used instead.
 
-### Hardware that cannot be pointed anywhere
+A Weather Underground console sits between the two. Its path is fixed in the firmware,
+so it cannot be given one. But it carries an `ID` that names it and a `PASSWORD` that
+proves it, and both are anybody's to choose. So the driver chooses them, which comes to
+the same thing: the station is known from its first upload.
+
+Neither is a strong secret. They travel in the address the console posts to, over plain
+HTTP, exactly as a path does. They keep out a stranger who has found the port, not
+somebody watching the network. See [Keeping strangers out](Security.md).
+
+### Hardware that has to be heard first
 
 Three of the six protocols cannot be set up in advance:
 
@@ -49,6 +139,90 @@ you can confirm it is yours. Accepting it takes one click.
 
 The first console a new driver ever hears is adopted without being asked, because at
 that point there is nothing to confuse it with. Every station after that waits.
+
+## Adding a second station
+
+Setting up the second one works exactly like the first. The difference is what the
+driver assumes about it.
+
+Your first station is *the* station: its temperature is the outdoor temperature, its
+pressure is the pressure, and a WeeWX report reads all of it without being told
+anything. A second console is almost never meant to replace that. It is usually another
+thermometer somewhere else, so the driver treats it as one and gives it a channel of
+its own.
+
+In the web interface that is filled in for you and there is nothing to do. If the new
+one really should take over as the main station, you can say so, and the interface
+explains what that costs before it happens.
+
+By hand it is written out, because a file has nothing to fill in for you:
+
+```ini
+[UltimatePush]
+    [[stations]]
+
+        [[[garden]]]
+            passkey = 3178AB6B42A759F51A5A4AD72E37F8DE
+            path = /a8f3c1e0/report
+
+        [[[roof]]]
+            passkey = 9A2B4C6D8E0F1A3B5C7D9E1F2A4B6C8D
+            role = extra
+            channel = 4
+```
+
+A station this machine reads sits in the same list, in a section of its own. See
+[Hosted hardware](Hosted-hardware.md).
+
+You can add as many as you like. What runs out is not stations but places to put their
+readings, which is the next section.
+
+## Which station's readings go where
+
+With one station this looks after itself. With two, something has to decide whose
+temperature is *the* outdoor temperature, and where the other one's goes.
+
+It has to be decided by something, because the database has one column for it. Two
+sensors writing that column in turn would leave a mixture that nothing afterwards can
+untangle.
+
+Three things decide it. You can change any of them, and each answers a different
+question.
+
+**Whose readings are the station's own.** That is the main station, and it is the big
+lever: change which station has that role and all of its readings move at once. Its
+temperature stops being `outTemp` and becomes `extraTemp` on a channel, and its wind,
+rain and pressure stop being recorded, because there is nowhere else for them. See
+[Roles](#roles) below, and read the warning there first: it changes what a report shows
+from that moment on.
+
+**Where one particular reading goes.** For a single sensor rather than a whole station.
+The soil probe on channel 1 of the second console has nowhere of its own to go, and you
+want it in `soilMoist3`. In the web interface that is the **Fields** tab, one row per
+reading, with a selector saying where it goes and what that costs. By hand it is
+`field_map_extensions` under that station:
+
+```ini
+[[[roof]]]
+    passkey = 9A2B4C6D8E0F1A3B5C7D9E1F2A4B6C8D
+    role = extra
+    channel = 4
+    [[[[field_map_extensions]]]]
+        soilmoisture1 = soilMoist3
+        tf_ch1 = soilTemp5
+```
+
+Either way it takes effect on the next upload, with no restart. What names are
+available and where they come from is in [Field map](Field-map.md).
+
+**Who got there first.** A column belongs to whichever station first filled it, and
+everybody else is turned away from it. This is what stops three identical extra sensors
+from taking turns in one soil column. If a column is held by a station that has gone, or
+by the wrong one, you take it away from that station and the next one to send that
+reading gets it. See [Column ownership](#column-ownership) below.
+
+A placement you made yourself beats the other two, always. If a reading is not where you
+expect it, the **Fields** tab shows which of the three put it there.
 
 ## Roles
 
@@ -208,6 +382,14 @@ Default is none.
 
 Which `extraTempN` and `extraHumidN` an extra station writes to. Default is the next
 free channel.
+
+#### password
+
+The secret this station presents, for hardware that carries one. Only Weather
+Underground does. Checked on every upload from this station, in constant time, and
+uploads that get it wrong are refused. A station's own comes before the `password` in
+the driver section, so that two consoles told apart by an `ID` cannot use each other's.
+Default is none, and then the driver's is used.
 
 #### infer_unknown
 

@@ -723,6 +723,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                     % (name, station.role, ', '.join(roles.ROLES))
                 )
             station.path = str(options.get('path', '')).strip() or None
+            # A secret of this station's own, for hardware that carries one. The
+            # interface gives one to every Weather Underground console it sets up,
+            # and everything the interface does has to be writable here too.
+            station.password = str(options.get('password', '')).strip() or None
             stations[str(ident).strip()] = station
         log.info(
             "Listening for %d consoles: %s",

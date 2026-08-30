@@ -79,6 +79,17 @@ Which page a fact belongs on follows from who is reading:
 | How it works | wants to understand the machine | formats, structures, why the design is this way |
 | Development | is changing the code | environment, tools, this page |
 
+The reader of **Using it** owns a weather station. They are not a programmer and have
+no reason to be. Write for somebody who knows what a barometer is and does not know
+what a field map is, and who came here because a reading is missing or a second console
+has arrived.
+
+That decides the words. "Whose temperature is the outdoor temperature" rather than
+"which station owns the `outTemp` column"; "the app that configures the console" rather
+than "the vendor application". Our own vocabulary is introduced where it first earns
+its keep, and not before. A heading names what the reader wants to do, not the
+mechanism that does it.
+
 Facts move down that table, never up. An installation page does not explain how an
 upload is recognised; it links to the page that does.
 

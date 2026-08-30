@@ -915,3 +915,33 @@ def test_a_station_that_is_taken_out_gives_its_columns_back(driver, payload):
 
     assert driver.owners.owner('extraTemp1') is None
     assert driver.owners.owner('outTemp') == 'path:' + main['path']
+
+
+def test_a_station_in_weewx_conf_can_carry_its_own_password(tmp_path):
+    """Everything the interface does is writable in weewx.conf, this included.
+
+    The interface gives every Weather Underground console it sets up a password of
+    its own. A station declared by hand would otherwise be stuck with the driver's,
+    which two consoles would share.
+    """
+    made = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        report_file='',
+        console_file=str(tmp_path / 'c.txt'),
+        override_file=str(tmp_path / 'w.conf'),
+        stations={
+            'north': {'id': 'up-north', 'password': 'north-secret'},
+            'south': {
+                'id': 'up-south',
+                'password': 'south-secret',
+                'role': 'extra',
+                'channel': '3',
+            },
+        },
+    )
+    try:
+        assert made.stations['up-north'].password == 'north-secret'
+        assert made.stations['up-south'].password == 'south-secret'
+    finally:
+        made.closePort()

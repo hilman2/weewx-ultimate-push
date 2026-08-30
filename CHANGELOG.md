@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+**A station in `weewx.conf` can carry its own password.** The interface gives one to
+every Weather Underground console it sets up, and `Stations.md` promises that everything
+the interface does can be written by hand. It could not: only the interface wrote it.
+
+**Stations.md says how each kind of hardware is set up, in both places.** What an
+Ecowitt console is given, what a Weather Underground console is given instead, and what
+the three that cannot be told anything need. What adding a second station changes. And
+which of three things decides where a reading ends up, with what to do about each.
+
 **The interface carries its own icon.** A page that declares one is not asked for
 `/favicon.ico`, and that request arrives without a token: ten of them in five minutes
 would have stopped the address being answered at all. A request for it is now answered
