@@ -53,6 +53,27 @@ CI runs both, across Python 3.8 to 3.13, plus a vermin check against 3.7.
 | `tools/check_docstring_types.py` | holds the docstring types against the signatures |
 | `tools/publish_wiki.py` | copies `docs/` into the wiki |
 
+## Running the tests
+
+In Docker, against a stated WeeWX, so that a run says the same thing on every machine:
+
+```bash
+docker compose -f tests/docker/compose.yml run --rm tests
+```
+
+| Service | |
+|---|---|
+| `tests` | the suite, with a per-test timeout |
+| `watch` | the same, saying what it is doing while it does it |
+| `checks` | black, mypy, the docstring types, vermin |
+| `tests-oldest` | the suite on the oldest Python WeeWX supports |
+| `build-docs` | the four generators, the only service that may write to `docs/` |
+| `shell` | a shell in the same environment |
+
+The source is mounted read-only and everything written goes to `/tmp`. The container
+runs as a normal user rather than root: two tests make a file unwritable and check the
+driver survives it, and root can write to anything.
+
 What the first five are for, and which lists decide where a reading goes, is in
 [Catalogs](Catalogs.md). The docstring checker is in
 [Conventions](Conventions.md#types).
