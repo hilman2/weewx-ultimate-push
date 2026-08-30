@@ -459,6 +459,14 @@ def template_for(module):
                 'rarely': rarely and key != 'driver',
             }
     fields.setdefault('driver', plain['driver'])
+    if list(fields) == ['driver']:
+        # An editor can name nothing at all. weewx-sdr ships one whose whole stanza
+        # is commented out, which is a fine thing to write into a configuration file
+        # and leaves a form with one row on it. The constructor still holds the list,
+        # so fall through to it. Only in this case: a driver whose editor names its
+        # options has said which ones are worth showing, and the rest of what its
+        # constructor reads is not for a form.
+        return _from_the_class(module, plain) or bare
     return {'fields': fields, 'connects': reach, 'about': CONNECTS[reach]}
 
 
@@ -575,10 +583,38 @@ def _asked_of(module):
         named = [_base_name(base) for base in node.bases]
         if not any(name.endswith('AbstractDevice') for name in named):
             continue
-        found = _stanza_reads(node)
+        found = _stanza_reads(node, _constants(tree))
         if found:
             return found
     return collections.OrderedDict()
+
+
+def _constants(tree):
+    """Every name in a module that is assigned a constant, and what it is.
+
+    A driver often keeps a default beside the class rather than in the call, as
+    `stn_dict.get('cmd', DEFAULT_CMD)`. Without this that option would be offered
+    with no default, and one whose constant is a block would be offered as a box to
+    type a block into.
+
+    Names are not qualified. Two classes in one module with a default of the same
+    name would collide, and the cost of that is one wrong default in a form.
+
+    Args:
+        tree (ast.Module): The parsed module.
+
+    Returns:
+        dict: Name to the expression assigned to it.
+    """
+    found = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            name = getattr(target, 'id', '')
+            if name and name not in found:
+                found[name] = node.value
+    return found
 
 
 def _base_name(node):
@@ -598,11 +634,13 @@ def _base_name(node):
     return ''
 
 
-def _stanza_reads(klass):
+def _stanza_reads(klass, constants):
     """The options one class's constructor reads, by name and default.
 
     Args:
         klass (ast.ClassDef): A driver class.
+        constants (dict): What each name in the module is assigned, for a default
+            that points at one rather than being written in the call.
 
     Returns:
         collections.OrderedDict: Option name to default. Empty when the constructor
@@ -616,13 +654,13 @@ def _stanza_reads(klass):
             return found
         held = node.args.kwarg.arg
         for inner in ast.walk(node):
-            name, value = _one_read(inner, held)
+            name, value = _one_read(inner, held, constants)
             if name and name not in found:
                 found[name] = value
     return found
 
 
-def _one_read(node, held):
+def _one_read(node, held, constants=None):
     """One option read out of the stanza, if that is what this expression is.
 
     There are two ways a driver reads one. `stn_dict.get('x', default)` is an option
@@ -631,6 +669,8 @@ def _one_read(node, held):
     Args:
         node (ast.AST): Any node inside the constructor.
         held (str): The name of the constructor's keyword argument.
+        constants (dict | None): What each name in the module is assigned, for a
+            default written as one of those rather than in the call.
 
     Returns:
         tuple: (the option name, its default as a string), or (None, None). The
@@ -646,10 +686,23 @@ def _one_read(node, held):
         and node.args
     ):
         name = _literal(node.args[0])
-        value = _literal(node.args[1]) if len(node.args) > 1 else ''
-        if isinstance(name, str) and isinstance(value, str):
-            return name, value
-        return None, None
+        if not isinstance(name, str):
+            return None, None
+        if len(node.args) < 2:
+            return name, ''
+        value = _literal(node.args[1])
+        if value is None:
+            # Written as a name rather than as a value. Follow it: a default that
+            # turns out to be a block has to be left out like any other, and one
+            # that turns out to be a string is the default.
+            value = _followed(node.args[1], constants)
+        if value is SECTION:
+            # A block rather than a value. A form cannot hold one, and offering a
+            # box for it would invite a line that cannot work.
+            return None, None
+        # An option whose default cannot be known without running the module. It is
+        # real, so it is offered empty rather than left out.
+        return name, value if isinstance(value, str) else ''
     if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
         if node.value.id != held:
             return None, None
@@ -663,6 +716,30 @@ def _one_read(node, held):
     return None, None
 
 
+# What _literal says about a default that is a block rather than a value. Kept apart
+# from None, which means "not a constant at all": one is an option a form cannot
+# hold, the other is an option whose default this cannot know.
+SECTION = object()
+
+
+def _followed(node, constants):
+    """What a default that is written as a name turns out to be.
+
+    Args:
+        node (ast.AST): The default, as written.
+        constants (dict | None): What each name in the module is assigned.
+
+    Returns:
+        str: The value, SECTION for a block, or None when it cannot be followed.
+    """
+    if not constants:
+        return None
+    name = getattr(node, 'id', '') or getattr(node, 'attr', '')
+    if name not in constants:
+        return None
+    return _literal(constants[name])
+
+
 def _literal(node):
     """One constant out of the source, written the way a configuration file does.
 
@@ -670,15 +747,15 @@ def _literal(node):
         node (ast.AST): The expression to read.
 
     Returns:
-        str: The value. None for anything that is not a constant, and for a list or
-        a dictionary, which is a subsection rather than a value.
+        str: The value. SECTION for a list or a dictionary, which is a subsection
+        rather than a value. None for anything that is not a constant.
     """
     try:
         value = ast.literal_eval(node)
     except Exception:
         return None
     if isinstance(value, (dict, list, tuple, set)):
-        return None
+        return SECTION
     if value is None:
         return ''
     return str(value)

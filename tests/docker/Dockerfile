@@ -72,6 +72,7 @@ RUN pip install --no-cache-dir paho-mqtt
 ARG MQTTSUBSCRIBE=f622291360ce1e74b8f000324226a1440e8f93b3
 ARG WEATHERFLOWUDP=eedfaf7b1ee1d0eb51513966b7a09e7622858791
 ARG RTLDAVIS=2f3b4b344fd70ab253aabfa837b0ffc76570c075
+ARG SDR=e5f1f9915322fa6d1c25b4ff8e490b804cefeac1
 ARG PURPLE=7c4e11724eadea51f1a0d98261e3907801402709
 
 # Laid out as a WeeWX installation lays them out: bin/user, which is the package
@@ -82,6 +83,7 @@ RUN set -e; \
         "https://github.com/bellrichm/WeeWX-MQTTSubscribe ${MQTTSUBSCRIBE}" \
         "https://github.com/captain-coredump/weatherflow-udp ${WEATHERFLOWUDP}" \
         "https://github.com/lheijst/weewx-rtldavis ${RTLDAVIS}" \
+        "https://github.com/matthewwall/weewx-sdr ${SDR}" \
         "https://github.com/chaunceygardiner/weewx-purple ${PURPLE}" \
     ; do \
         set -- ${one}; \

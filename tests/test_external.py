@@ -6,10 +6,11 @@
 """Hosting drivers WeeWX does not ship.
 
 The stock drivers are written to one house style, and a host that only ever met
-those has not been tested against much. The three here were each written by
-somebody else, years apart: one has no configuration editor at all, one is reached
-over the network rather than over a wire, and one does not touch the hardware but
-runs a program that does. Each broke something that looked settled.
+those has not been tested against much. The four here were each written by somebody
+else, years apart: one has no configuration editor at all, one ships an editor with
+every option commented out, one is reached over the network rather than over a wire,
+and two do not touch the hardware but run a program that does. Each broke something
+that looked settled.
 
 They are fetched into the image at a stated commit rather than vendored, so nothing
 here ships in a release. Without that image this whole file skips, which is why the
@@ -58,6 +59,11 @@ EXTERNAL = {
     },
     'user.rtldavis': {
         'name': 'Rtldavis',
+        'connects': hardware.BY_COMMAND,
+        'offers': (),
+    },
+    'user.sdr': {
+        'name': 'SDR',
         'connects': hardware.BY_COMMAND,
         'offers': (),
     },
@@ -162,6 +168,27 @@ def test_how_a_driver_from_elsewhere_is_reached(module_name):
     sends a person with an MQTT broker to look in /dev/serial/by-id/.
     """
     assert found()[module_name]['connects'] == EXTERNAL[module_name]['connects']
+
+
+def test_an_editor_that_names_nothing_falls_through_to_the_constructor():
+    """weewx-sdr ships a stanza with every option commented out.
+
+    That is a reasonable thing to write into somebody's configuration file and it
+    leaves a form with one row on it. The constructor still holds the list, and one
+    of the options is the command line that makes the driver work at all.
+    """
+    import importlib
+
+    module = importlib.import_module('user.sdr')
+    assert hasattr(module, 'confeditor_loader'), "this test is about having one"
+    fields = hardware.template_for(module)['fields']
+    assert 'cmd' in fields
+    # The real default, which is written beside the class rather than in the call.
+    assert fields['cmd']['value'].startswith('rtl_433')
+    assert 'ld_library_path' in fields
+    # A default that is a block stays out: it cannot be a box on a form.
+    assert 'deltas' not in fields
+    assert 'sensor_map' not in fields
 
 
 def test_a_driver_with_no_editor_still_describes_itself():
