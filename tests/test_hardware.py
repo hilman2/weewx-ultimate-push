@@ -1675,6 +1675,38 @@ def test_a_stock_driver_on_a_cable_is_hosted_and_read():
         wire.close()
 
 
+def test_a_stock_driver_that_has_to_be_switched_into_a_mode_is_read():
+    """An Ultimeter is told to start talking, and then it talks.
+
+    Two things WS1 does not do: it writes before it reads, and what it writes is a
+    mode rather than a question. So the wire has to answer nothing and start
+    speaking, which is a third shape of conversation and the one most consoles on a
+    cable actually use.
+    """
+    pytest.importorskip('serial', reason="pyserial is not installed")
+    pytest.importorskip('weewx.drivers.ultimeter')
+    from helpers import Wire
+
+    wire = Wire(speaks=PEETBROS)
+    config = {
+        'Ultimeter': {'driver': 'weewx.drivers.ultimeter', 'port': wire.name},
+        'StdArchive': {'archive_interval': '300'},
+    }
+    host = hardware.build({'station_types': 'Ultimeter'}, config, None)
+    assert host is not None
+    try:
+        host.start_loop()
+        packet = host.get(timeout=20)
+        assert packet is not None, "nothing came out of the driver"
+        assert packet['source'] == 'Ultimeter'
+        assert packet['outTemp'] == pytest.approx(74.7)
+    finally:
+        host.close()
+        wire.close()
+    # It asked to be put into logger mode before it read anything.
+    assert any(b'>I' in one for one in wire.asked), wire.asked
+
+
 def test_a_cable_driver_whose_port_is_not_there_leaves_the_others_alone():
     """A serial port that does not exist, which is the ordinary mistake.
 

@@ -56,8 +56,13 @@ CMD ["python", "-m", "pytest", "tests", "-q", "--timeout=60", "-n", "auto"]
 #
 # They are fetched at a stated commit rather than at whatever their branch says
 # today, so that a run that fails says something about this driver rather than about
-# somebody else's morning. Each is GPL-3, and each is read here rather than shipped:
-# nothing from this stage goes into a release.
+# somebody else's morning.
+#
+# Each is read here and none is shipped: nothing from this stage goes into a
+# release. That matters, because they are not all licensed the same way. Most are
+# only 'all rights reserved'. Reading somebody's published source in order to test
+# against it is one thing and redistributing it is another, and this stage does the
+# first only.
 FROM base AS external
 
 USER root
@@ -78,6 +83,7 @@ ARG PURPLE=7c4e11724eadea51f1a0d98261e3907801402709
 # things nothing else does: a clock that can be set, startup records, and a form
 # built from a driver that ships no editor.
 ARG WXT5X0=d64d39747f3b446ca5706bc8c492dbb39b0aa261
+ARG MAXBOTIX=cf4265253ef50a4077dca3fedf5181d7769dd245
 ARG WS6IN1=1fb840239a1bbc2caee2e663208ea0c7bffe54cb
 ARG KLIMALOGG=9b70be25bc1650ae109de8fa9071ae9ce384e352
 
@@ -92,6 +98,7 @@ RUN set -e; \
         "https://github.com/matthewwall/weewx-sdr ${SDR}" \
         "https://github.com/chaunceygardiner/weewx-purple ${PURPLE}" \
         "https://github.com/matthewwall/weewx-wxt5x0 ${WXT5X0}" \
+        "https://github.com/matthewwall/weewx-maxbotix ${MAXBOTIX}" \
         "https://github.com/BobAtchley/weewx-ws6in1 ${WS6IN1}" \
         "https://github.com/matthewwall/weewx-klimalogg ${KLIMALOGG}" \
     ; do \

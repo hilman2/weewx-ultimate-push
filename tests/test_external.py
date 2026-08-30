@@ -639,3 +639,40 @@ def test_a_usb_driver_with_no_device_leaves_the_others_alone():
         assert seen[0]['source'] == 'Simulator'
     finally:
         host.close()
+
+
+# What a Maxbotix ultrasonic range finder sends: an R and a distance in millimetres.
+MAXBOTIX = b'R1234\r'
+
+
+def test_a_sensor_that_measures_one_thing():
+    """A Maxbotix range finder: snow depth, or the level in a tank.
+
+    Worth having in the matrix because it is the smallest possible station. One
+    reading, no weather, and it still has to go through roles and columns like
+    anything else.
+    """
+    pytest.importorskip('serial', reason="pyserial is not installed")
+    from helpers import Wire
+
+    wire = Wire(speaks=MAXBOTIX, every=0.1)
+    config = {
+        'Maxbotix': {
+            'driver': 'user.maxbotix',
+            'port': wire.name,
+            'poll_interval': '0',
+        },
+        'StdArchive': {'archive_interval': '300'},
+    }
+    host = hardware.build({'station_types': 'Maxbotix'}, config, None)
+    assert host is not None
+    try:
+        host.start_loop()
+        packet = host.get(timeout=20)
+        assert packet is not None, "nothing came out of the driver"
+        assert packet['source'] == 'Maxbotix'
+        # Millimetres on the wire, and the driver reports centimetres.
+        assert packet['range'] == pytest.approx(123.4)
+    finally:
+        host.close()
+        wire.close()

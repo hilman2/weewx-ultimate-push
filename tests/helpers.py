@@ -16,6 +16,7 @@ cannot be opened without one, so it gets a pseudo terminal instead.
 import os
 import select
 import threading
+import time
 import tty
 
 from ultimatepush import protocols, transport
@@ -113,11 +114,13 @@ class Wire:
 
     Args:
         answers (dict | None): What to reply to each command the driver sends, as
-            bytes to bytes. A driver that sends nothing and only listens needs none
-            of this; give it `speaks` instead.
-        speaks (bytes | None): A line to send over and over, for a driver that does
-            not ask for anything.
-        every (float): Seconds between lines, for a driver that does not ask.
+            bytes to bytes. An empty answer means the command is expected and needs
+            no reply, which is what a console that is being switched into a mode
+            does.
+        speaks (bytes | None): A line to send over and over, for a console that
+            talks without being asked. May be given together with `answers`: some
+            are told to start talking and then talk.
+        every (float): Seconds between lines, for a console that talks.
     """
 
     def __init__(self, answers=None, speaks=None, every=0.2):
@@ -137,32 +140,50 @@ class Wire:
         self.thread.start()
 
     def _talk(self):
-        """Answer what the driver asks, or talk regardless. On its own thread."""
+        """Answer what the driver asks, and say what this is set to say.
+
+        Both in one loop rather than two threads, for two reasons. Two threads
+        writing to one file descriptor interleave, and a console that talks without
+        being asked still has to have what the driver writes read out of the way:
+        the buffer fills otherwise and the driver's next write blocks for good.
+
+        On its own thread.
+        """
+        said = 0.0
         while not self.stopped.is_set():
-            if self.speaks is not None:
+            ready, _, _ = select.select([self.master], [], [], 0.05)
+            if ready:
                 try:
-                    os.write(self.master, self.speaks)
+                    asked = os.read(self.master, 256)
                 except OSError:
                     return
-                self.stopped.wait(self.every)
-                continue
-            ready, _, _ = select.select([self.master], [], [], 0.2)
-            if not ready:
-                continue
-            try:
-                asked = os.read(self.master, 256)
-            except OSError:
-                return
-            if not asked:
-                return
-            self.asked.append(asked)
-            for wanted, said in self.answers.items():
-                if wanted in asked:
-                    try:
-                        os.write(self.master, said)
-                    except OSError:
-                        return
-                    break
+                if not asked:
+                    return
+                self.asked.append(asked)
+                for wanted, answer in self.answers.items():
+                    if wanted in asked and answer:
+                        if not self._say(answer):
+                            return
+                        break
+            if self.speaks is not None and time.time() - said >= self.every:
+                if not self._say(self.speaks):
+                    return
+                said = time.time()
+
+    def _say(self, what):
+        """Put bytes on the wire.
+
+        Args:
+            what (bytes): What to send.
+
+        Returns:
+            bool: Whether it went. False once the other end has gone.
+        """
+        try:
+            os.write(self.master, what)
+            return True
+        except OSError:
+            return False
 
     def close(self):
         """Let go of both ends."""
