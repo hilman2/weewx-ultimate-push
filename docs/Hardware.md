@@ -289,7 +289,7 @@ These predate the Ecowitt brand. Most speak the Wunderground protocol, and only 
 | HP1000 | Console with Wi-Fi upload, same array. Sold as Aercus WeatherRanger, Ambient WS-1001. |
 | WH2650 | Gateway between the WH24 array and Wi-Fi. |
 | WH1080 / WH1081 | USB console, no network at all. WeeWX reads it with the `fousb` driver in the core, not with this one. |
-| WH23xx / WH4000 | Serial or USB console. Sold as Tycon TP2700, MiSol WH2310. Needs `weewx-wh23xx`. |
+| WH23xx / WH4000 | Serial or USB console. Sold as Tycon TP2700, MiSol WH2310. There is a `weewx-wh23xx` driver and it is Python 2: it stops at a syntax error under any Python WeeWX 5 runs on, and has not been touched since 2020. Nothing here reads this console. |
 
 ## Fields nobody has identified
 

@@ -67,13 +67,20 @@ RUN apt-get update \
 
 # What MQTTSubscribe talks to a broker with. The others need nothing that is not
 # already here, which is why they can be hosted on a machine with no hardware.
-RUN pip install --no-cache-dir paho-mqtt
+RUN pip install --no-cache-dir paho-mqtt crcmod
 
 ARG MQTTSUBSCRIBE=f622291360ce1e74b8f000324226a1440e8f93b3
 ARG WEATHERFLOWUDP=eedfaf7b1ee1d0eb51513966b7a09e7622858791
 ARG RTLDAVIS=2f3b4b344fd70ab253aabfa837b0ffc76570c075
 ARG SDR=e5f1f9915322fa6d1c25b4ff8e490b804cefeac1
 ARG PURPLE=7c4e11724eadea51f1a0d98261e3907801402709
+# Hardware on a wire, and hardware on USB. Between them they ask the host for
+# things nothing else does: a clock that can be set, startup records, and a form
+# built from a driver that ships no editor.
+ARG WXT5X0=d64d39747f3b446ca5706bc8c492dbb39b0aa261
+ARG SDS011=f268900993c7804d873737302a49126ce8bdf96c
+ARG WS6IN1=1fb840239a1bbc2caee2e663208ea0c7bffe54cb
+ARG KLIMALOGG=9b70be25bc1650ae109de8fa9071ae9ce384e352
 
 # Laid out as a WeeWX installation lays them out: bin/user, which is the package
 # `available()` searches for drivers somebody installed as an extension.
@@ -85,6 +92,10 @@ RUN set -e; \
         "https://github.com/lheijst/weewx-rtldavis ${RTLDAVIS}" \
         "https://github.com/matthewwall/weewx-sdr ${SDR}" \
         "https://github.com/chaunceygardiner/weewx-purple ${PURPLE}" \
+        "https://github.com/matthewwall/weewx-wxt5x0 ${WXT5X0}" \
+        "https://github.com/matthewwall/weewx-sds011 ${SDS011}" \
+        "https://github.com/BobAtchley/weewx-ws6in1 ${WS6IN1}" \
+        "https://github.com/matthewwall/weewx-klimalogg ${KLIMALOGG}" \
     ; do \
         set -- ${one}; \
         name=$(basename "$1"); \

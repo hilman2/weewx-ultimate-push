@@ -213,8 +213,10 @@ OLDER = [
     ),
     (
         'WH23xx / WH4000',
-        "Serial or USB console. Sold as Tycon TP2700, MiSol WH2310. "
-        "Needs `weewx-wh23xx`.",
+        "Serial or USB console. Sold as Tycon TP2700, MiSol WH2310. There is a "
+        "`weewx-wh23xx` driver and it is Python 2: it stops at a syntax error "
+        "under any Python WeeWX 5 runs on, and has not been touched since 2020. "
+        "Nothing here reads this console.",
     ),
 ]
 

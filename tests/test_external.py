@@ -6,11 +6,12 @@
 """Hosting drivers WeeWX does not ship.
 
 The stock drivers are written to one house style, and a host that only ever met
-those has not been tested against much. The four here were each written by somebody
-else, years apart: one has no configuration editor at all, one ships an editor with
+those has not been tested against much. The ones here were each written by somebody
+else, years apart. One has no configuration editor at all, one ships an editor with
 every option commented out, one is reached over the network rather than over a wire,
-and two do not touch the hardware but run a program that does. Each broke something
-that looked settled.
+two do not touch the hardware but run a program that does, one has a clock it can set
+and cannot read, and one will not run on any Python WeeWX supports. Each broke
+something that looked settled, or is here so that it stays broken visibly.
 
 They are fetched into the image at a stated commit rather than vendored, so nothing
 here ships in a release. Without that image this whole file skips, which is why the
@@ -57,6 +58,13 @@ EXTERNAL = {
         'connects': hardware.BY_NETWORK,
         'offers': ('genArchiveRecords', 'archive_interval'),
     },
+    # A TFA KlimaLogg Pro, over USB. It keeps history, which almost nothing on USB
+    # does, so it is the only thing here that offers startup records.
+    'user.kl': {
+        'name': 'KlimaLogg',
+        'connects': hardware.BY_USB,
+        'offers': ('genStartupRecords',),
+    },
     'user.rtldavis': {
         'name': 'Rtldavis',
         'connects': hardware.BY_COMMAND,
@@ -65,6 +73,18 @@ EXTERNAL = {
     'user.sdr': {
         'name': 'SDR',
         'connects': hardware.BY_COMMAND,
+        'offers': (),
+    },
+    # A clock that can be set and not read, which no driver WeeWX ships has. It also
+    # ships no configuration editor, so its form comes out of its constructor.
+    'user.ws6in1': {
+        'name': 'WS6in1',
+        'connects': hardware.BY_USB,
+        'offers': ('genStartupRecords', 'setTime'),
+    },
+    'user.wxt5x0': {
+        'name': 'WXT5x0',
+        'connects': hardware.BY_CABLE,
         'offers': (),
     },
     'user.weatherflowudp': {
@@ -487,3 +507,54 @@ def test_a_driver_whose_program_is_missing_is_left_out_rather_than_fatal():
         assert seen[0]['source'] == 'Simulator'
     finally:
         host.close()
+
+
+# ---- what the stock drivers never ask for -----------------------------------
+
+
+def test_a_clock_that_can_be_set_and_not_read():
+    """ws6in1 has setTime and its getTime is commented out.
+
+    No driver WeeWX ships is like that: the Vantage and the CC3000 have both. What
+    matters here is that the two are asked for separately, so the one it has is
+    delegated and the one it has not raises where WeeWX understands it.
+
+    WeeWX will never call the one it has. StdTimeSynch reads the console's clock
+    before deciding whether to set it, and gives up on the whole thing when that
+    raises. That is a fact about this driver and about WeeWX, not about this one,
+    and it is why the page for it says the clock is never synchronised.
+    """
+    import importlib
+
+    module = importlib.import_module('user.ws6in1')
+    assert offered_by(module) == ('genStartupRecords', 'setTime')
+
+
+def test_a_driver_that_will_not_run_on_python_3_says_so():
+    """weewx-sds011 is a print statement away from Python 2 and has been since 2020.
+
+    It is a driver by every test that can be made without running it, so the import
+    failure is reported rather than swallowed. Somebody who installed it should read
+    why it is not in their list, not wonder where it went.
+    """
+    one = found().get('user.sds011')
+    assert one is not None, "a driver that will not import must still be reported"
+    assert one['problem'], "no reason given"
+    assert 'print' in one['problem']
+    assert one['fields'] == {}, "nothing was read out of a module that did not import"
+
+
+def test_a_usb_driver_with_no_editor_describes_itself_from_its_constructor():
+    """The second driver to need the fallback, and the first that is not on a socket.
+
+    weatherflowudp was the first. Two of them, written by different people years
+    apart, is enough to say this is a shape rather than one author's habit.
+    """
+    import importlib
+
+    module = importlib.import_module('user.ws6in1')
+    assert not hasattr(module, 'confeditor_loader')
+    fields = hardware.template_for(module)['fields']
+    assert 'driver' in fields
+    assert 'model' in fields
+    assert not any(one['help'] for one in fields.values())

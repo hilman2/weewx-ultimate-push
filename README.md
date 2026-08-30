@@ -149,6 +149,9 @@ stated commits:
 | [weewx-sdr](https://github.com/matthewwall/weewx-sdr) | rtl_433's output, as a subprocess |
 | [weewx-rtldavis](https://github.com/lheijst/weewx-rtldavis) | a Davis over an RTL-SDR stick |
 | [weatherflow-udp](https://github.com/captain-coredump/weatherflow-udp) | a WeatherFlow hub's broadcasts |
+| [weewx-ws6in1](https://github.com/BobAtchley/weewx-ws6in1) | a 6-in-1 console over USB |
+| [weewx-klimalogg](https://github.com/matthewwall/weewx-klimalogg) | a TFA KlimaLogg Pro over USB |
+| [weewx-wxt5x0](https://github.com/matthewwall/weewx-wxt5x0) | a Vaisala WXT5x0 on a cable |
 
 See [Hosted hardware](https://github.com/hilman2/weewx-ultimate-push/wiki/Hosted-hardware).
 
