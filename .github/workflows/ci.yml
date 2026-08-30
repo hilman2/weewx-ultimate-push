@@ -47,7 +47,8 @@ jobs:
       - run: mypy
       - name: Docstring types against the signatures
         run: |
-          python tools/check_docstring_types.py \n            $(find bin/user/ultimatepush tools -name '*.py') install.py
+          python tools/check_docstring_types.py \
+            $(find bin/user/ultimatepush tools -name '*.py') install.py
 
   # The driver has to keep running on the Python versions WeeWX still supports,
   # which is older than anything the runners will install.
@@ -64,7 +65,8 @@ jobs:
       # --mypy stage needs ast.unparse, which arrived in 3.9. Everything the driver
       # loads has to clear 3.7.
       - run: |
-          vermin --target=3.7 --violations bin install.py \n            $(find tools -name '*.py' ! -name 'check_docstring_types.py')
+          vermin --target=3.7 --violations bin install.py \
+            $(find tools -name '*.py' ! -name 'check_docstring_types.py')
 
   # With WeeWX installed, the tests can also check that the bundled listener is
   # still identical to the one in the core.
