@@ -54,8 +54,7 @@ def test_a_tower_waits_to_be_placed(payload):
     packet, _, guesses = read('acurite', payload('acurite/tower'))
 
     assert 'outTemp' not in packet
-    assert {g.raw for g in guesses} >= {'tower00002719_tempf',
-                                        'tower00002719_humidity'}
+    assert {g.raw for g in guesses} >= {'tower00002719_tempf', 'tower00002719_humidity'}
 
 
 def test_the_bridge_barometer_rides_along_in_every_frame(payload):
@@ -79,8 +78,8 @@ def test_the_words_the_bridge_sends_instead_of_numbers(payload):
     """battery is 'normal' or 'low'. rssi is nought to four bars."""
     packet, _, _ = read('acurite', payload('acurite/5n1x31'))
 
-    assert packet['txBatteryStatus'] == 0.0    # 'normal'
-    assert packet['rxCheckPercent'] == 25.0    # one bar of four
+    assert packet['txBatteryStatus'] == 0.0  # 'normal'
+    assert packet['rxCheckPercent'] == 25.0  # one bar of four
 
     low, _, _ = read('acurite', payload('acurite/5n1x31').replace('normal', 'low'))
     assert low['txBatteryStatus'] == 1.0
@@ -106,18 +105,21 @@ def test_the_base_station(payload):
     packet, dialect, _ = read('lacrosse', payload('lacrosse/base'))
 
     assert dialect.units == protocols.METRICWX
-    assert packet['pressure'] == 806.0         # mbar
-    assert packet['forecast'] == 3.0           # rainy
+    assert packet['pressure'] == 806.0  # mbar
+    assert packet['forecast'] == 3.0  # rainy
 
 
-@pytest.mark.parametrize('fixture, field, value', [
-    ('lacrosse/wind', 'windSpeed', 1.1),       # m/s
-    ('lacrosse/wind', 'windGust', 1.9),
-    ('lacrosse/wind', 'windDir', 315.0),
-    ('lacrosse/thermo', 'outTemp', 18.9),      # C
-    ('lacrosse/thermo', 'outHumidity', 90.0),
-    ('lacrosse/uv', 'UV', 0.0),                # uvh, the index
-])
+@pytest.mark.parametrize(
+    'fixture, field, value',
+    [
+        ('lacrosse/wind', 'windSpeed', 1.1),  # m/s
+        ('lacrosse/wind', 'windGust', 1.9),
+        ('lacrosse/wind', 'windDir', 315.0),
+        ('lacrosse/thermo', 'outTemp', 18.9),  # C
+        ('lacrosse/thermo', 'outHumidity', 90.0),
+        ('lacrosse/uv', 'UV', 0.0),  # uvh, the index
+    ],
+)
 def test_each_lacrosse_sensor(payload, fixture, field, value):
     packet, _, _ = read('lacrosse', payload(fixture))
 
@@ -161,7 +163,7 @@ def test_what_nobody_has_worked_out_stays_out_of_the_database(payload):
     for name in ('uv', 'or', 'p'):
         assert name in lacrosse_catalog.UNDOCUMENTED
     assert not [g for g in guesses if g.raw in lacrosse_catalog.UNDOCUMENTED]
-    assert 'UV' in packet                      # uvh, which is documented, is kept
+    assert 'UV' in packet  # uvh, which is documented, is kept
 
 
 def test_a_lacrosse_frame_is_recognised(payload):

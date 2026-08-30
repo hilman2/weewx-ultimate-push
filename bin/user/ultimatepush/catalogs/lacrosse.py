@@ -19,6 +19,8 @@ Field names, meanings and units come from the interceptor driver by Matthew Wall
 which captured them from an LW301. GPLv3, like this.
 """
 
+from typing import Dict
+
 # Sensor type -> what it is, by the `id` in every frame.
 SENSORS = {
     '82': 'rain gauge',
@@ -35,16 +37,15 @@ FIELDS = {
     'baro': 'pressure',
     # 0 partly cloudy, 1 sunny, 2 cloudy, 3 rainy, 4 snowy.
     'wfor': 'forecast',
-
     # --- channel 1, i.e. the station -------------------------------------------
-    'ot_ch1': 'outTemp',            # C
-    'oh_ch1': 'outHumidity',        # %
-    'ws_ch1': 'windSpeed',          # m/s
-    'wg_ch1': 'windGust',           # m/s
-    'wd_ch1': 'windDir',            # degrees
-    'uvh_ch1': 'UV',                # index
-    'rr_ch1': 'rainRate',           # inch/hour, converted, see SCALE
-    'rfa_ch1': 'totalRain',         # inch since the gauge was last reset
+    'ot_ch1': 'outTemp',  # C
+    'oh_ch1': 'outHumidity',  # %
+    'ws_ch1': 'windSpeed',  # m/s
+    'wg_ch1': 'windGust',  # m/s
+    'wd_ch1': 'windDir',  # degrees
+    'uvh_ch1': 'UV',  # index
+    'rr_ch1': 'rainRate',  # inch/hour, converted, see SCALE
+    'rfa_ch1': 'totalRain',  # inch since the gauge was last reset
     'pwr_ch1': 'txBatteryStatus',
 }
 
@@ -74,7 +75,7 @@ CHANNELS = {
 
 PLACEMENT_UNKNOWN = {
     'ot_ch': "A LaCrosse sensor on a channel of its own. The gateway says which "
-             "channel and nothing else, so where it hangs is yours to say.",
+    "channel and nothing else, so where it hangs is yours to say.",
     'oh_ch': "A LaCrosse sensor on a channel of its own.",
 }
 
@@ -90,9 +91,22 @@ SCALE = {
 # Parameters an LW30x sends whose meaning nobody has established. Kept out of the
 # packet rather than guessed at, and named here so that the report can say a gateway
 # sent them.
-UNDOCUMENTED = ('p', 'or', 'gw', 'av', 'htr', 'cz', 'ttr', 'rro', 'pv', 'lb', 'ac',
-                'ptr', 'uv')
+UNDOCUMENTED = (
+    'p',
+    'or',
+    'gw',
+    'av',
+    'htr',
+    'cz',
+    'ttr',
+    'rro',
+    'pv',
+    'lb',
+    'ac',
+    'ptr',
+    'uv',
+)
 
 
-CONTESTED = {}
+CONTESTED = {}  # type: Dict[str, str]
 CONTESTED_WITH = ''

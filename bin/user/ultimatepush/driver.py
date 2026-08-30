@@ -35,24 +35,40 @@ Configuration:
 
 import logging
 import time
+from typing import Dict, List, Optional, Set
 
 import weewx
 import weewx.drivers
 import weewx.units
 
-from . import (VERSION, activity, admin, checklist, columns, consoles,
-               mapping, overrides, owners, protocols, report, roles, server,
-               transport)
+from . import (
+    VERSION,
+    activity,
+    admin,
+    checklist,
+    columns,
+    consoles,
+    mapping,
+    overrides,
+    owners,
+    protocols,
+    report,
+    roles,
+    server,
+    transport,
+)
 from .mapping import Mapper
 
 try:
     # WeeWX 5.6 and later carry the listener.
     from weewx.listener import HTTPListener, UDPListener
+
     LISTENER_FROM = 'weewx.listener'
 except ImportError:
     # Older WeeWX gets the copy that ships with this extension. Byte for byte the same
     # file, checked by a test, and it stops shipping once 5.6 is everywhere.
     from user.listener import HTTPListener, UDPListener
+
     LISTENER_FROM = 'user.listener, the bundled copy'
 
 log = logging.getLogger(__name__)
@@ -68,18 +84,46 @@ UNCLAIMED_ANSWER = ('', 'text/plain')
 # What to show first from an upload nobody has claimed yet. These are the readings a
 # person can check against a thermometer or a look out of the window, which is the
 # only way to tell your own new console from somebody else's.
-TELLING = ('outTemp', 'outHumidity', 'windSpeed', 'windDir', 'barometer', 'dayRain',
-           'radiation', 'inTemp', 'inHumidity')
+TELLING = (
+    'outTemp',
+    'outHumidity',
+    'windSpeed',
+    'windDir',
+    'barometer',
+    'dayRain',
+    'radiation',
+    'inTemp',
+    'inHumidity',
+)
 A_HANDFUL = 12
 
 # Options that belong to this driver and must not reach the listener, which would
 # reject what it does not recognise.
-NOT_FOR_LISTENER = frozenset([
-    'driver', 'field_map_extensions', 'infer_unknown', 'model', 'report_file',
-    'stations', 'passkey', 'password', 'console_file', 'weewx_root', 'sqlite_root',
-    'data_binding', 'config_dict', 'protocols', 'metric_wind', 'max_behind',
-    'max_ahead', 'udp_port', 'web', 'path', 'override_file',
-])
+NOT_FOR_LISTENER = frozenset(
+    [
+        'driver',
+        'field_map_extensions',
+        'infer_unknown',
+        'model',
+        'report_file',
+        'stations',
+        'passkey',
+        'password',
+        'console_file',
+        'weewx_root',
+        'sqlite_root',
+        'data_binding',
+        'config_dict',
+        'protocols',
+        'metric_wind',
+        'max_behind',
+        'max_ahead',
+        'udp_port',
+        'web',
+        'path',
+        'override_file',
+    ]
+)
 
 
 def loader(config_dict, _engine):
@@ -87,7 +131,8 @@ def loader(config_dict, _engine):
 
     Args:
         config_dict (dict): The whole of weewx.conf.
-        _engine: The WeeWX engine, which this driver does not need.
+        _engine (weewx.engine.StdEngine): The WeeWX engine, which this driver
+            does not need.
 
     Returns:
         UltimatePushDriver: The driver.
@@ -99,10 +144,10 @@ def loader(config_dict, _engine):
     # Where to keep the list of consoles this driver answers to. Beside weewx.conf,
     # unless the driver section says otherwise.
     options.setdefault('weewx_root', config_dict.get('WEEWX_ROOT'))
-    options.setdefault('sqlite_root',
-                       config_dict.get('DatabaseTypes', {})
-                                  .get('SQLite', {})
-                                  .get('SQLITE_ROOT'))
+    options.setdefault(
+        'sqlite_root',
+        config_dict.get('DatabaseTypes', {}).get('SQLite', {}).get('SQLITE_ROOT'),
+    )
     return UltimatePushDriver(**options)
 
 
@@ -118,8 +163,17 @@ class Station:
     do, and inference learned from one catalog must not be applied to the other.
     """
 
-    def __init__(self, name, ident, extensions, infer_unknown, max_behind,
-                 max_ahead, role=roles.MAIN, channel=None):
+    def __init__(
+        self,
+        name,
+        ident,
+        extensions,
+        infer_unknown,
+        max_behind,
+        max_ahead,
+        role=roles.MAIN,
+        channel=None,
+    ):
         """Set up one station.
 
         Args:
@@ -130,7 +184,7 @@ class Station:
             max_behind (int): How far behind the console's clock may be.
             max_ahead (int): The same, for a clock that runs fast.
             role (str): MAIN or EXTRA. See roles.py.
-            channel (int): Which extra channel it writes to.
+            channel (int | None): Which extra channel it writes to.
         """
         self.name = name
         self.ident = ident
@@ -155,7 +209,8 @@ class Station:
         through a field map would otherwise get a line of log per click.
 
         Args:
-            dialect (Dialect): The catalog this station's uploads are read with.
+            dialect (protocols.Dialect): The catalog this station's uploads are
+                read with.
             announce (bool): Whether to log that the catalog is in use.
 
         Returns:
@@ -165,18 +220,24 @@ class Station:
         if mapper is None:
             # The role moves this station's readings out of the main station's way.
             # A field named by hand outranks it, which is why it goes underneath.
-            extensions = roles.extensions_for(self.role, self.channel,
-                                              dialect.fields)
+            extensions = roles.extensions_for(self.role, self.channel, dialect.fields)
             extensions.update(self.extensions)
-            mapper = Mapper(dialect, extensions=extensions,
-                            infer_unknown=self.infer_unknown,
-                            max_behind=self.max_behind, max_ahead=self.max_ahead)
+            mapper = Mapper(
+                dialect,
+                extensions=extensions,
+                infer_unknown=self.infer_unknown,
+                max_behind=self.max_behind,
+                max_ahead=self.max_ahead,
+            )
             self.mappers[dialect.name] = mapper
             if announce:
-                log.info("Reading %s uploads%s with the '%s' catalog, %d fields.",
-                         dialect.name.split('/')[0],
-                         " from '%s'" % self.name if self.name else '',
-                         dialect.name, len(dialect.fields))
+                log.info(
+                    "Reading %s uploads%s with the '%s' catalog, %d fields.",
+                    dialect.name.split('/')[0],
+                    " from '%s'" % self.name if self.name else '',
+                    dialect.name,
+                    len(dialect.fields),
+                )
         return mapper
 
 
@@ -184,7 +245,7 @@ class _NoStation:
     """Stands in for a station that did not exist before, so that taking its
     catalogs over needs no special case."""
 
-    mappers = {}
+    mappers = {}  # type: Dict[str, Mapper]
 
 
 _NO_STATION = _NoStation()
@@ -204,15 +265,21 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
 
         self.enabled = self._read_protocols(stn_dict.get('protocols'))
         self._apply_protocol_options(stn_dict)
-        log.info("Driver version is %s, listening with %s for %s",
-                 DRIVER_VERSION, LISTENER_FROM,
-                 ', '.join(p.label for p in self.enabled))
+        log.info(
+            "Driver version is %s, listening with %s for %s",
+            DRIVER_VERSION,
+            LISTENER_FROM,
+            ', '.join(p.label for p in self.enabled),
+        )
         for protocol in self.enabled:
             if protocol.datagram:
-                log.info("%s broadcasts on UDP %d and is answered by nobody, so "
-                         "anything on this network can reach it. Restrict it with "
-                         "'allowed_hosts' if that matters.",
-                         protocol.label, protocol.default_port)
+                log.info(
+                    "%s broadcasts on UDP %d and is answered by nobody, so "
+                    "anything on this network can reach it. Restrict it with "
+                    "'allowed_hosts' if that matters.",
+                    protocol.label,
+                    protocol.default_port,
+                )
 
         # One mapping, or one per console. Two consoles both number their channels
         # from one, so without this a WN34 on channel 1 of each would overwrite the
@@ -223,9 +290,18 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # names, so that a field set in weewx.conf can always be seen to be the one
         # in force.
         self.web_stations = {}
-        self.default_station = None if self.stations else Station(
-            None, None, dict(self.conf_extensions),
-            self.infer_unknown, self.max_behind, self.max_ahead)
+        self.default_station = (
+            None
+            if self.stations
+            else Station(
+                None,
+                None,
+                dict(self.conf_extensions),
+                self.infer_unknown,
+                self.max_behind,
+                self.max_ahead,
+            )
+        )
         self.password = stn_dict.get('password')
 
         # What the web interface shows, and where what it changes is kept. Both are
@@ -235,10 +311,13 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # does not quietly drop what it wrote.
         self.activity = activity.Log()
         self.overrides = overrides.Store(
-            overrides.path_for(stn_dict.get('weewx_root'),
-                               stn_dict.get('override_file'),
-                               stn_dict.get('sqlite_root')),
-            reserved=self._reserved_fields(stn_dict))
+            overrides.path_for(
+                stn_dict.get('weewx_root'),
+                stn_dict.get('override_file'),
+                stn_dict.get('sqlite_root'),
+            ),
+            reserved=self._reserved_fields(stn_dict),
+        )
         self.overrides.read()
         # Set from the web server's thread, read by the loop. A bool is atomic enough
         # for this: the worst a race costs is that a change lands one upload later
@@ -272,11 +351,16 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # console at it, and a second one writing the same channels would mix two
         # sensors into one column. So the driver accepts the ones it knows and
         # refuses the rest.
-        self.console_file = consoles.path_for(stn_dict.get('weewx_root'),
-                                              stn_dict.get('console_file'),
-                                              stn_dict.get('sqlite_root'))
-        self.store = consoles.Store(self.console_file, stn_dict.get('config_dict'),
-                                    stn_dict.get('data_binding', 'wx_binding'))
+        self.console_file = consoles.path_for(
+            stn_dict.get('weewx_root'),
+            stn_dict.get('console_file'),
+            stn_dict.get('sqlite_root'),
+        )
+        self.store = consoles.Store(
+            self.console_file,
+            stn_dict.get('config_dict'),
+            stn_dict.get('data_binding', 'wx_binding'),
+        )
         self.configured_passkey = stn_dict.get('passkey')
         self.known = self._known_consoles(self.configured_passkey)
         self._apply_overrides()
@@ -337,8 +421,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             if protocol is None:
                 raise ValueError(
                     "'%s' is not a protocol this driver knows. The choices are %s, "
-                    "or 'auto' for all of them."
-                    % (name, ', '.join(protocols.names())))
+                    "or 'auto' for all of them." % (name, ', '.join(protocols.names()))
+                )
             chosen.append(protocol)
         return chosen
 
@@ -350,10 +434,16 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         """
         wind = stn_dict.get('metric_wind')
         if wind:
+            # The choices are the catalog's, because that is where the two dialects
+            # are described. The attribute being set is the protocol's.
+            from .catalogs import wunderground as wu_catalog
             from .protocols import wunderground
-            if wind not in wunderground.METRIC_WIND_CHOICES:
-                raise ValueError("metric_wind must be one of %s, not '%s'"
-                                 % (', '.join(wunderground.METRIC_WIND_CHOICES), wind))
+
+            if wind not in wu_catalog.METRIC_WIND_CHOICES:
+                raise ValueError(
+                    "metric_wind must be one of %s, not '%s'"
+                    % (', '.join(wu_catalog.METRIC_WIND_CHOICES), wind)
+                )
             wunderground.WeatherUnderground.metric_wind = wind
 
     def _check_one_main(self):
@@ -366,15 +456,20 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         """
         everyone = dict(self.stations)
         everyone.update(self.web_stations)
-        main = sorted(name for name, station in
-                      ((s.name or i, s) for i, s in everyone.items())
-                      if station.role == roles.MAIN)
+        main = sorted(
+            name
+            for name, station in ((s.name or i, s) for i, s in everyone.items())
+            if station.role == roles.MAIN
+        )
         if len(main) > 1:
             log.warning(
                 "%d stations are set up as the main one: %s. One is the station and "
                 "the rest are extra sensors, or they write into each other's columns. "
                 "Give all but one 'role = extra' and a 'channel', or set it in the "
-                "web interface.", len(main), ', '.join(main))
+                "web interface.",
+                len(main),
+                ', '.join(main),
+            )
 
     def _check_rain_delta(self, config_dict):
         """Say so when the rain will not be recorded, before a season of it is lost.
@@ -412,18 +507,27 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 "Nothing differences the rain counters, so this station will record "
                 "no rain. Add this to weewx.conf:\n"
                 "    [StdWXCalculate]\n        [[Delta]]\n            [[[rain]]]\n"
-                "                input = %s", sorted(wanted)[0])
+                "                input = %s",
+                sorted(wanted)[0],
+            )
             return
         log.warning(
             "StdWXCalculate differences '%s' to get the rain, and %s sends %s "
             "instead. Rain from %s will not be recorded until 'input' names a "
             "counter it sends.",
             configured,
-            ', '.join(p.label for p in self.enabled if p.rain_counter not in
-                      (None, configured)),
+            ', '.join(
+                p.label
+                for p in self.enabled
+                if p.rain_counter not in (None, configured)
+            ),
             ' or '.join(sorted(wanted - {configured})),
-            ' and '.join(p.label for p in self.enabled
-                         if p.rain_counter not in (None, configured)))
+            ' and '.join(
+                p.label
+                for p in self.enabled
+                if p.rain_counter not in (None, configured)
+            ),
+        )
 
     def _reserved_fields(self, stn_dict):
         """Raw fields weewx.conf already places, so that nothing else may.
@@ -437,11 +541,13 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             stn_dict (dict): The driver section of weewx.conf.
 
         Returns:
-            dict: Station identity, or None for the driver's own map, to the set of raw
-            field names weewx.conf already places. The web interface refuses to write
+            dict: Station identity, or None for the driver's own map, to the set
+            of raw field names weewx.conf already places. The web interface refuses to write
             these, so that the two files cannot disagree about one field.
         """
-        reserved = {None: set(stn_dict.get('field_map_extensions', {}))}
+        reserved = {
+            None: set(stn_dict.get('field_map_extensions', {}))
+        }  # type: Dict[Optional[str], Set[str]]
         for options in (stn_dict.get('stations') or {}).values():
             ident = str(options.get('passkey') or options.get('id') or '').strip()
             if ident:
@@ -459,8 +565,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # From both files. A path written by hand works exactly like one the
         # interface made, which is the point: nothing here is only reachable by
         # clicking.
-        paths = {station.path.rstrip('/'): ident
-                 for ident, station in self.stations.items() if station.path}
+        paths = {
+            station.path.rstrip('/'): ident
+            for ident, station in self.stations.items()
+            if station.path
+        }
         for ident, options in self.overrides.stations().items():
             if ident in self.stations:
                 # weewx.conf names it. Nothing here may change that.
@@ -472,11 +581,15 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             extensions.update(options.get('field_map_extensions', {}))
             channel = options.get('channel')
             built[ident] = Station(
-                options.get('name') or None, ident, extensions,
+                options.get('name') or None,
+                ident,
+                extensions,
                 options.get('infer_unknown', self.infer_unknown),
-                self.max_behind, self.max_ahead,
+                self.max_behind,
+                self.max_ahead,
                 role=options.get('role', roles.MAIN),
-                channel=int(channel) if channel else None)
+                channel=int(channel) if channel else None,
+            )
             built[ident].path = secret or None
             # Give the rebuilt station the catalogs the old one had. A mapper is
             # otherwise made on the next upload, and until then nothing could say
@@ -530,22 +643,31 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                     "Station '%s' has no 'passkey' or 'id'. It is whichever of the "
                     "two the console sends first in every upload: a PASSKEY for "
                     "Ecowitt and Ambient hardware, an ID for Weather Underground."
-                    % name)
+                    % name
+                )
             channel = options.get('channel')
             station = Station(
-                name, str(ident).strip(),
+                name,
+                str(ident).strip(),
                 dict(options.get('field_map_extensions', {})),
                 options.get('infer_unknown', self.infer_unknown),
-                self.max_behind, self.max_ahead,
+                self.max_behind,
+                self.max_ahead,
                 role=options.get('role', roles.MAIN),
-                channel=int(channel) if channel else None)
+                channel=int(channel) if channel else None,
+            )
             if station.role not in roles.ROLES:
-                raise ValueError("Station '%s' has role '%s'. It is one of %s."
-                                 % (name, station.role, ', '.join(roles.ROLES)))
+                raise ValueError(
+                    "Station '%s' has role '%s'. It is one of %s."
+                    % (name, station.role, ', '.join(roles.ROLES))
+                )
             station.path = str(options.get('path', '')).strip() or None
             stations[str(ident).strip()] = station
-        log.info("Listening for %d consoles: %s",
-                 len(stations), ', '.join(sorted(s.name for s in stations.values())))
+        log.info(
+            "Listening for %d consoles: %s",
+            len(stations),
+            ', '.join(sorted(s.name for s in stations.values())),
+        )
         return stations
 
     def _known_consoles(self, passkey):
@@ -570,8 +692,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             return known
         remembered = set(self.store.read())
         if remembered:
-            log.info("Answering to %d console(s) on record in the %s",
-                     len(remembered), self.store.where)
+            log.info(
+                "Answering to %d console(s) on record in the %s",
+                len(remembered),
+                self.store.where,
+            )
         return remembered
 
     def _listeners(self, stn_dict):
@@ -588,8 +713,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             list: The listeners this configuration needs: one for HTTP, one more for
             WeatherFlow's broadcasts, and one more for the web interface.
         """
-        options = {key: value for key, value in stn_dict.items()
-                   if key not in NOT_FOR_LISTENER}
+        options = {
+            key: value for key, value in stn_dict.items() if key not in NOT_FOR_LISTENER
+        }
         listeners = []
 
         if any(not protocol.datagram for protocol in self.enabled):
@@ -605,9 +731,19 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         for protocol in self.enabled:
             if not protocol.datagram:
                 continue
-            udp = {key: value for key, value in options.items()
-                   if key in ('address', 'max_body', 'allowed_hosts', 'log_raw',
-                              'queue_size', 'reuse_address')}
+            udp = {
+                key: value
+                for key, value in options.items()
+                if key
+                in (
+                    'address',
+                    'max_body',
+                    'allowed_hosts',
+                    'log_raw',
+                    'queue_size',
+                    'reuse_address',
+                )
+            }
             udp['port'] = int(stn_dict.get('udp_port', protocol.default_port))
             listeners.append(UDPListener(**udp))
 
@@ -682,6 +818,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         if not configured:
             return None
         from weeutil.weeutil import to_bool, to_int
+
         if not to_bool(configured.get('enable', False)):
             return None
         token = str(configured.get('token', '')).strip()
@@ -691,7 +828,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 "is the only thing between the field map and whoever else is on the "
                 "network. Make one with: "
                 "python -c \"import secrets; print(secrets.token_urlsafe(12))\""
-                % admin.SHORTEST_TOKEN)
+                % admin.SHORTEST_TOKEN
+            )
         options = {
             'port': to_int(configured.get('port', 8080)),
             'address': configured.get('address', ''),
@@ -705,20 +843,28 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.doorman = admin.Doorman(
             token,
             tries=to_int(configured.get('tries', admin.TRIES)),
-            window=to_int(configured.get('window', admin.WINDOW)))
+            window=to_int(configured.get('window', admin.WINDOW)),
+        )
         site = admin.Site(self, self.doorman)
-        listener = server.http_listener(HTTPListener, site.answer, queue=False,
-                                        **options)
+        listener = server.http_listener(
+            HTTPListener, site.answer, queue=False, **options
+        )
         # The whole address, because the alternative is somebody running `ip addr` to
         # find out where their own weather station is. A listener bound to every
         # interface reports itself as '*', which is true and useless.
-        log.info("The web interface is at %s",
-                 admin.url(options['address'], listener.port, token))
-        log.info("That address holds the token, so treat the log the way you treat "
-                 "weewx.conf. An address that gets the token wrong %d times in %d "
-                 "seconds stops being answered. It is plain HTTP: on a network you "
-                 "do not trust, set 'address = localhost' and use a tunnel, or put "
-                 "TLS in front.", self.doorman.tries, self.doorman.window)
+        log.info(
+            "The web interface is at %s",
+            admin.url(options['address'], listener.port, token),
+        )
+        log.info(
+            "That address holds the token, so treat the log the way you treat "
+            "weewx.conf. An address that gets the token wrong %d times in %d "
+            "seconds stops being answered. It is plain HTTP: on a network you "
+            "do not trust, set 'address = localhost' and use a tunnel, or put "
+            "TLS in front.",
+            self.doorman.tries,
+            self.doorman.window,
+        )
         return listener
 
     # ---- answering ----------------------------------------------------------
@@ -733,7 +879,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         treats the upload as failed and retries until it gives up.
 
         Args:
-            request: The upload, as the listener hands it over.
+            request (weewx.listener.Request): The upload, as the listener hands
+                it over.
 
         Returns:
             tuple: (body, content_type), the reply this hardware waits for.
@@ -768,7 +915,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         the whole of what a second protocol changes.
 
         Args:
-            request: The upload, as the listener hands it over.
+            request (weewx.listener.Request): The upload, as the listener hands
+                it over.
 
         Returns:
             tuple: (protocol, station, mapper, readings). All four are None when
@@ -788,8 +936,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             protocol = self._assumed()
         if protocol is None:
             self._unclaimed(request)
-            self._record_refused(request, None, '',
-                                 "no protocol recognised this", raw)
+            self._record_refused(request, None, '', "no protocol recognised this", raw)
             return None, None, None, None
 
         # A station whose path is its own needs nothing else: the upload arrived
@@ -798,8 +945,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         by_path = self.station_paths.get((request.path or '/').rstrip('/'))
         if by_path is not None:
             self.paths_proven = True
-            station = (self.stations.get(by_path) or self.web_stations.get(by_path)
-                       or self.default_station)
+            station = (
+                self.stations.get(by_path)
+                or self.web_stations.get(by_path)
+                or self.default_station
+            )
         else:
             # Which console this is, and whether it presents the right password, are
             # asked of the upload as it arrived. A protocol that unpacks its payload
@@ -807,14 +957,25 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             # and the hub's serial is on the message around it rather than in it.
             station = self._station_for(protocol, raw, request.client_address)
         if station is None:
-            self._record_refused(request, protocol, protocol.station_of(raw),
-                                 "not one of this driver's consoles", raw)
+            self._record_refused(
+                request,
+                protocol,
+                protocol.station_of(raw),
+                "not one of this driver's consoles",
+                raw,
+            )
             return None, None, None, None
 
-        if protocol.secret and not self._secret_ok(protocol, raw,
-                                                   request.client_address):
-            self._record_refused(request, protocol, protocol.station_of(raw),
-                                 "wrong %s" % protocol.secret, raw)
+        if protocol.secret and not self._secret_ok(
+            protocol, raw, request.client_address
+        ):
+            self._record_refused(
+                request,
+                protocol,
+                protocol.station_of(raw),
+                "wrong %s" % protocol.secret,
+                raw,
+            )
             return None, None, None, None
 
         raw = protocol.readings(request, raw)
@@ -827,10 +988,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         """Turn one upload into a loop packet, or None if it is not ours to keep.
 
         Args:
-            request: The upload, as the listener hands it over.
+            request (weewx.listener.Request): The upload, as the listener hands
+                it over.
 
         Returns:
-            dict: A loop packet, or None when nothing of it is to be kept.
+            dict | None: A loop packet, or None when nothing of it is to be kept.
         """
         protocol, station, mapper, raw = self.reading_for(request)
         if mapper is None:
@@ -840,8 +1002,12 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         try:
             packet, guesses = mapper.to_packet(raw)
         except Exception as e:
-            log.error("Cannot read a %s payload from %s: %s",
-                      protocol.name, request.client_address, e)
+            log.error(
+                "Cannot read a %s payload from %s: %s",
+                protocol.name,
+                request.client_address,
+                e,
+            )
             return None
 
         if guesses:
@@ -853,8 +1019,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self._keep_stations_apart(station, packet)
 
         enough = len(packet) > 1
-        self._record(request, protocol, dialect, raw, packet if enough else None,
-                     station, mapper)
+        self._record(
+            request, protocol, dialect, raw, packet if enough else None, station, mapper
+        )
 
         if not enough:
             # Nothing but the timestamp. Usually a probe or a health check.
@@ -961,10 +1128,12 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         packet.clear()
         if 'waiting' not in self.said_apart:
             self.said_apart.add('waiting')
-            log.info("Holding back station '%s' until the main station has been "
-                     "heard once, so that its readings cannot land in the main "
-                     "station's columns. This happens once, not at every restart.",
-                     station.name or station.ident)
+            log.info(
+                "Holding back station '%s' until the main station has been "
+                "heard once, so that its readings cannot land in the main "
+                "station's columns. This happens once, not at every restart.",
+                station.name or station.ident,
+            )
         return True
 
     def _remember_columns(self, fields, ident):
@@ -994,8 +1163,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             "and that station is no longer writing it: two sensors in one column "
             "cannot be told apart afterwards. Give '%s' a field of its own if its "
             "reading matters.",
-            field, station.name or station.ident,
-            (was.name if was else None) or lost, (was.name if was else None) or lost)
+            field,
+            station.name or station.ident,
+            (was.name if was else None) or lost,
+            (was.name if was else None) or lost,
+        )
 
     def _said_dropped(self, station, dropped):
         """One line for the lot, once per station per run.
@@ -1022,7 +1194,12 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 "sensor's readings from the other's. %d reading(s) from '%s' are not "
                 "being written: %s. Give it 'role = extra' and a 'channel', or a "
                 "[[field_map_extensions]] that sends them somewhere of their own.",
-                who, self._main_name(), len(dropped), who, ', '.join(dropped))
+                who,
+                self._main_name(),
+                len(dropped),
+                who,
+                ', '.join(dropped),
+            )
             return
         log.warning(
             "%d reading(s) from station '%s' are not being written, because %s "
@@ -1030,8 +1207,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             "separated afterwards: %s. Give them fields of their own under "
             "[[field_map_extensions]], or take the column away from its owner on the "
             "Fields tab.",
-            len(dropped), who, ' and '.join(others) or 'another station',
-            ', '.join(dropped))
+            len(dropped),
+            who,
+            ' and '.join(others) or 'another station',
+            ', '.join(dropped),
+        )
 
     def named_by_hand(self, ident):
         """The WeeWX fields somebody has set for this station themselves.
@@ -1090,9 +1270,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         Bounded and in memory only. See activity.py.
 
         Args:
-            request: The upload as it arrived.
-            protocol: The protocol that claimed it.
-            dialect (Dialect): The catalog it was read with.
+            request (weewx.listener.Request): The upload as it arrived.
+            protocol (type[protocols.Protocol]): The protocol that claimed it.
+            dialect (protocols.Dialect): The catalog it was read with.
             raw (dict): The raw name/value pairs.
             packet (dict): The loop packet, or None when nothing was kept.
             station (Station): Which station it belongs to.
@@ -1103,37 +1283,54 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # of upload, and a station set up with a path of its own is that station even
         # if a PASSKEY in the body says something else.
         ident = station.ident or protocol.station_of(raw)
-        self.activity.arrived(ident, activity.Upload(
-            at=time.time(), client=request.client_address,
-            path=request.path or '', method=request.method or '',
-            text=request.text or '', ident=ident, protocol=protocol.name,
-            dialect=dialect.name,
-            packet={k: v for k, v in (packet or {}).items() if k != 'dateTime'}))
+        self.activity.arrived(
+            ident,
+            activity.Upload(
+                at=time.time(),
+                client=request.client_address,
+                path=request.path or '',
+                method=request.method or '',
+                text=request.text or '',
+                ident=ident,
+                protocol=protocol.name,
+                dialect=dialect.name,
+                packet={k: v for k, v in (packet or {}).items() if k != 'dateTime'},
+            ),
+        )
         if station.name:
             self.activity.named(ident, station.name)
         # Only the readings. PASSKEY, dateutc and the rest name the device
         # rather than measure anything, and a page that offered to place them
         # would be offering a mistake.
         readings = [name for name in raw if name not in dialect.metadata]
-        self.activity.mapping(ident, readings, mapper.fields, mapper.seen,
-                              mapper.undecided)
+        self.activity.mapping(
+            ident, readings, mapper.fields, mapper.seen, mapper.undecided
+        )
 
     def _record_refused(self, request, protocol, ident, note, raw=None):
         """Keep an upload that was turned away, so the page can show it.
 
         Args:
-            request: The upload as it arrived.
-            protocol: The protocol that claimed it, where one did.
+            request (weewx.listener.Request): The upload as it arrived.
+            protocol (type[protocols.Protocol]): The protocol that claimed it,
+                where one did.
             ident (str): Whatever named the station, or an empty string.
             note (str): Why it was refused, for showing on the page.
-            raw (dict): The raw name/value pairs, where they could be read.
+            raw (dict | None): The raw name/value pairs, where they could be read.
         """
-        self.activity.refused(activity.Upload(
-            at=time.time(), client=request.client_address,
-            path=request.path or '', method=request.method or '',
-            text=request.text or '', ident=ident,
-            protocol=protocol.name if protocol else None,
-            readings=self._knocking_readings(request, protocol, raw), note=note))
+        self.activity.refused(
+            activity.Upload(
+                at=time.time(),
+                client=request.client_address,
+                path=request.path or '',
+                method=request.method or '',
+                text=request.text or '',
+                ident=ident,
+                protocol=protocol.name if protocol else None,
+                readings=self._knocking_readings(request, protocol, raw),
+                note=note,
+            )
+        )
 
     def _knocking_readings(self, request, protocol, raw):
         """A few of the readings from an upload nobody claimed.
@@ -1148,8 +1345,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         driver would have done with it.
 
         Args:
-            request: The upload as it arrived.
-            protocol: The protocol that claimed it, where one did.
+            request (weewx.listener.Request): The upload as it arrived.
+            protocol (type[protocols.Protocol]): The protocol that claimed it,
+                where one did.
             raw (dict): The raw name/value pairs.
 
         Returns:
@@ -1163,15 +1361,19 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             try:
                 flat = protocol.readings(request, raw)
                 dialect = protocol.dialect(flat)
-            except Exception:                       # pylint: disable=broad-except
+            except Exception:  # pylint: disable=broad-except
                 dialect, flat = None, raw
         fields = dialect.fields if dialect else {}
         hide = set(dialect.metadata if dialect else ())
-        for secret in (getattr(protocol, 'secret', None),
-                       getattr(protocol, 'identity', None)):
+        for secret in (
+            getattr(protocol, 'secret', None),
+            getattr(protocol, 'identity', None),
+        ):
             if secret:
                 hide.add(secret)
-        rank = {name: n for n, name in enumerate(TELLING)}
+        rank = {
+            name: n for n, name in enumerate(TELLING)
+        }  # type: Dict[Optional[str], int]
 
         def worth_showing_first(item):
             """How interesting a reading is, for choosing what to show.
@@ -1229,8 +1431,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             # started. Nothing of this station is being recorded, and a row that only
             # said "last seen 4s ago" would look like it was working.
             row['held_back'] = bool(
-                known is not None and known.role != roles.MAIN
-                and self._held_back_now())
+                known is not None and known.role != roles.MAIN and self._held_back_now()
+            )
             seen = set(row.get('raw_seen', ()))
             row['field_count'] = len(seen)
             row['undecided_count'] = len(seen & set(row.get('undecided', {})))
@@ -1263,8 +1465,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             list: One entry per console, with what named it and a few readings, so
             that somebody can tell their own new console from a stranger's.
         """
-        return [w for w in self.activity.unknown_stations(transport.redact)
-                if w['ident'] not in self.known]
+        return [
+            w
+            for w in self.activity.unknown_stations(transport.redact)
+            if w['ident'] not in self.known
+        ]
 
     def web_station(self, ident):
         """One station, every raw field it has sent, and where each one stands.
@@ -1279,7 +1484,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             ident (str): The station's identity.
 
         Returns:
-            dict: Every raw field it has sent and where each one stands, or None
+            dict | None: Every raw field it has sent and where each one stands, or None
             when no such station has uploaded.
         """
         found = self.activity.one(ident)
@@ -1288,8 +1493,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         station = self._station_for_ident(ident)
         recent = self.activity.recent(ident, transport.redact, limit=1)
         last = (recent[0].get('packet') or {}) if recent else {}
-        reserved = (self.overrides.reserved.get(ident, set())
-                    | self.overrides.reserved.get(None, set()))
+        reserved = self.overrides.reserved.get(
+            ident, set()
+        ) | self.overrides.reserved.get(None, set())
         groups = {}
         for mapper in (station.mappers.values() if station else []):
             groups.update(mapper.wanted_groups())
@@ -1331,24 +1537,29 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             why = ''
             if raw in found['undecided']:
                 field = ''
-                why = ("drivers disagree: this one says %s, %s says %s"
-                       % (found['fields'].get(raw, '?'),
-                          _contested_with(station), found['undecided'][raw]))
+                why = "drivers disagree: this one says %s, %s says %s" % (
+                    found['fields'].get(raw, '?'),
+                    _contested_with(station),
+                    found['undecided'][raw],
+                )
             elif guess:
                 field, why = guess[0], guess[2]
             nowhere = field == mapping.NOWHERE
-            rows.append({
-                'raw': raw,
-                'field': '' if nowhere else field,
-                'nowhere': nowhere,
-                'value': last.get(field),
-                'group': (groups.get(field)
-                          or weewx.units.obs_group_dict.get(field, '')),
-                'column': bool(field) and not nowhere and field in present,
-                'history': (occupied.get(field) or (0,))[0],
-                'reserved': raw in reserved,
-                'why': why,
-            })
+            rows.append(
+                {
+                    'raw': raw,
+                    'field': '' if nowhere else field,
+                    'nowhere': nowhere,
+                    'value': last.get(field),
+                    'group': (
+                        groups.get(field) or weewx.units.obs_group_dict.get(field, '')
+                    ),
+                    'column': bool(field) and not nowhere and field in present,
+                    'history': (occupied.get(field) or (0,))[0],
+                    'reserved': raw in reserved,
+                    'why': why,
+                }
+            )
         return rows
 
     def history(self, refresh=False):
@@ -1367,7 +1578,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             refresh (bool): Read the table again rather than using what is kept.
 
         Returns:
-            dict: Each column that holds data, to (rows, most recent timestamp), or
+            dict | None: Each column that holds data, to (rows, most recent timestamp), or
             None when there was no database to read or reading it failed.
         """
         if refresh:
@@ -1380,9 +1591,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             if self.config_path:
                 try:
                     self.occupied = columns.occupied(self.config_path)
-                except Exception as e:          # pylint: disable=broad-except
-                    log.warning("Cannot read what the archive table already holds: "
-                                "%s", e)
+                except Exception as e:  # pylint: disable=broad-except
+                    log.warning(
+                        "Cannot read what the archive table already holds: " "%s", e
+                    )
         return self.occupied
 
     def columns_present(self, refresh=False):
@@ -1403,7 +1615,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             if self.config_path:
                 try:
                     self.present = columns.existing(self.config_path)
-                except Exception as e:              # pylint: disable=broad-except
+                except Exception as e:  # pylint: disable=broad-except
                     log.debug("Cannot read the archive table's columns: %s", e)
         if self.present is not None:
             return self.present
@@ -1421,17 +1633,24 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         main = self.the_main_station()
         found = []
         for ident, station in sorted(self.stations.items()):
-            found.append(self._station_row(ident, station, heard, main,
-                                           declared=True))
+            found.append(self._station_row(ident, station, heard, main, declared=True))
         for ident, station in sorted(self.web_stations.items()):
-            found.append(self._station_row(ident, station, heard, main,
-                                           declared=False))
+            found.append(self._station_row(ident, station, heard, main, declared=False))
         adopted = self._adopted_ident()
         if adopted is not None:
-            found.append(self._station_row(adopted, self.default_station, heard,
-                                           main, declared=False, adopted=True))
-        taken = sorted(s['channel'] for s in found
-                       if s['role'] == roles.EXTRA and s['channel'])
+            found.append(
+                self._station_row(
+                    adopted,
+                    self.default_station,
+                    heard,
+                    main,
+                    declared=False,
+                    adopted=True,
+                )
+            )
+        taken = sorted(
+            s['channel'] for s in found if s['role'] == roles.EXTRA and s['channel']
+        )
         return {
             'ok': True,
             'stations': found,
@@ -1458,8 +1677,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             dict: The station, as the Stations tab needs it.
         """
         row = heard.get(ident) or {}
-        named = (self.overrides.station(ident).get('protocol')
-                 or row.get('protocol') or '')
+        named = (
+            self.overrides.station(ident).get('protocol') or row.get('protocol') or ''
+        )
         return {
             'ident': ident,
             'name': station.name or row.get('name') or '',
@@ -1497,14 +1717,15 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 driver's general path.
 
         Returns:
-            dict: What to put into the console, or None for a protocol this driver
+            dict | None: What to put into the console, or None for a protocol this driver
             does not have.
         """
         protocol = protocols.by_name(protocol_name) if protocol_name else None
         if protocol is None:
             return None
-        return checklist._pointing(protocol, self.web_address(), self.data_port(),
-                                   path or self.data_path())
+        return checklist._pointing(
+            protocol, self.web_address(), self.data_port(), path or self.data_path()
+        )
 
     def web_before(self, protocol_name='', role=None, channel=None, ident=None):
         """What setting a station up this way would land on, before it is done.
@@ -1522,9 +1743,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
 
         Args:
             protocol_name (str): Which protocol the station speaks.
-            role (str): The role being asked for, or None to take the default.
-            channel (int): The channel being asked for, or None to be given one.
-            ident (str): The station this is about, for a station that exists.
+            role (str | None): The role being asked for, or None to take the default.
+            channel (int | None): The channel being asked for, or None to be given one.
+            ident (str | None): The station this is about, for a station that exists.
 
         Returns:
             dict: Which station would stop being the main one, which columns
@@ -1560,8 +1781,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             # None when there is no database to read. Not the same as nothing being
             # in the way, and the page says which of the two it is.
             'checked': used is not None,
-            'columns': self._columns_with_history(protocol_name, role, channel,
-                                                  ident, used or {}),
+            'columns': self._columns_with_history(
+                protocol_name, role, channel, ident, used or {}
+            ),
         }
 
     def _columns_with_history(self, protocol_name, role, channel, ident, used):
@@ -1589,12 +1811,15 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         found = []
         for field in sorted(wanted & set(used)):
             count, last = used[field]
-            found.append({
-                'field': field,
-                'count': count,
-                'last': (time.strftime('%Y-%m-%d', time.localtime(last))
-                         if last else '?'),
-            })
+            found.append(
+                {
+                    'field': field,
+                    'count': count,
+                    'last': (
+                        time.strftime('%Y-%m-%d', time.localtime(last)) if last else '?'
+                    ),
+                }
+            )
         return sorted(found, key=lambda r: -r['count'])
 
     def _would_fill(self, protocol_name, ident):
@@ -1640,20 +1865,23 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             station = self._station_for_ident(ident)
             recent = self.activity.recent(ident, transport.redact, limit=1)
             last = (recent[0].get('packet') or {}) if recent else {}
-            reserved = (self.overrides.reserved.get(ident, set())
-                        | self.overrides.reserved.get(None, set()))
+            reserved = self.overrides.reserved.get(
+                ident, set()
+            ) | self.overrides.reserved.get(None, set())
             groups = {}
             for mapper in (station.mappers.values() if station else []):
                 groups.update(mapper.wanted_groups())
-            stations.append({
-                'ident': ident,
-                'name': row.get('name') or '',
-                'protocol': row.get('protocol') or '',
-                'role': getattr(station, 'role', roles.MAIN),
-                'channel': getattr(station, 'channel', None),
-                'declared': ident in self.stations,
-                'rows': self._field_rows(row, station, last, groups, reserved),
-            })
+            stations.append(
+                {
+                    'ident': ident,
+                    'name': row.get('name') or '',
+                    'protocol': row.get('protocol') or '',
+                    'role': getattr(station, 'role', roles.MAIN),
+                    'channel': getattr(station, 'channel', None),
+                    'declared': ident in self.stations,
+                    'rows': self._field_rows(row, station, last, groups, reserved),
+                }
+            )
         return {
             'ok': True,
             'stations': stations,
@@ -1703,17 +1931,21 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         rows = {row['ident']: row for row in self.activity.snapshot()}
         for field, ident in self.owners.owned.items():
             row = rows.get(ident) or {}
-            holders[field] = {'ident': ident, 'name': self._name_of(ident),
-                              'raw': self._raw_behind(ident, field, row)}
+            holders[field] = {
+                'ident': ident,
+                'name': self._name_of(ident),
+                'raw': self._raw_behind(ident, field, row),
+            }
         for ident, row in rows.items():
             placed = self._placements(self._station_for_ident(ident))
             for raw in row.get('raw_seen', ()):
                 field = placed.get(raw, row['fields'].get(raw))
                 if not field or field == mapping.NOWHERE:
                     continue
-                holders.setdefault(field, {'ident': ident,
-                                           'name': row.get('name') or ident,
-                                           'raw': raw})
+                holders.setdefault(
+                    field,
+                    {'ident': ident, 'name': row.get('name') or ident, 'raw': raw},
+                )
         return holders
 
     def _raw_behind(self, ident, field, row):
@@ -1743,7 +1975,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
 
         Args:
             field (str): The column to add.
-            sql_type (str): REAL or INTEGER. Worked out from the unit group when
+            sql_type (str | None): REAL or INTEGER. Worked out from the unit group when
                 it is not given.
 
         Returns:
@@ -1753,10 +1985,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         if not field:
             return {'ok': False, 'message': "No column named."}
         if not self.config_path:
-            return {'ok': False, 'message': (
-                "This driver was started without a configuration file, so it cannot "
-                "find the database. The command still works: weectl database "
-                "add-column %s" % field)}
+            return {
+                'ok': False,
+                'message': (
+                    "This driver was started without a configuration file, so it cannot "
+                    "find the database. The command still works: weectl database "
+                    "add-column %s" % field
+                ),
+            }
         if sql_type is None:
             sql_type = self._column_type(field)
         ok, message = columns.add(self.config_path, field, sql_type)
@@ -1800,7 +2036,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
 
         # What each station is already writing, so that the box can say so rather
         # than letting two stations quietly land in one column.
-        used = {}
+        used = {}  # type: Dict[str, List[str]]
         for row in self.activity.snapshot():
             who = row['name'] or row['ident']
             for raw in row.get('raw_seen', ()):
@@ -1829,8 +2065,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             Station: Whichever file names it, or the default station when neither
             does.
         """
-        return (self.stations.get(ident) or self.web_stations.get(ident)
-                or self.default_station)
+        return (
+            self.stations.get(ident)
+            or self.web_stations.get(ident)
+            or self.default_station
+        )
 
     # ---- one main station ----------------------------------------------------
     #
@@ -1849,8 +2088,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         """
         everyone = dict(self.stations)
         everyone.update(self.web_stations)
-        found = {ident: station for ident, station in everyone.items()
-                 if station.role == roles.MAIN}
+        found = {
+            ident: station
+            for ident, station in everyone.items()
+            if station.role == roles.MAIN
+        }
         adopted = self._adopted_ident()
         if adopted is not None:
             found[adopted] = self.default_station
@@ -1907,10 +2149,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         """The name of a main station weewx.conf declares, if there is one.
 
         Args:
-            besides (str): An identity to leave out of the answer.
+            besides (str | None): An identity to leave out of the answer.
 
         Returns:
-            str: The name of a main station weewx.conf declares, or None.
+            str | None: The name of a main station weewx.conf declares, or None.
         """
         for ident, station in self.stations.items():
             if ident != besides and station.role == roles.MAIN:
@@ -1953,29 +2195,42 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         if role not in roles.ROLES:
             return False, None, None, "A role is one of %s." % ', '.join(roles.ROLES)
 
-        ok, role, channel, message = self._role_and_channel(ident, role, channel,
-                                                            force)
+        ok, role, channel, message = self._role_and_channel(ident, role, channel, force)
         if not ok:
             return False, None, None, message
         if force:
             return True, role, channel, None
         if not protocol_name:
             protocol_name = self.overrides.station(ident).get('protocol', '')
-        blocked = self._columns_with_history(protocol_name, role, channel, ident,
-                                             self.history() or {})
+        blocked = self._columns_with_history(
+            protocol_name, role, channel, ident, self.history() or {}
+        )
         if blocked:
             # Somewhere to put this is not the driver's to choose. Carrying on in a
             # column that already holds readings is right when it is the same weather
             # station in the same place, and ruins the series when it is not.
             first = blocked[0]
-            return False, None, None, (
-                "%s already holds %d reading(s), the last on %s%s. A station writing "
-                "into it carries that series on, which is right if this is the same "
-                "weather station in the same place and mixes two sensors into one "
-                "column if it is not."
-                % (first['field'], first['count'], first['last'],
-                   ' (and %d other column(s))' % (len(blocked) - 1)
-                   if len(blocked) > 1 else ''))
+            return (
+                False,
+                None,
+                None,
+                (
+                    "%s already holds %d reading(s), the last on %s%s. A station writing "
+                    "into it carries that series on, which is right if this is the same "
+                    "weather station in the same place and mixes two sensors into one "
+                    "column if it is not."
+                    % (
+                        first['field'],
+                        first['count'],
+                        first['last'],
+                        (
+                            ' (and %d other column(s))' % (len(blocked) - 1)
+                            if len(blocked) > 1
+                            else ''
+                        ),
+                    )
+                ),
+            )
         return True, role, channel, None
 
     def _role_and_channel(self, ident, role, channel, force):
@@ -1993,26 +2248,42 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         if role == roles.MAIN:
             declared = self._declared_main(besides=ident)
             if declared is not None:
-                return False, None, None, (
-                    "weewx.conf declares '%s' as the main station, so the main "
-                    "station is set there rather than here." % declared)
+                return (
+                    False,
+                    None,
+                    None,
+                    (
+                        "weewx.conf declares '%s' as the main station, so the main "
+                        "station is set there rather than here." % declared
+                    ),
+                )
             mains = self._mains()
             others = [i for i in mains if i != ident]
             if others and not force:
                 # Whichever it is, including the console this driver adopted, which
                 # is named in neither file and is the main station all the same.
                 station = mains[others[0]]
-                return False, None, None, (
-                    "'%s' is the main station. Making this one the main station "
-                    "moves that one aside, and its readings go to different columns "
-                    "from then on." % (station.name or others[0]))
+                return (
+                    False,
+                    None,
+                    None,
+                    (
+                        "'%s' is the main station. Making this one the main station "
+                        "moves that one aside, and its readings go to different columns "
+                        "from then on." % (station.name or others[0])
+                    ),
+                )
             return True, roles.MAIN, None, None
 
         if channel is None:
             channel = self._free_channel(exclude=ident)
             if channel is None:
-                return False, None, None, (
-                    "Every extra channel is taken. The standard schema has eight.")
+                return (
+                    False,
+                    None,
+                    None,
+                    ("Every extra channel is taken. The standard schema has eight."),
+                )
         else:
             ok, channel, message = self._wanted_channel(ident, channel)
             if not ok:
@@ -2035,16 +2306,27 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         except (TypeError, ValueError):
             return False, None, "A channel is a number from 1 to %d." % roles.CHANNELS
         if not 1 <= channel <= roles.CHANNELS:
-            return False, None, ("A channel is a number from 1 to %d. The standard "
-                                 "schema has that many extraTemp columns."
-                                 % roles.CHANNELS)
+            return (
+                False,
+                None,
+                (
+                    "A channel is a number from 1 to %d. The standard "
+                    "schema has that many extraTemp columns." % roles.CHANNELS
+                ),
+            )
         everyone = dict(self.stations)
         everyone.update(self.web_stations)
         for other, station in everyone.items():
-            if (other != ident and station.role == roles.EXTRA
-                    and station.channel == channel):
-                return False, None, ("Channel %d is taken by '%s'."
-                                     % (channel, station.name or other))
+            if (
+                other != ident
+                and station.role == roles.EXTRA
+                and station.channel == channel
+            ):
+                return (
+                    False,
+                    None,
+                    ("Channel %d is taken by '%s'." % (channel, station.name or other)),
+                )
         return True, channel, None
 
     def _stand_down_main(self, becoming, force):
@@ -2069,18 +2351,24 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 continue
             channel = self._free_channel(exclude=ident)
             if channel is None:
-                return False, ("There is no free extra channel to move the station "
-                               "that is main into. The standard schema has eight.")
+                return False, (
+                    "There is no free extra channel to move the station "
+                    "that is main into. The standard schema has eight."
+                )
             was = self.web_stations.get(ident)
-            ok, message = self.overrides.set_station(ident, role=roles.EXTRA,
-                                                     channel=channel)
+            ok, message = self.overrides.set_station(
+                ident, role=roles.EXTRA, channel=channel
+            )
             if not ok:
                 return False, message
             # An adopted console has no entry anywhere until now. Writing one is what
             # gives it a role at all, and from here it is a station like any other.
-            log.info("Station '%s' is no longer the main one. Its readings go to "
-                     "channel %d from the next upload.",
-                     (was.name if was else None) or ident, channel)
+            log.info(
+                "Station '%s' is no longer the main one. Its readings go to "
+                "channel %d from the next upload.",
+                (was.name if was else None) or ident,
+                channel,
+            )
         return True, None
 
     def _roles_moved(self):
@@ -2117,8 +2405,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             protocol_name (str): Which protocol the console speaks. Only hardware
                 whose path is yours to choose can be set up this way.
             name (str): What to call the station.
-            role (str): MAIN or EXTRA, or None to take the default.
-            channel (int): The channel for an extra sensor, or None.
+            role (str | None): MAIN or EXTRA, or None to take the default.
+            channel (int | None): The channel for an extra sensor, or None.
             force (bool): Whether somebody has been told what it costs and agreed.
 
         Returns:
@@ -2131,10 +2419,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         if protocol is None:
             return False, "No protocol called '%s'." % protocol_name
         if protocol.secret_kind != 'path':
-            return False, ("%s hardware cannot be told which path to use, so there "
-                           "is nothing to set up in advance. Point it here and it "
-                           "will turn up as something waiting to be let in."
-                           % protocol.label)
+            return False, (
+                "%s hardware cannot be told which path to use, so there "
+                "is nothing to set up in advance. Point it here and it "
+                "will turn up as something waiting to be let in." % protocol.label
+            )
         clean = overrides._as_name(name)
         if not clean:
             return False, ("A name may hold letters, digits, dashes and underscores.")
@@ -2147,8 +2436,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # because that is what every later upload carries.
         ident = 'path:' + path
 
-        ok, role, channel, message = self._role_for_new(ident, role, channel, force,
-                                                        protocol_name)
+        ok, role, channel, message = self._role_for_new(
+            ident, role, channel, force, protocol_name
+        )
         if not ok:
             return False, message
         if role == roles.MAIN:
@@ -2157,21 +2447,40 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 return False, message
 
         ok, message = self.overrides.set_station(
-            ident, name=clean, path=path, protocol=protocol_name,
-            role=role, channel=channel)
+            ident,
+            name=clean,
+            path=path,
+            protocol=protocol_name,
+            role=role,
+            channel=channel,
+        )
         if not ok:
             return False, message
         self.known.add(ident)
         self._roles_moved()
-        log.info("Station '%s' was set up for %s, as %s. Its upload path is %s.",
-                 clean, protocol.label,
-                 'the main station' if role == roles.MAIN
-                 else 'an extra sensor on channel %d' % channel, path)
-        return True, {'name': clean, 'protocol': protocol_name, 'path': path,
-                      'role': role, 'channel': channel,
-                      'address': self.web_address(), 'port': self.data_port(),
-                      'settings': checklist._pointing(protocol, self.web_address(),
-                                                      self.data_port(), path)}
+        log.info(
+            "Station '%s' was set up for %s, as %s. Its upload path is %s.",
+            clean,
+            protocol.label,
+            (
+                'the main station'
+                if role == roles.MAIN
+                else 'an extra sensor on channel %d' % channel
+            ),
+            path,
+        )
+        return True, {
+            'name': clean,
+            'protocol': protocol_name,
+            'path': path,
+            'role': role,
+            'channel': channel,
+            'address': self.web_address(),
+            'port': self.data_port(),
+            'settings': checklist._pointing(
+                protocol, self.web_address(), self.data_port(), path
+            ),
+        }
 
     def web_accept(self, ident, name=None, infer_unknown=None):
         """Let a station in, and give it a name.
@@ -2185,8 +2494,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
 
         Args:
             ident (str): Whatever the console sends to name itself.
-            name (str): What to call it.
-            infer_unknown (str): This station's own inference setting.
+            name (str | None): What to call it.
+            infer_unknown (str | None): This station's own inference setting.
 
         Returns:
             tuple: (ok, message).
@@ -2202,13 +2511,16 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             role = roles.EXTRA
             channel = self._free_channel(exclude=ident)
             if channel is None:
-                note = (" Every extra channel is taken, so nothing from it is "
-                        "recorded until one is free.")
+                note = (
+                    " Every extra channel is taken, so nothing from it is "
+                    "recorded until one is free."
+                )
             else:
                 note = " It is an extra sensor on channel %d." % channel
 
-        ok, message = self.overrides.set_station(ident, name, infer_unknown,
-                                                 role=role, channel=channel)
+        ok, message = self.overrides.set_station(
+            ident, name, infer_unknown, role=role, channel=channel
+        )
         if not ok:
             return False, message
         self.known.add(ident)
@@ -2242,28 +2554,43 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         raw = str(raw or '').strip()
         field = str(field or '').strip()
         if ident in self.stations:
-            return {'ok': False, 'message': (
-                "weewx.conf names this station under [[stations]], so its field map "
-                "is part of that declaration and lives there. Change it there, or "
-                "take the station out of [[stations]] first.")}
+            return {
+                'ok': False,
+                'message': (
+                    "weewx.conf names this station under [[stations]], so its field map "
+                    "is part of that declaration and lives there. Change it there, or "
+                    "take the station out of [[stations]] first."
+                ),
+            }
 
         wanted = field and field != mapping.NOWHERE
         held = self._holders().get(field) if wanted else None
         if held and (held['ident'], held['raw']) != (ident, raw):
             if not force:
-                return {'ok': False, 'conflict': True, 'holder': held, 'message': (
-                    "%s is already filled by '%s' from station %s. One column takes "
-                    "one reading: two of them take turns every few seconds, and "
-                    "afterwards nothing can tell them apart."
-                    % (field, held['raw'], held['name']))}
+                return {
+                    'ok': False,
+                    'conflict': True,
+                    'holder': held,
+                    'message': (
+                        "%s is already filled by '%s' from station %s. One column takes "
+                        "one reading: two of them take turns every few seconds, and "
+                        "afterwards nothing can tell them apart."
+                        % (field, held['raw'], held['name'])
+                    ),
+                }
             if held['ident'] in self.stations:
-                return {'ok': False, 'message': (
-                    "%s is filled by '%s' from station %s, which weewx.conf declares "
-                    "under [[stations]]. Change it there first."
-                    % (field, held['raw'], held['name']))}
+                return {
+                    'ok': False,
+                    'message': (
+                        "%s is filled by '%s' from station %s, which weewx.conf declares "
+                        "under [[stations]]. Change it there first."
+                        % (field, held['raw'], held['name'])
+                    ),
+                }
             if held['raw']:
-                ok, message = self.overrides.set_field(held['ident'], held['raw'],
-                                                       mapping.NOWHERE)
+                ok, message = self.overrides.set_field(
+                    held['ident'], held['raw'], mapping.NOWHERE
+                )
                 if not ok:
                     return {'ok': False, 'message': message}
             # And the column itself, or this station would go on being turned away
@@ -2304,9 +2631,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
 
         Args:
             ident (str): The station's identity.
-            name (str): A new name, or None to leave it.
-            role (str): MAIN or EXTRA, or None to leave it.
-            channel (int): A channel, or None to leave it.
+            name (str | None): A new name, or None to leave it.
+            role (str | None): MAIN or EXTRA, or None to leave it.
+            channel (int | None): A channel, or None to leave it.
             force (bool): Whether somebody has been told what it costs and agreed.
 
         Returns:
@@ -2316,8 +2643,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         if not ident:
             return False, "A station with no identity cannot be told from another."
         if ident in self.stations:
-            return False, ("weewx.conf names this station, so its settings live "
-                           "there.")
+            return False, (
+                "weewx.conf names this station, so its settings live " "there."
+            )
         if ident not in self.web_stations:
             return False, "No station here has that identity."
 
@@ -2326,8 +2654,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         if name is not None:
             clean = overrides._as_name(name)
             if not clean:
-                return False, ("A name may hold letters, digits, dashes and "
-                               "underscores.")
+                return False, (
+                    "A name may hold letters, digits, dashes and " "underscores."
+                )
             for other, station in self.web_stations.items():
                 if other != ident and station.name == clean:
                     return False, "There is already a station called '%s'." % clean
@@ -2337,8 +2666,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             # not also asking to change what it is.
             role = was.role
         if role is not None:
-            ok, role, channel, message = self._role_for_new(ident, role, channel,
-                                                            force)
+            ok, role, channel, message = self._role_for_new(ident, role, channel, force)
             if not ok:
                 return False, message
             if role == roles.MAIN:
@@ -2347,8 +2675,9 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                     return False, message
 
         moved = role is not None and (role != was.role or channel != was.channel)
-        ok, message = self.overrides.set_station(ident, name=clean, role=role,
-                                                 channel=channel)
+        ok, message = self.overrides.set_station(
+            ident, name=clean, role=role, channel=channel
+        )
         if not ok:
             return False, message
         if moved:
@@ -2359,13 +2688,23 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             gone = self.owners.owns(ident)
             if gone:
                 self.overrides.drop_columns(gone)
-                log.info("Station '%s' gave up %d column(s) with its role: %s.",
-                         clean or was.name or ident, len(gone), ', '.join(gone))
+                log.info(
+                    "Station '%s' gave up %d column(s) with its role: %s.",
+                    clean or was.name or ident,
+                    len(gone),
+                    ', '.join(gone),
+                )
         self._roles_moved()
         if role is not None:
-            log.info("Station '%s' is now %s.", clean or was.name or ident,
-                     'the main station' if role == roles.MAIN
-                     else 'an extra sensor on channel %s' % channel)
+            log.info(
+                "Station '%s' is now %s.",
+                clean or was.name or ident,
+                (
+                    'the main station'
+                    if role == roles.MAIN
+                    else 'an extra sensor on channel %s' % channel
+                ),
+            )
         return True, message
 
     def _free_channel(self, exclude=None):
@@ -2379,11 +2718,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         decision rather than this function's.
 
         Args:
-            exclude (str): A station whose own channel does not count as taken,
+            exclude (str | None): A station whose own channel does not count as taken,
                 which is the station being given one.
 
         Returns:
-            int: The channel to hand out, or None when there is none.
+            int | None: The channel to hand out, or None when there is none.
         """
         taken = set()
         for ident, station in self.web_stations.items():
@@ -2423,11 +2762,17 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         if not ok:
             return False, message
         self._roles_moved()
-        log.info("Station '%s' gave up %d column(s): %s. The next station to fill "
-                 "one of them has it.", self._name_of(ident), len(held),
-                 ', '.join(held))
-        return True, ("Given up: %s. The next station to fill one of them has it."
-                      % ', '.join(held))
+        log.info(
+            "Station '%s' gave up %d column(s): %s. The next station to fill "
+            "one of them has it.",
+            self._name_of(ident),
+            len(held),
+            ', '.join(held),
+        )
+        return True, (
+            "Given up: %s. The next station to fill one of them has it."
+            % ', '.join(held)
+        )
 
     def web_forget(self, ident):
         """Take a station out again.
@@ -2445,8 +2790,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         """
         ident = str(ident or '').strip()
         if ident in self.stations:
-            return False, ("weewx.conf names this station. Take it out of there and "
-                           "restart WeeWX.")
+            return False, (
+                "weewx.conf names this station. Take it out of there and "
+                "restart WeeWX."
+            )
         ok, message = self.overrides.forget_station(ident)
         if not ok:
             return False, message
@@ -2500,24 +2847,39 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             'missing': [{'field': f, 'type': t} for f, t in wanted],
             'commands': columns.commands(wanted, self.config_path or 'weewx.conf'),
             'occupied_checked': used is not None,
-            'occupied': [] if not used else sorted(
-                ({'field': f, 'count': c,
-                  'last': (time.strftime('%Y-%m-%d', time.localtime(seen))
-                           if seen else '?')}
-                 for f, (c, seen) in used.items() if f in packet),
-                key=lambda r: r['field']),
+            'occupied': (
+                []
+                if not used
+                else sorted(
+                    (
+                        {
+                            'field': f,
+                            'count': c,
+                            'last': (
+                                time.strftime('%Y-%m-%d', time.localtime(seen))
+                                if seen
+                                else '?'
+                            ),
+                        }
+                        for f, (c, seen) in used.items()
+                        if f in packet
+                    ),
+                    key=lambda r: r['field'],
+                )
+            ),
         }
 
     def _station_for(self, protocol, raw, client):
         """Which console this upload belongs to, or None to leave it alone.
 
         Args:
-            protocol: The protocol that claimed the upload.
+            protocol (type[protocols.Protocol]): The protocol that claimed the
+                upload.
             raw (dict): The raw name/value pairs.
             client (str): The address it came from.
 
         Returns:
-            Station: Which console this belongs to, or None to leave it alone.
+            Station | None: Which console this belongs to, or None to leave it alone.
         """
         ident = protocol.station_of(raw)
 
@@ -2545,7 +2907,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         it is checked, and when it is not, nothing changes.
 
         Args:
-            protocol: The protocol that claimed the upload.
+            protocol (type[protocols.Protocol]): The protocol that claimed the
+                upload.
             raw (dict): The raw name/value pairs.
             client (str): The address it came from.
 
@@ -2553,10 +2916,14 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             bool: Whether the upload may be kept.
         """
         from .protocols import wunderground
+
         if wunderground.password_ok(raw, self.password):
             return True
-        log.warning("An upload from %s carries the wrong %s. Ignoring it.",
-                    client, protocol.secret)
+        log.warning(
+            "An upload from %s carries the wrong %s. Ignoring it.",
+            client,
+            protocol.secret,
+        )
         return False
 
     def _assumed(self):
@@ -2577,16 +2944,19 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         protocol = self.enabled[0]
         if not self.assumed:
             self.assumed = True
-            log.info("An upload from this station says neither which protocol it is "
-                     "nor which console sent it. Reading it as %s, which is the only "
-                     "one this driver is configured for.", protocol.label)
+            log.info(
+                "An upload from this station says neither which protocol it is "
+                "nor which console sent it. Reading it as %s, which is the only "
+                "one this driver is configured for.",
+                protocol.label,
+            )
         return protocol
 
     def _unclaimed(self, request):
         """Say once that something arrived that no protocol recognised.
 
         Args:
-            request: The upload nothing recognised.
+            request (weewx.listener.Request): The upload nothing recognised.
         """
         self.unclaimed += 1
         if self.unclaimed > 1:
@@ -2597,8 +2967,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             "it would mean guessing which catalog its field names belong to. If you "
             "know, set 'protocols = <one of them>' and it will be read as that. Turn "
             "on 'log_raw = true' to see what arrived.",
-            request.client_address, request.path or '/',
-            ', '.join(p.name for p in self.enabled))
+            request.client_address,
+            request.path or '/',
+            ', '.join(p.name for p in self.enabled),
+        )
 
     def _adopt(self, ident, client, protocol):
         """Record the first console ever heard, and answer to it from then on.
@@ -2606,15 +2978,21 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         Args:
             ident (str): Whatever named the station.
             client (str): The address it came from.
-            protocol: The protocol that claimed it.
+            protocol (type[protocols.Protocol]): The protocol that claimed it.
         """
         self.known.add(ident)
-        where = self.store.add(ident, "first console seen, from %s, speaking %s"
-                                      % (client, protocol.name))
-        log.info("Console '%s' at %s, speaking %s, is now this driver's station, on "
-                 "record in the %s. Uploads from any other console are refused until "
-                 "it is named under [[stations]].",
-                 ident, client, protocol.name, where or 'log only')
+        where = self.store.add(
+            ident, "first console seen, from %s, speaking %s" % (client, protocol.name)
+        )
+        log.info(
+            "Console '%s' at %s, speaking %s, is now this driver's station, on "
+            "record in the %s. Uploads from any other console are refused until "
+            "it is named under [[stations]].",
+            ident,
+            client,
+            protocol.name,
+            where or 'log only',
+        )
         self._suggest_passkey(ident, protocol)
 
     def _suggest_passkey(self, ident, protocol):
@@ -2627,12 +3005,16 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
 
         Args:
             ident (str): The identity just adopted.
-            protocol: The protocol that claimed it.
+            protocol (type[protocols.Protocol]): The protocol that claimed it.
         """
         if self.configured_passkey or self.stations:
             return
-        log.info("To keep it independent of anything stored, put it in weewx.conf: "
-                 "'passkey = %s' under [%s].", ident, DRIVER_NAME)
+        log.info(
+            "To keep it independent of anything stored, put it in weewx.conf: "
+            "'passkey = %s' under [%s].",
+            ident,
+            DRIVER_NAME,
+        )
 
     def _refuse(self, ident, client, protocol):
         """Say once that an upload was turned away, and what would let it in.
@@ -2640,7 +3022,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         Args:
             ident (str): Whatever named the station.
             client (str): The address it came from.
-            protocol: The protocol that claimed it.
+            protocol (type[protocols.Protocol]): The protocol that claimed it.
         """
         if (ident, protocol.name) in self.unknown_consoles:
             return
@@ -2650,7 +3032,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             "driver's consoles. Ignoring it. If it is yours, add it under "
             "[[stations]] with its own field map: two consoles number their channels "
             "from one, and would otherwise write into the same fields.",
-            protocol.name, client, ident or '(unnamed)')
+            protocol.name,
+            client,
+            ident or '(unnamed)',
+        )
 
     def _maybe_report(self, payload, guesses, protocol):
         """Write out one upload, the first time something cannot be placed.
@@ -2662,28 +3047,39 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         Args:
             payload (str): The upload as it arrived.
             guesses (dict): What the mapper worked out for itself.
-            protocol: The protocol that claimed it.
+            protocol (type[protocols.Protocol]): The protocol that claimed it.
         """
         if self.reported or not self.report_file:
             return
         waiting = {}
         for mapper in self._mappers():
-            waiting.update({raw: field for raw, field in mapper.undecided.items()
-                            if raw in mapper.warned})
+            waiting.update(
+                {
+                    raw: field
+                    for raw, field in mapper.undecided.items()
+                    if raw in mapper.warned
+                }
+            )
         if not guesses and not waiting:
             return
         self.reported = True
-        path = report.write(payload, guesses, waiting, self.report_file,
-                            protocol=protocol.name)
+        path = report.write(
+            payload, guesses, waiting, self.report_file, protocol=protocol.name
+        )
         if path:
-            log.info("This station sends fields I cannot place on my own. Everything "
-                     "needed to report them is in %s", path)
+            log.info(
+                "This station sends fields I cannot place on my own. Everything "
+                "needed to report them is in %s",
+                path,
+            )
 
     def _mappers(self):
-        stations = ([self.default_station] if self.default_station is not None
-                    else list(self.stations.values()))
-        return [mapper for station in stations
-                for mapper in station.mappers.values()]
+        stations = (
+            [self.default_station]
+            if self.default_station is not None
+            else list(self.stations.values())
+        )
+        return [mapper for station in stations for mapper in station.mappers.values()]
 
     def closePort(self):
         self.listener.close()
@@ -2731,9 +3127,11 @@ def _station_section(config_dict):
     if not config_dict:
         return None
     try:
-        return {key: config_dict['Station'][key]
-                for key in ('location', 'latitude', 'longitude', 'altitude')
-                if key in config_dict['Station']}
+        return {
+            key: config_dict['Station'][key]
+            for key in ('location', 'latitude', 'longitude', 'altitude')
+            if key in config_dict['Station']
+        }
     except (KeyError, TypeError):
         return {}
 
@@ -2745,7 +3143,7 @@ def _config_path(config_dict):
         config_dict (dict): The whole of weewx.conf, as WeeWX passed it.
 
     Returns:
-        str: The path to weewx.conf, or None when it cannot be worked out.
+        str | None: The path to weewx.conf, or None when it cannot be worked out.
     """
     if not config_dict:
         return None

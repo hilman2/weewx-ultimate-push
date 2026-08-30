@@ -25,6 +25,13 @@ import time
 
 from . import VERSION, columns, infer, protocols, server, transport
 from .mapping import Mapper
+from typing import TYPE_CHECKING, Dict
+
+# For the docstring types only. The request class comes from whichever listener
+# the driver found; the bundled copy is byte for byte the same file, so the two
+# name one type, and nothing here imports either at runtime.
+if TYPE_CHECKING:
+    import weewx.listener
 
 try:
     from weewx.listener import HTTPListener
@@ -36,33 +43,54 @@ def main(argv=None):
     """Run the diagnostic command.
 
     Args:
-        argv (list): Command line arguments, without the program name. Defaults to
+        argv (list | None): Command line arguments, without the program name. Defaults to
             what was actually passed on the command line.
 
     Returns:
         int: An exit status, 0 when there was nothing to complain about.
     """
-    parser = argparse.ArgumentParser(prog='python -m user.ultimatepush',
-                                     description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog='python -m user.ultimatepush', description=__doc__
+    )
     parser.add_argument('--port', default=8000, help="Port to listen on. Default 8000.")
     parser.add_argument('--address', default='', help="Address to bind to.")
     parser.add_argument('--path', help="Accept this path only.")
-    parser.add_argument('--samples', type=int, default=1,
-                        help="How many uploads to wait for. Default 1.")
-    parser.add_argument('--timeout', type=int, default=300,
-                        help="Seconds to wait before giving up. Default 300.")
-    parser.add_argument('--config', default='/etc/weewx/weewx.conf',
-                        help="Path to weewx.conf, for the database check and for the "
-                             "commands printed at the end.")
-    parser.add_argument('--infer-unknown', default='all',
-                        choices=['off', 'series', 'all'],
-                        help="Default 'all' here, so that everything gets a proposal.")
-    parser.add_argument('--no-database', action='store_true',
-                        help="Skip looking at the database. Faster, and one section "
-                             "less when setting up from scratch.")
-    parser.add_argument('--url', action='store_true',
-                        help="Print the address of the web interface and stop. It is "
-                             "in the log at startup too, but this saves looking.")
+    parser.add_argument(
+        '--samples',
+        type=int,
+        default=1,
+        help="How many uploads to wait for. Default 1.",
+    )
+    parser.add_argument(
+        '--timeout',
+        type=int,
+        default=300,
+        help="Seconds to wait before giving up. Default 300.",
+    )
+    parser.add_argument(
+        '--config',
+        default='/etc/weewx/weewx.conf',
+        help="Path to weewx.conf, for the database check and for the "
+        "commands printed at the end.",
+    )
+    parser.add_argument(
+        '--infer-unknown',
+        default='all',
+        choices=['off', 'series', 'all'],
+        help="Default 'all' here, so that everything gets a proposal.",
+    )
+    parser.add_argument(
+        '--no-database',
+        action='store_true',
+        help="Skip looking at the database. Faster, and one section "
+        "less when setting up from scratch.",
+    )
+    parser.add_argument(
+        '--url',
+        action='store_true',
+        help="Print the address of the web interface and stop. It is "
+        "in the log at startup too, but this saves looking.",
+    )
     args = parser.parse_args(argv)
 
     if args.url:
@@ -70,15 +98,17 @@ def main(argv=None):
 
     logging.basicConfig(level=logging.WARNING, format='%(message)s')
     known = protocols.posting()
-    print("weewx-ultimate-push %s. Listening on %s:%s for %s. Point the station here."
-          % (VERSION, args.address or '*', args.port,
-             ', '.join(p.name for p in known)))
+    print(
+        "weewx-ultimate-push %s. Listening on %s:%s for %s. Point the station here."
+        % (VERSION, args.address or '*', args.port, ', '.join(p.name for p in known))
+    )
 
     def answer(request):
         """The reply the sender is waiting for, worked out from what it sent.
 
         Args:
-            request: The upload, as the listener hands it over.
+            request (weewx.listener.Request): The upload, as the listener hands
+                it over.
 
         Returns:
             tuple: (body, content_type), which is what this hardware's firmware
@@ -92,14 +122,15 @@ def main(argv=None):
             return '', 'text/plain'
         return protocol.answer, protocol.content_type
 
-    mappers = {}
+    mappers = {}  # type: Dict[str, Mapper]
     packet = {}
     guesses = []
     seen = 0
     last = None
 
-    listener = server.http_listener(HTTPListener, answer, port=args.port,
-                                    address=args.address, path=args.path)
+    listener = server.http_listener(
+        HTTPListener, answer, port=args.port, address=args.address, path=args.path
+    )
     try:
         while seen < args.samples:
             request = listener.get(timeout=args.timeout)
@@ -110,16 +141,18 @@ def main(argv=None):
             raw = transport.parse(request.text)
             protocol = protocols.detect(request, raw, known)
             if protocol is None:
-                print("  Nothing in it says which protocol this is, so there is no "
-                      "catalog to\n  read it with. Not counted.")
+                print(
+                    "  Nothing in it says which protocol this is, so there is no "
+                    "catalog to\n  read it with. Not counted."
+                )
                 continue
             dialect = protocol.dialect(raw)
-            print("  %s, read with the '%s' catalog"
-                  % (protocol.label, dialect.name))
+            print("  %s, read with the '%s' catalog" % (protocol.label, dialect.name))
             mapper = mappers.get(dialect.name)
             if mapper is None:
                 mapper = mappers[dialect.name] = Mapper(
-                    dialect, infer_unknown=args.infer_unknown)
+                    dialect, infer_unknown=args.infer_unknown
+                )
             mapper.settle(protocol.settled_contested(raw))
             one, fresh = mapper.to_packet(protocol.readings(request, raw))
             packet.update(one)
@@ -155,26 +188,33 @@ def _say_url(config_path):
     """
     try:
         import configobj
-        section = configobj.ConfigObj(config_path, encoding='utf-8',
-                                      interpolation=False)['UltimatePush']
+
+        section = configobj.ConfigObj(
+            config_path, encoding='utf-8', interpolation=False
+        )['UltimatePush']
     except Exception as e:
         print("Cannot read %s: %s" % (config_path, e), file=sys.stderr)
         return 1
 
     web = section.get('web') or {}
     if str(web.get('enable', 'false')).lower() not in ('true', 'yes', '1'):
-        print("The web interface is switched off. Set 'enable = true' under "
-              "[UltimatePush] [[web]] in %s, then restart WeeWX." % config_path)
+        print(
+            "The web interface is switched off. Set 'enable = true' under "
+            "[UltimatePush] [[web]] in %s, then restart WeeWX." % config_path
+        )
         return 1
     token = str(web.get('token', '')).strip()
     if not token:
-        print("The web interface has no token, so the driver will not start it. Make "
-              "one with:\n"
-              "    python -c \"import secrets; print(secrets.token_urlsafe(12))\"",
-              file=sys.stderr)
+        print(
+            "The web interface has no token, so the driver will not start it. Make "
+            "one with:\n"
+            "    python -c \"import secrets; print(secrets.token_urlsafe(12))\"",
+            file=sys.stderr,
+        )
         return 1
 
     from . import admin
+
     print(admin.url(web.get('address', ''), int(web.get('port', 8080)), token))
     return 0
 
@@ -189,18 +229,24 @@ def _decisions(mapper):
     waiting = sorted(mapper.warned & set(mapper.undecided))
     if not waiting:
         return
-    print("\n%d fields are not being written, because where they go is your call and"
-          "\nnot the hardware's. Paste this into your driver section and uncomment the"
-          "\nline you want:\n" % len(waiting))
+    print(
+        "\n%d fields are not being written, because where they go is your call and"
+        "\nnot the hardware's. Paste this into your driver section and uncomment the"
+        "\nline you want:\n" % len(waiting)
+    )
     print("    [[field_map_extensions]]")
     for raw in waiting:
         print("        # %s" % raw)
         print("        #%s = %s        # this driver" % (raw, mapper.fields.get(raw)))
-        print("        #%s = %s        # %s"
-              % (raw, mapper.undecided[raw], mapper.dialect.contested_with))
-    print("\nAnything else is allowed too. A WN34 on a pool lead is not a soil"
-          "\ntemperature, so somewhere in extraTemp is often what you want. The"
-          "\ntemperature fields your schema already has:")
+        print(
+            "        #%s = %s        # %s"
+            % (raw, mapper.undecided[raw], mapper.dialect.contested_with)
+        )
+    print(
+        "\nAnything else is allowed too. A WN34 on a pool lead is not a soil"
+        "\ntemperature, so somewhere in extraTemp is often what you want. The"
+        "\ntemperature fields your schema already has:"
+    )
     print("    " + ', '.join(sorted(_free_temperature_fields())))
 
 
@@ -224,13 +270,13 @@ def _columns_of(config):
         config (str): The path to weewx.conf, or None when there is none to read.
 
     Returns:
-        set: The columns the archive table has, or None to fall back to the schema.
+        set | None: The columns the archive table has, or None to fall back to the schema.
     """
     if not config:
         return None
     try:
         return columns.existing(config)
-    except Exception:                               # pylint: disable=broad-except
+    except Exception:  # pylint: disable=broad-except
         return None
 
 
@@ -254,28 +300,37 @@ def _report(packet, guesses, mapper, config):
             print("  " + line)
         flagged = {g.raw for g in guesses if mapper.placement_note(g.raw)}
         if flagged:
-            print("\n  Placement of these is a convention, not a reading. Say where "
-                  "they\n  really are with field_map_extensions: %s"
-                  % ' '.join(sorted(flagged)))
+            print(
+                "\n  Placement of these is a convention, not a reading. Say where "
+                "they\n  really are with field_map_extensions: %s"
+                % ' '.join(sorted(flagged))
+            )
 
     try:
-        wanted = columns.missing(packet, mapper.wanted_groups(),
-                                 known=_columns_of(config))
+        wanted = columns.missing(
+            packet, mapper.wanted_groups(), known=_columns_of(config)
+        )
     except ImportError:
-        print("\nWeeWX is not importable here, so the columns cannot be worked out.",
-              file=sys.stderr)
+        print(
+            "\nWeeWX is not importable here, so the columns cannot be worked out.",
+            file=sys.stderr,
+        )
         return
 
     if not wanted:
         print("\nEvery reading has a column already.")
         return
-    print("\n%d readings have nowhere to live. They will show up in reports as current"
-          "\nconditions and be gone at the next archive interval. To keep them:\n"
-          % len(wanted))
+    print(
+        "\n%d readings have nowhere to live. They will show up in reports as current"
+        "\nconditions and be gone at the next archive interval. To keep them:\n"
+        % len(wanted)
+    )
     for command in columns.commands(wanted, config):
         print("  " + command)
-    print("\nAdding a column changes the table definition and not its rows. "
-          "Taking one away again means rebuilding the table, so back up first.")
+    print(
+        "\nAdding a column changes the table definition and not its rows. "
+        "Taking one away again means rebuilding the table, so back up first."
+    )
 
 
 def _check_history(packet, config):
@@ -288,8 +343,10 @@ def _check_history(packet, config):
     try:
         used = columns.occupied(config)
     except Exception as e:
-        print("\nCannot read the database (%s). Skipping the history check." % e,
-              file=sys.stderr)
+        print(
+            "\nCannot read the database (%s). Skipping the history check." % e,
+            file=sys.stderr,
+        )
         return
 
     clashes = {field: used[field] for field in packet if field in used}
@@ -301,10 +358,12 @@ def _check_history(packet, config):
     for field, (count, last) in sorted(clashes.items()):
         when = time.strftime('%Y-%m-%d', time.localtime(last)) if last else '?'
         print("  %-26s %9d values, last %s" % (field, count, when))
-    print("\nIf those came from the same sensor, there is nothing to do. If they came"
-          "\nfrom a different one, this driver is about to write a second series into"
-          "\nthe same column, and afterwards the two cannot be told apart. Give it a"
-          "\nfield of its own under [[field_map_extensions]].")
+    print(
+        "\nIf those came from the same sensor, there is nothing to do. If they came"
+        "\nfrom a different one, this driver is about to write a second series into"
+        "\nthe same column, and afterwards the two cannot be told apart. Give it a"
+        "\nfield of its own under [[field_map_extensions]]."
+    )
 
 
 if __name__ == '__main__':

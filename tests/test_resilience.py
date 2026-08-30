@@ -22,13 +22,15 @@ FIXTURE_PASSKEY = '0000000000000000000000000000AAAA'
 
 weewx = pytest.importorskip('weewx', reason="WeeWX is not installed")
 
-from ultimatepush import mapping                                  # noqa: E402
-from ultimatepush.driver import UltimatePushDriver                     # noqa: E402
+from ultimatepush import mapping  # noqa: E402
+from ultimatepush.driver import UltimatePushDriver  # noqa: E402
 
 
 @pytest.fixture
 def driver():
-    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file='')
+    made = UltimatePushDriver(
+        port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=''
+    )
     yield made
     made.closePort()
 
@@ -46,8 +48,9 @@ def sole_listener(driver):
 
 
 def post(driver, body, path='/'):
-    connection = http.client.HTTPConnection('127.0.0.1', driver.listener.port,
-                                            timeout=5)
+    connection = http.client.HTTPConnection(
+        '127.0.0.1', driver.listener.port, timeout=5
+    )
     try:
         connection.request('POST', path, body)
         response = connection.getresponse()
@@ -70,17 +73,27 @@ def test_a_parser_that_raises_costs_one_packet(driver, monkeypatch):
     # The bad one is consumed and logged while the parser is still broken. Repairing
     # it and sending another shows the driver is still there.
     import threading
+
     def repair_and_send():
         monkeypatch.undo()
         post(driver, 'PASSKEY=%s&tempf=61.0' % FIXTURE_PASSKEY)
+
     threading.Timer(0.5, repair_and_send).start()
 
     assert next(packets)['outTemp'] == 61.0
 
 
 def test_rubbish_costs_nothing(driver):
-    for junk in ['', '%%%%', 'a' * 5000, 'tempf=abc', 'tempf=', '=', '&&&&',
-                 'nosuchfield=1']:
+    for junk in [
+        '',
+        '%%%%',
+        'a' * 5000,
+        'tempf=abc',
+        'tempf=',
+        '=',
+        '&&&&',
+        'nosuchfield=1',
+    ]:
         assert post(driver, junk) == 200
 
     post(driver, 'PASSKEY=%s&tempf=62.0' % FIXTURE_PASSKEY)

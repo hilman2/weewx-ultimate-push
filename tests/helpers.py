@@ -15,8 +15,16 @@ from ultimatepush.mapping import Mapper
 from ultimatepush.protocols import Dialect
 
 
-def mapper_for(fields=None, groups=None, channels=None, contested=None,
-               placement_unknown=None, dialect=None, protocol='ecowitt', **kwargs):
+def mapper_for(
+    fields=None,
+    groups=None,
+    channels=None,
+    contested=None,
+    placement_unknown=None,
+    dialect=None,
+    protocol='ecowitt',
+    **kwargs,
+):
     """A Mapper for a test.
 
     With no catalog given, it reads the named protocol's own, which is what the
@@ -25,13 +33,25 @@ def mapper_for(fields=None, groups=None, channels=None, contested=None,
     the real catalog gains a sensor.
     """
     if dialect is None:
-        if (fields is None and groups is None and channels is None
-                and contested is None and placement_unknown is None):
+        if (
+            fields is None
+            and groups is None
+            and channels is None
+            and contested is None
+            and placement_unknown is None
+        ):
             dialect = protocols.by_name(protocol).dialect({})
         else:
-            dialect = Dialect('test', fields or {}, groups, channels, contested,
-                              contested_with='another driver',
-                              placement_unknown=placement_unknown, prefix='test_')
+            dialect = Dialect(
+                'test',
+                fields or {},
+                groups,
+                channels,
+                contested,
+                contested_with='another driver',
+                placement_unknown=placement_unknown,
+                prefix='test_',
+            )
     return Mapper(dialect, **kwargs)
 
 
@@ -59,8 +79,9 @@ def dialect_for(protocol, raw=None):
 class FakeRequest:
     """What a listener hands a driver, with only the parts a protocol looks at."""
 
-    def __init__(self, text='', path='/data/report/', method='POST',
-                 client_address='10.0.0.5'):
+    def __init__(
+        self, text='', path='/data/report/', method='POST', client_address='10.0.0.5'
+    ):
         self.text = text
         self.path = path
         self.method = method

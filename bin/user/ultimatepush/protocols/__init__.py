@@ -35,15 +35,16 @@ no WeeWX on it.
 """
 
 import logging
+from typing import Dict, FrozenSet, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
 # The unit systems, by the numbers weewx.units gives them. Repeated rather than
 # imported so this package stays testable without WeeWX; tests/test_units.py asserts
 # they still agree.
-US = 1              # F, inHg, inch, mph
-METRIC = 16         # C, mbar, cm, km/h
-METRICWX = 17       # C, mbar, mm, m/s
+US = 1  # F, inHg, inch, mph
+METRIC = 16  # C, mbar, cm, km/h
+METRICWX = 17  # C, mbar, mm, m/s
 
 
 class Dialect:
@@ -76,13 +77,38 @@ class Dialect:
             wrong and one reading is about to overwrite the other.
     """
 
-    __slots__ = ('name', 'fields', 'groups', 'channels', 'contested',
-                 'contested_with', 'placement_unknown', 'scale', 'units',
-                 'metadata', 'absent', 'prefix', 'shared_channels')
+    __slots__ = (
+        'name',
+        'fields',
+        'groups',
+        'channels',
+        'contested',
+        'contested_with',
+        'placement_unknown',
+        'scale',
+        'units',
+        'metadata',
+        'absent',
+        'prefix',
+        'shared_channels',
+    )
 
-    def __init__(self, name, fields, groups=None, channels=None, contested=None,
-                 contested_with='', placement_unknown=None, scale=None, units=US,
-                 metadata=frozenset(), absent=(), prefix='', shared_channels=()):
+    def __init__(
+        self,
+        name,
+        fields,
+        groups=None,
+        channels=None,
+        contested=None,
+        contested_with='',
+        placement_unknown=None,
+        scale=None,
+        units=US,
+        metadata=frozenset(),
+        absent=(),
+        prefix='',
+        shared_channels=(),
+    ):
         self.name = name
         self.fields = fields
         self.groups = groups or {}
@@ -128,32 +154,32 @@ class Protocol:
     #
     # '%(address)s', '%(port)s' and '%(path)s' are filled in with where the driver
     # actually is, because the answer to 'what do I type' is not 'your address'.
-    settings = ()
-    notes = ()
+    settings = ()  # type: Tuple[Tuple[str, str], ...]
+    notes = ()  # type: Tuple[str, ...]
 
     # Paths this protocol answers on. Empty means any path, which is the case for
     # every device that lets you type the path into an app. A device with the path
     # burned into its firmware lists it here, and that is then also what identifies
     # the protocol before anything has been parsed.
-    paths = ()
+    paths = ()  # type: Tuple[str, ...]
 
     # What the device wants to read back. Many treat an upload as failed until they
     # have seen the right answer: they retry, and eventually give up.
-    answer = ''
+    answer = ''  # type: Optional[str]
     content_type = 'text/plain'
 
     # Whether this arrives over UDP rather than HTTP.
     datagram = False
     # The port such a device broadcasts on, when it is fixed by the hardware.
-    default_port = None
+    default_port = None  # type: Optional[int]
 
     # Which raw fields name the station rather than measure anything. The first one
     # present is what the driver checks against its list of known consoles.
-    identity = ()
+    identity = ()  # type: Tuple[str, ...]
     # A field the device sends that is a shared secret rather than an identifier.
     # Only Weather Underground has one, and it is the only protocol here where the
     # hardware can authenticate itself at all.
-    secret = None
+    secret = None  # type: Optional[str]
 
     # What kind of secret this hardware can be given when a station is set up:
     #
@@ -164,27 +190,27 @@ class Protocol:
     #   None        it cannot carry anything. Either its path is burned into the
     #               firmware, or it broadcasts. These are the ones that have to be
     #               adopted: heard first, confirmed afterwards.
-    secret_kind = None
+    secret_kind = None  # type: Optional[str]
 
     # The catalog, as class attributes, for a protocol with only one dialect.
-    fields = {}
-    groups = {}
-    channels = {}
-    contested = {}
+    fields = {}  # type: Dict[str, str]
+    groups = {}  # type: Dict[str, str]
+    channels = {}  # type: Dict[str, Tuple[str, int]]
+    contested = {}  # type: Dict[str, str]
     contested_with = ''
-    placement_unknown = {}
-    scale = {}
-    metadata = frozenset()
-    absent = ()
+    placement_unknown = {}  # type: Dict[str, str]
+    scale = {}  # type: Dict[str, float]
+    metadata = frozenset()  # type: FrozenSet[str]
+    absent = ()  # type: Tuple[str, ...]
     units = US
-    shared_channels = ()
+    shared_channels = ()  # type: Tuple[Tuple[str, str], ...]
 
     # Which running counter WeeWX has to difference to get 'rain', the amount in this
     # packet. Almost every protocol here sends counters and none of them sends the
     # amount, so without StdDelta pointed at the right one a station records no rain
     # at all. None means the protocol already sends 'rain' and must not be
     # differenced again.
-    rain_counter = 'dayRain'
+    rain_counter = 'dayRain'  # type: Optional[str]
 
     @classmethod
     def claims(cls, request, raw):
@@ -204,10 +230,20 @@ class Protocol:
         The default is the one catalog the protocol has. Weather Underground
         overrides this, because the same endpoint carries two.
         """
-        return Dialect(cls.name, cls.fields, cls.groups, cls.channels,
-                       cls.contested, cls.contested_with, cls.placement_unknown,
-                       cls.scale, cls.units, cls.metadata, cls.absent,
-                       shared_channels=cls.shared_channels)
+        return Dialect(
+            cls.name,
+            cls.fields,
+            cls.groups,
+            cls.channels,
+            cls.contested,
+            cls.contested_with,
+            cls.placement_unknown,
+            cls.scale,
+            cls.units,
+            cls.metadata,
+            cls.absent,
+            shared_channels=cls.shared_channels,
+        )
 
     @classmethod
     def readings(cls, request, raw):
@@ -245,7 +281,8 @@ def registry():
     reported against itself, and so that a tool that only wants the base class does
     not drag in six catalogs.
     """
-    from . import (acurite, ambient, ecowitt, lacrosse, weatherflow, wunderground)
+    from . import acurite, ambient, ecowitt, lacrosse, weatherflow, wunderground
+
     return [
         # Order decides a tie, and a tie means two protocols were equally sure. The
         # ones that recognise themselves precisely come first.

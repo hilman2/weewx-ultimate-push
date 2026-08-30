@@ -62,9 +62,11 @@ class WeatherUnderground(Protocol):
 
     name = 'wunderground'
     label = 'Weather Underground'
-    hardware = ('Fine Offset Observer and its rebadges (Ambient WS-1000 series, '
-                'Sainlogic, Misol), any Ecowitt console set to protocol '
-                'Wunderground, Meteobridge, and weather software generally')
+    hardware = (
+        'Fine Offset Observer and its rebadges (Ambient WS-1000 series, '
+        'Sainlogic, Misol), any Ecowitt console set to protocol '
+        'Wunderground, Meteobridge, and weather software generally'
+    )
 
     paths = PATHS
     answer = ANSWER
@@ -129,10 +131,19 @@ class WeatherUnderground(Protocol):
         """Imperial or metric, decided on names alone."""
         if is_metric(raw):
             return cls.metric_dialect()
-        return Dialect('wunderground', _catalog.FIELDS, _catalog.GROUPS,
-                       _catalog.CHANNELS, _catalog.CONTESTED,
-                       _catalog.CONTESTED_WITH, scale=_catalog.SCALE, units=US,
-                       metadata=_catalog.METADATA, absent=cls.absent, prefix='wu_')
+        return Dialect(
+            'wunderground',
+            _catalog.FIELDS,
+            _catalog.GROUPS,
+            _catalog.CHANNELS,
+            _catalog.CONTESTED,
+            _catalog.CONTESTED_WITH,
+            scale=_catalog.SCALE,
+            units=US,
+            metadata=_catalog.METADATA,
+            absent=cls.absent,
+            prefix='wu_',
+        )
 
     @classmethod
     def metric_dialect(cls):
@@ -145,11 +156,17 @@ class WeatherUnderground(Protocol):
         else:
             scale = _catalog.METRIC_SCALE
             units = METRIC
-        return Dialect('wunderground/metric', _catalog.METRIC_FIELDS,
-                       _catalog.METRIC_GROUPS,
-                       contested_with=_catalog.CONTESTED_WITH, scale=scale,
-                       units=units, metadata=_catalog.METADATA, absent=cls.absent,
-                       prefix='wu_')
+        return Dialect(
+            'wunderground/metric',
+            _catalog.METRIC_FIELDS,
+            _catalog.METRIC_GROUPS,
+            contested_with=_catalog.CONTESTED_WITH,
+            scale=scale,
+            units=units,
+            metadata=_catalog.METADATA,
+            absent=cls.absent,
+            prefix='wu_',
+        )
 
     @classmethod
     def settled_contested(cls, raw):

@@ -22,6 +22,7 @@ import ast
 import os.path
 import re
 import sys
+from typing import Dict, List
 
 HEADER = '''#
 #    Copyright (c) 2016-2020 Matthew Wall
@@ -99,12 +100,35 @@ for _model, _count, _prefixes in [
     ('WN34', 8, ['tf_ch', 'tf_batt', 'wh34rssi', 'wh34sig']),
     ('WN35', 8, ['leafwetness_ch', 'leaf_batt', 'wh35rssi', 'wh35sig']),
     ('WH51', 16, ['soilmoisture', 'soilbatt', 'soilad', 'wh51rssi', 'wh51sig']),
-    ('WH52', 16, ['soil_ec_hum', 'soil_ec_hum_ad', 'soil_ec_temp', 'soil_ec_batt',
-                  'soil_ec_ad', 'soil_ec']),
+    (
+        'WH52',
+        16,
+        [
+            'soil_ec_hum',
+            'soil_ec_hum_ad',
+            'soil_ec_temp',
+            'soil_ec_batt',
+            'soil_ec_ad',
+            'soil_ec',
+        ],
+    ),
     ('WH41', 4, ['pm25_ch', 'pm25batt', 'pm25_avg_24h_ch', 'wh41rssi', 'wh41sig']),
     ('WH55', 4, ['leak_ch', 'leakbatt', 'wh55rssi', 'wh55sig']),
-    ('LDS01', 4, ['air_ch', 'depth_ch', 'thi_ch', 'ldsbatt', 'ldsheat_ch', 'ldspw_ch',
-                  'wh54sig', 'wh54rssi', 'wh54_ch']),
+    (
+        'LDS01',
+        4,
+        [
+            'air_ch',
+            'depth_ch',
+            'thi_ch',
+            'ldsbatt',
+            'ldsheat_ch',
+            'ldspw_ch',
+            'wh54sig',
+            'wh54rssi',
+            'wh54_ch',
+        ],
+    ),
 ]:
     for _prefix in _prefixes:
         CHANNELS[_prefix] = (_model, _count)
@@ -118,9 +142,9 @@ for _model, _count, _prefixes in [
 # kept here, next to the tool that writes the catalog.
 PLACEMENT_UNKNOWN = {
     'tf_ch': "WN34 multi-channel temperature. Sold with a spike, with a PVC lead, and "
-             "with a silicone lead for a pool. All of them report as tf_chN, so the "
-             "channel is theirs and the placement is yours. They go to extraTemp9 and "
-             "up, which is where the Ecowitt gateway driver puts them.",
+    "with a silicone lead for a pool. All of them report as tf_chN, so the "
+    "channel is theirs and the placement is yours. They go to extraTemp9 and "
+    "up, which is where the Ecowitt gateway driver puts them.",
     'temp': "WH31 multi-channel temperature and humidity. Placement is the user's.",
     'leafwetness_ch': "WN35 leaf wetness. Placement is the user's.",
 }
@@ -145,7 +169,7 @@ REMAP = [
     (r'^soil_ec_temp(\d+)$', lambda n: 'soilTemp%d' % n, 'group_temperature'),
 ]
 
-REMAP = [(re.compile(pattern), name, group) for pattern, name, group in REMAP]
+_REMAP = [(re.compile(pattern), name, group) for pattern, name, group in REMAP]
 
 # Where we knowingly differ from upstream, and why. Each of these is a decision, so it
 # is written down rather than left in a commit message.
@@ -174,7 +198,7 @@ def _shares_channels(raws):
 
 def _remap(raw, groups):
     """Return the field a remapped family belongs on, or None."""
-    for pattern, name_of, group in REMAP:
+    for pattern, name_of, group in _REMAP:
         match = pattern.match(raw)
         if match:
             field = name_of(int(match.group(1)))
@@ -192,8 +216,9 @@ def find_class(node, name):
 
 def const_assign(class_node, name):
     for statement in class_node.body:
-        if isinstance(statement, ast.Assign) \
-                and any(getattr(t, 'id', None) == name for t in statement.targets):
+        if isinstance(statement, ast.Assign) and any(
+            getattr(t, 'id', None) == name for t in statement.targets
+        ):
             return ast.literal_eval(statement.value)
     raise SystemExit("Cannot find %s" % name)
 
@@ -202,9 +227,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', help="Path to ecowittcustom.py")
     parser.add_argument('--out', default='bin/user/ultimatepush/catalogs/ecowitt.py')
-    parser.add_argument('--schema', help="Path to WeeWX's wview_extended.py. Used to "
-                                         "settle which target wins when upstream maps "
-                                         "one reading to more than one field.")
+    parser.add_argument(
+        '--schema',
+        help="Path to WeeWX's wview_extended.py. Used to "
+        "settle which target wins when upstream maps "
+        "one reading to more than one field.",
+    )
     args = parser.parse_args()
 
     schema_fields = set()
@@ -217,17 +245,21 @@ def main():
     tree = ast.parse(source)
 
     # Raw field -> intermediate name, from the Ecowitt parser.
-    label_map = const_assign(find_class(find_class(tree, 'EcowittClient'), 'Parser'),
-                             'LABEL_MAP')
+    label_map = const_assign(
+        find_class(find_class(tree, 'EcowittClient'), 'Parser'), 'LABEL_MAP'
+    )
     # WeeWX field -> intermediate name, from the shared consumer.
     sensor_map = const_assign(find_class(tree, 'Consumer'), 'DEFAULT_SENSOR_MAP')
     # WeeWX field -> unit group, assigned at import time in the driver.
-    groups = dict(re.findall(r"^weewx\.units\.obs_group_dict\['([^']+)'\]\s*=\s*'([^']+)'",
-                             source, re.M))
+    groups = dict(
+        re.findall(
+            r"^weewx\.units\.obs_group_dict\['([^']+)'\]\s*=\s*'([^']+)'", source, re.M
+        )
+    )
 
     # The two maps meet in the middle, at the intermediate name. Collapse them, so that
     # a lookup here is one step rather than two.
-    by_intermediate = {}
+    by_intermediate = {}  # type: Dict[str, List[str]]
     for weewx_field, intermediate in sensor_map.items():
         by_intermediate.setdefault(intermediate, []).append(weewx_field)
 
@@ -277,18 +309,24 @@ def main():
         return ''.join("    %r: %r,\n" % (k, v) for k, v in sorted(mapping.items()))
 
     with open(args.out, 'w', encoding='utf-8', newline='\n') as fd:
-        fd.write(HEADER.format(source=os.path.basename(args.source),
-                               count=len(fields),
-                               fields=render(fields),
-                               groups=render(used_groups),
-                               placement=render(PLACEMENT_UNKNOWN),
-                               channels=render(CHANNELS),
-                               contested=render(contested)))
+        fd.write(
+            HEADER.format(
+                source=os.path.basename(args.source),
+                count=len(fields),
+                fields=render(fields),
+                groups=render(used_groups),
+                placement=render(PLACEMENT_UNKNOWN),
+                channels=render(CHANNELS),
+                contested=render(contested),
+            )
+        )
 
     print("%d fields, %d unit groups -> %s" % (len(fields), len(used_groups), args.out))
     if contested:
-        print("%d fields are placed differently from upstream, so they will not be "
-              "written until the user says which placement they want:" % len(contested))
+        print(
+            "%d fields are placed differently from upstream, so they will not be "
+            "written until the user says which placement they want:" % len(contested)
+        )
         for raw in sorted(contested)[:4]:
             print("  %-20s here %-18s upstream %s" % (raw, fields[raw], contested[raw]))
         if len(contested) > 4:
@@ -297,21 +335,28 @@ def main():
         print("%d readings had more than one target upstream:" % len(ambiguous))
         for raw, chosen, rest in ambiguous:
             print("  %-22s -> %-24s (not %s)" % (raw, chosen, ', '.join(rest)))
-    collisions = {}
+    collisions = {}  # type: Dict[str, List[str]]
     for raw, field in fields.items():
         collisions.setdefault(field, []).append(raw)
-    collisions = {f: sorted(r) for f, r in collisions.items()
-                  if len(r) > 1 and not _shares_channels(r)}
+    collisions = {
+        f: sorted(r)
+        for f, r in collisions.items()
+        if len(r) > 1 and not _shares_channels(r)
+    }
     if collisions:
-        print("%d fields are written by more than one reading. Whichever arrives last "
-              "wins:" % len(collisions))
+        print(
+            "%d fields are written by more than one reading. Whichever arrives last "
+            "wins:" % len(collisions)
+        )
         for field, raws in sorted(collisions.items())[:6]:
             print("  %-22s <- %s" % (field, ', '.join(raws)))
         if len(collisions) > 6:
             print("  ... and %d more" % (len(collisions) - 6))
     if unresolved:
-        print("%d raw fields have no WeeWX target upstream, left out:" % len(unresolved),
-              file=sys.stderr)
+        print(
+            "%d raw fields have no WeeWX target upstream, left out:" % len(unresolved),
+            file=sys.stderr,
+        )
         print("  " + ' '.join(unresolved), file=sys.stderr)
     return 0
 

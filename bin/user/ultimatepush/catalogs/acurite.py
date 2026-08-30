@@ -21,6 +21,8 @@ Field names and their meanings come from the interceptor driver by Matthew Wall,
 captured them from real bridges. GPLv3, like this.
 """
 
+from typing import Dict
+
 # The message types a 5-in-1 sends. It splits its readings over two frames, and both
 # are the station, so both keep the plain names.
 STATION_TYPES = ('5N1x31', '5N1x38')
@@ -47,7 +49,6 @@ FIELDS = {
     # it and the altitude in weewx.conf, which the bridge does not know.
     'baromin': 'pressure',
     'dewptf': 'fdewptf',
-
     # --- the bridge ------------------------------------------------------------
     # 'normal' or 'low', turned into 0 or 1 by the protocol.
     'battery': 'txBatteryStatus',
@@ -77,12 +78,12 @@ CHANNELS = {
 
 PLACEMENT_UNKNOWN = {
     'tower': "An Acurite tower sensor. The bridge says which sensor sent a reading "
-             "and nothing else: whether it is on a north wall or in a greenhouse is "
-             "yours to say.",
+    "and nothing else: whether it is on a north wall or in a greenhouse is "
+    "yours to say.",
     'ProIn': "An Acurite Pro indoor sensor, with an optional water probe.",
     'ProOut': "An Acurite Pro outdoor sensor.",
 }
 
 
-CONTESTED = {}
+CONTESTED = {}  # type: Dict[str, str]
 CONTESTED_WITH = ''

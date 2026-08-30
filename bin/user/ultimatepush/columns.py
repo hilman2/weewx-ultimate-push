@@ -17,11 +17,18 @@ This does the second. It needs a payload, not a catalog, which is why it lives n
 the listener rather than in the installer.
 """
 
+from typing import Dict, List, Set
+
 # Types by unit group, for the columns we have to create. REAL for anything measured,
 # INTEGER for anything counted.
-COUNTED = frozenset([
-    'group_count', 'group_time', 'group_boolean', 'group_data',
-])
+COUNTED = frozenset(
+    [
+        'group_count',
+        'group_time',
+        'group_boolean',
+        'group_data',
+    ]
+)
 
 # How far a numbered family is offered past what the schema ships. The schema stops
 # at eight extra temperatures because that was enough when it was written; a gateway
@@ -34,6 +41,7 @@ UPTO = 16
 def schema_fields():
     """The fields WeeWX's standard schema already has. Needs WeeWX importable."""
     from weewx.schemas.wview_extended import table
+
     return {name for name, _type in table}
 
 
@@ -52,13 +60,17 @@ def families(names, least=2):
         dict: The base name of each family, to the highest number found in it.
     """
     import re
-    found = {}
+
+    found = {}  # type: Dict[str, Set[int]]
     for name in names:
         match = re.match(r'^(.*?[A-Za-z_])([0-9]+)$', name)
         if match:
             found.setdefault(match.group(1), set()).add(int(match.group(2)))
-    return {base: max(numbers) for base, numbers in found.items()
-            if len(numbers) >= least and numbers == set(range(1, max(numbers) + 1))}
+    return {
+        base: max(numbers)
+        for base, numbers in found.items()
+        if len(numbers) >= least and numbers == set(range(1, max(numbers) + 1))
+    }
 
 
 def by_group(upto=UPTO):
@@ -84,8 +96,12 @@ def by_group(upto=UPTO):
         good places to put something.
     """
     import weewx.units
-    known = {name for name in schema_fields()
-             if name not in ('dateTime', 'usUnits', 'interval')}
+
+    known = {
+        name
+        for name in schema_fields()
+        if name not in ('dateTime', 'usUnits', 'interval')
+    }
     everything = set(known)
     for base, highest in families(known).items():
         group = weewx.units.obs_group_dict.get(base + '1')
@@ -95,7 +111,7 @@ def by_group(upto=UPTO):
             if group:
                 weewx.units.obs_group_dict.setdefault(name, group)
 
-    groups = {}
+    groups = {}  # type: Dict[str, List[str]]
     ungrouped = []
     for name in sorted(everything, key=in_family_order):
         group = weewx.units.obs_group_dict.get(name)
@@ -117,6 +133,7 @@ def in_family_order(name):
         sorting is by family and then numerically within it.
     """
     import re
+
     match = re.match(r'^(.*?[A-Za-z_])([0-9]+)$', name)
     if match:
         return (match.group(1), int(match.group(2)))
@@ -129,7 +146,7 @@ def missing(packet, groups, known=None):
     Args:
         packet (dict): A loop packet, i.e. what the driver produced.
         groups (dict): WeeWX field -> unit group, for choosing a column type.
-        known (set): Fields the database already has. Defaults to the standard schema.
+        known (set | None): Fields the database already has. Defaults to the standard schema.
 
     Returns:
         list: (field, sql_type) pairs, sorted, without the bookkeeping fields.
@@ -155,8 +172,10 @@ def commands(wanted, config='/etc/weewx/weewx.conf'):
     Returns:
         list: One command line per column.
     """
-    return ["weectl database add-column %s --type %s --config=%s -y" % (field, sql, config)
-            for field, sql in wanted]
+    return [
+        "weectl database add-column %s --type %s --config=%s -y" % (field, sql, config)
+        for field, sql in wanted
+    ]
 
 
 def existing(config_path, binding='wx_binding'):
@@ -209,7 +228,7 @@ def add(config_path, field, sql_type='REAL', binding='wx_binding'):
             if field in manager.sqlkeys:
                 return True, "The database already has a column '%s'." % field
             manager.add_column(field, sql_type)
-    except Exception as e:                          # pylint: disable=broad-except
+    except Exception as e:  # pylint: disable=broad-except
         return False, "The database would not take it: %s" % e
     return True, "Added the column '%s' as %s." % (field, sql_type)
 
@@ -249,9 +268,13 @@ def occupied(config_path, binding='wx_binding'):
         recent one). Columns that hold nothing are left out.
     """
     with _manager(config_path, binding) as manager:
-        fields = [f for f in manager.sqlkeys if f not in ('dateTime', 'usUnits', 'interval')]
-        counts = ', '.join('COUNT(%s), MAX(CASE WHEN %s IS NOT NULL THEN dateTime END)'
-                           % (f, f) for f in fields)
+        fields = [
+            f for f in manager.sqlkeys if f not in ('dateTime', 'usUnits', 'interval')
+        ]
+        counts = ', '.join(
+            'COUNT(%s), MAX(CASE WHEN %s IS NOT NULL THEN dateTime END)' % (f, f)
+            for f in fields
+        )
         row = manager.getSql("SELECT %s FROM %s" % (counts, manager.table_name))
 
     used = {}

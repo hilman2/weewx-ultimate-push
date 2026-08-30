@@ -57,14 +57,15 @@ def path_for(weewx_root=None, configured=None, sqlite_root=None):
     """Where to keep the file. Beside the console list, for the same reasons.
 
     Args:
-        weewx_root (str): The WeeWX root directory, when there is one.
-        configured (str): A path set in weewx.conf, which wins over everything else.
-        sqlite_root (str): Where the SQLite database lives, when it is SQLite.
+        weewx_root (str | None): The WeeWX root directory, when there is one.
+        configured (str | None): A path set in weewx.conf, which wins over everything else.
+        sqlite_root (str | None): Where the SQLite database lives, when it is SQLite.
 
     Returns:
         str: The path to the file.
     """
     from . import consoles
+
     if configured:
         return configured
     directory = os.path.dirname(consoles.path_for(weewx_root, None, sqlite_root))
@@ -101,14 +102,15 @@ class Store:
             return self.settings
         try:
             import configobj
-            parsed = configobj.ConfigObj(self.path, encoding='utf-8',
-                                         file_error=True)
+
+            parsed = configobj.ConfigObj(self.path, encoding='utf-8', file_error=True)
         except Exception as e:
             # A broken file must not stop the driver. The readings matter more than
             # the settings, and the log says what to fix.
             self.error = str(e)
-            log.error("Cannot read %s: %s. Carrying on with weewx.conf alone.",
-                      self.path, e)
+            log.error(
+                "Cannot read %s: %s. Carrying on with weewx.conf alone.", self.path, e
+            )
             self.settings = {}
             return self.settings
         self.error = None
@@ -143,8 +145,16 @@ class Store:
 
     # ---- writing -------------------------------------------------------------
 
-    def set_station(self, ident, name=None, infer_unknown=None, path=None,
-                    protocol=None, role=None, channel=None):
+    def set_station(
+        self,
+        ident,
+        name=None,
+        infer_unknown=None,
+        path=None,
+        protocol=None,
+        role=None,
+        channel=None,
+    ):
         """Record a station, or change one.
 
         Every argument left as None is left as it was, so that one caller can change
@@ -152,13 +162,13 @@ class Store:
 
         Args:
             ident (str): The station's identity. Required.
-            name (str): What to call it.
-            infer_unknown (str): This station's own inference setting.
-            path (str): An upload path of its own.
-            protocol (str): Which protocol its uploads are read with.
-            role (str): MAIN or EXTRA. Setting MAIN clears any channel, because the
+            name (str | None): What to call it.
+            infer_unknown (str | None): This station's own inference setting.
+            path (str | None): An upload path of its own.
+            protocol (str | None): Which protocol its uploads are read with.
+            role (str | None): MAIN or EXTRA. Setting MAIN clears any channel, because the
                 main station has no use for one.
-            channel (int): Which extra channel it writes to, from 1 to CHANNELS.
+            channel (int | None): Which extra channel it writes to, from 1 to CHANNELS.
 
         Returns:
             tuple: (ok, message), where the message is the path written or the
@@ -176,6 +186,7 @@ class Store:
                 station['protocol'] = protocol
             if role is not None:
                 from .roles import MAIN, ROLES
+
                 if role not in ROLES:
                     return False, "A role is one of %s." % ', '.join(ROLES)
                 station['role'] = role
@@ -186,22 +197,28 @@ class Store:
                     station.pop('channel', None)
             if channel is not None:
                 from .roles import CHANNELS
+
                 try:
                     channel = int(channel)
                 except (TypeError, ValueError):
                     return False, "A channel is a number from 1 to %d." % CHANNELS
                 if not 1 <= channel <= CHANNELS:
-                    return False, ("A channel is a number from 1 to %d. The standard "
-                                   "schema has that many extraTemp columns." % CHANNELS)
+                    return False, (
+                        "A channel is a number from 1 to %d. The standard "
+                        "schema has that many extraTemp columns." % CHANNELS
+                    )
                 station['channel'] = str(channel)
             if name is not None:
                 clean = _as_name(name)
                 if not clean:
-                    return False, ("A name may hold letters, digits, dashes and "
-                                   "underscores. It becomes a section heading.")
+                    return False, (
+                        "A name may hold letters, digits, dashes and "
+                        "underscores. It becomes a section heading."
+                    )
                 station['name'] = clean
             if infer_unknown is not None:
                 from .mapping import MODES
+
                 if infer_unknown not in MODES:
                     return False, "infer_unknown must be one of %s." % ', '.join(MODES)
                 station['infer_unknown'] = infer_unknown
@@ -260,8 +277,10 @@ class Store:
                 extensions[raw] = NOWHERE
             else:
                 if not _as_field(field):
-                    return False, ("A WeeWX field name may hold letters, digits and "
-                                   "underscores, and must not start with a digit.")
+                    return False, (
+                        "A WeeWX field name may hold letters, digits and "
+                        "underscores, and must not start with a digit."
+                    )
                 extensions[raw] = field
             return self._save()
 
@@ -306,6 +325,7 @@ class Store:
         """Write the whole file. Returns (ok, message)."""
         try:
             import configobj
+
             out = configobj.ConfigObj(encoding='utf-8', write_empty_values=True)
             out.filename = self.path
             out.initial_comment = HEADER.strip().splitlines()
@@ -331,7 +351,8 @@ def _plain(node):
     """A configobj section as ordinary dicts, so nothing downstream has to know.
 
     Args:
-        node: A configobj Section, or anything else, which is returned unchanged.
+        node (Any): A configobj.Section, whose contents are copied out, or
+            anything else, which is returned unchanged.
 
     Returns:
         dict: The same content in plain dicts.

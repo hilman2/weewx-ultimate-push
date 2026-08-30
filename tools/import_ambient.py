@@ -32,8 +32,10 @@ import re
 import sys
 import urllib.request
 
-HA_RAW = ('https://raw.githubusercontent.com/home-assistant/core/dev/'
-          'homeassistant/components/ambient_station/%s')
+HA_RAW = (
+    'https://raw.githubusercontent.com/home-assistant/core/dev/'
+    'homeassistant/components/ambient_station/%s'
+)
 HA_FILES = ('sensor.py', 'binary_sensor.py', 'const.py')
 
 
@@ -58,7 +60,6 @@ SINGLES = {
     'humidityin': 'inHumidity',
     'baromrelin': 'barometer',
     'baromabsin': 'pressure',
-
     'winddir': 'windDir',
     'windspeedmph': 'windSpeed',
     'windgustmph': 'windGust',
@@ -71,7 +72,6 @@ SINGLES = {
     'winddir_avg2m': 'winddir_avg2m',
     'windspdmph_avg10m': 'windspdmph_avg10m',
     'winddir_avg10m': 'winddir_avg10m',
-
     'hourlyrainin': 'hourRain',
     'dailyrainin': 'dayRain',
     'eventrainin': 'eventRain',
@@ -80,11 +80,9 @@ SINGLES = {
     'yearlyrainin': 'yearRain',
     'totalrainin': 'totalRain',
     '24hourrainin': 'rain24',
-
     'solarradiation': 'radiation',
     'solarradiation_lx': 'luminosity',
     'uv': 'UV',
-
     'co2': 'co2',
     'pm25': 'pm2_5',
     'pm25_24h': 'pm2_5_24h',
@@ -94,7 +92,6 @@ SINGLES = {
     'aqi_pm25_24h': 'pm2_5_aqi_24h',
     'aqi_pm25_in': 'pm2_5_in_aqi',
     'aqi_pm25_in_24h': 'pm2_5_in_aqi_24h',
-
     # The AQIN module, Ambient's indoor air quality sensor.
     'pm25_in_aqin': 'pm2_5_in_aqin',
     'pm25_in_24h_aqin': 'pm2_5_in_24h_aqin',
@@ -108,7 +105,6 @@ SINGLES = {
     'co2_in_24h_aqin': 'co2_in_24h_aqin',
     'pm_in_temp_aqin': 'aqin_Temp',
     'pm_in_humidity_aqin': 'aqin_Hum',
-
     # Lightning. 'lightning_day' is a running count since midnight, not the strikes
     # in this period, so it is kept where the Ecowitt catalog keeps the same reading
     # rather than in lightning_strike_count, which reports would read as a delta.
@@ -116,7 +112,6 @@ SINGLES = {
     'lightning_hour': 'lightning_hour',
     'lightning_distance': 'lightning_distance',
     'lightning_time': 'lightning_time',
-
     'battin': 'inTempBatteryStatus',
     'battout': 'outTempBatteryStatus',
     'batt_25': 'pm25Batt',
@@ -285,10 +280,12 @@ def ha_field_names(source_dir=None, download=False):
             if not isinstance(node, ast.Assign):
                 continue
             for target in node.targets:
-                if (isinstance(target, ast.Name)
-                        and target.id.startswith('TYPE_')
-                        and isinstance(node.value, ast.Constant)
-                        and isinstance(node.value.value, str)):
+                if (
+                    isinstance(target, ast.Name)
+                    and target.id.startswith('TYPE_')
+                    and isinstance(node.value, ast.Constant)
+                    and isinstance(node.value.value, str)
+                ):
                     names.add(node.value.value)
     return names
 
@@ -344,19 +341,30 @@ def build(names):
 
 
 def render(mapping, indent='    '):
-    return ''.join("%s%r: %r,\n" % (indent, key, mapping[key])
-                   for key in sorted(mapping))
+    return ''.join(
+        "%s%r: %r,\n" % (indent, key, mapping[key]) for key in sorted(mapping)
+    )
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('source', nargs='?',
-                        help='path to homeassistant/components/ambient_station')
-    parser.add_argument('--download', action='store_true',
-                        help='read the files from GitHub instead')
-    parser.add_argument('--out', default=os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        'bin', 'user', 'ultimatepush', 'catalogs', 'ambient.py'))
+    parser.add_argument(
+        'source', nargs='?', help='path to homeassistant/components/ambient_station'
+    )
+    parser.add_argument(
+        '--download', action='store_true', help='read the files from GitHub instead'
+    )
+    parser.add_argument(
+        '--out',
+        default=os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'bin',
+            'user',
+            'ultimatepush',
+            'catalogs',
+            'ambient.py',
+        ),
+    )
     args = parser.parse_args(argv)
 
     if not args.source and not args.download:
@@ -370,26 +378,36 @@ def main(argv=None):
     fields, groups, channels, unplaced, extra = build(names)
 
     with open(args.out, 'w', encoding='utf-8', newline='\n') as handle:
-        handle.write(HEADER.format(
-            source='home-assistant/core, ambient_station' if args.download
-                   else args.source,
-            count=len(fields),
-            fields=render(fields),
-            groups=render(groups),
-            placement=render(PLACEMENT_UNKNOWN),
-            channels=render(channels),
-            contested=render(CONTESTED),
-            contested_with=CONTESTED_WITH))
+        handle.write(
+            HEADER.format(
+                source=(
+                    'home-assistant/core, ambient_station'
+                    if args.download
+                    else args.source
+                ),
+                count=len(fields),
+                fields=render(fields),
+                groups=render(groups),
+                placement=render(PLACEMENT_UNKNOWN),
+                channels=render(channels),
+                contested=render(CONTESTED),
+                contested_with=CONTESTED_WITH,
+            )
+        )
 
     print('%d fields -> %s' % (len(fields), args.out))
     if extra:
-        print('\n%d name(s) placed here that Home Assistant does not list. They come '
-              'from captured uploads:' % len(extra))
+        print(
+            '\n%d name(s) placed here that Home Assistant does not list. They come '
+            'from captured uploads:' % len(extra)
+        )
         for name in extra:
             print('    %s' % name)
     if unplaced:
-        print('\n%d name(s) with nowhere to go. Add them to SINGLES or FAMILIES, or '
-              'to COMPUTED_BY_AMBIENT with the reason:' % len(unplaced))
+        print(
+            '\n%d name(s) with nowhere to go. Add them to SINGLES or FAMILIES, or '
+            'to COMPUTED_BY_AMBIENT with the reason:' % len(unplaced)
+        )
         for name in unplaced:
             print('    %s' % name)
     return 0

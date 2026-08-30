@@ -33,8 +33,10 @@ class Ambient(Protocol):
 
     name = 'ambient'
     label = 'Ambient Weather'
-    hardware = ('WS-2902, WS-5000, WS-1965 and the rest of the Ambient range with '
-                "'Custom' upload in the awnet app")
+    hardware = (
+        'WS-2902, WS-5000, WS-1965 and the rest of the Ambient range with '
+        "'Custom' upload in the awnet app"
+    )
 
     # The path is typed into the awnet app. Ambient's own default is /data/report/,
     # which is also Ecowitt's, so it cannot separate the two and is not claimed.
@@ -60,9 +62,16 @@ class Ambient(Protocol):
     identity = ('PASSKEY',)
     secret_kind = 'path'
 
-    metadata = frozenset([
-        'PASSKEY', 'stationtype', 'model', 'dateutc', 'freq', 'interval',
-    ])
+    metadata = frozenset(
+        [
+            'PASSKEY',
+            'stationtype',
+            'model',
+            'dateutc',
+            'freq',
+            'interval',
+        ]
+    )
 
     fields = _catalog.FIELDS
     groups = _catalog.GROUPS

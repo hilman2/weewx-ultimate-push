@@ -22,6 +22,7 @@ is changing.
 import collections
 import threading
 import time
+from typing import Any, Deque, Dict
 
 # How many uploads to keep per station. Enough to see a pattern, few enough that
 # nobody has to think about the memory.
@@ -53,11 +54,34 @@ class Upload:
         note (str): Why it was refused, for one that was.
     """
 
-    __slots__ = ('at', 'client', 'path', 'method', 'ident', 'protocol', 'dialect',
-                 'text', 'packet', 'readings', 'note')
+    __slots__ = (
+        'at',
+        'client',
+        'path',
+        'method',
+        'ident',
+        'protocol',
+        'dialect',
+        'text',
+        'packet',
+        'readings',
+        'note',
+    )
 
-    def __init__(self, at, client, path, method, text, ident='', protocol=None,
-                 dialect=None, packet=None, readings=(), note=''):
+    def __init__(
+        self,
+        at,
+        client,
+        path,
+        method,
+        text,
+        ident='',
+        protocol=None,
+        dialect=None,
+        packet=None,
+        readings=(),
+        note='',
+    ):
         self.at = at
         self.client = client
         self.path = path
@@ -120,7 +144,7 @@ class Station:
         self.uploads = 0
         self.packets = 0
         self.dropped = 0
-        self.recent = collections.deque(maxlen=KEEP)
+        self.recent = collections.deque(maxlen=KEEP)  # type: Deque[Upload]
         # Raw field -> what the mapper decided, for the field page.
         self.fields = {}
         self.guesses = {}
@@ -153,7 +177,7 @@ class Log:
     def __init__(self, keep=KEEP):
         self.lock = threading.Lock()
         self.stations = {}
-        self.unclaimed = collections.deque(maxlen=keep)
+        self.unclaimed = collections.deque(maxlen=keep)  # type: Deque[Upload]
         self.started = time.time()
         self.keep = keep
 
@@ -238,8 +262,9 @@ class Log:
                 return
             station.raw_seen.update(raw_names)
             station.fields = dict(fields)
-            station.guesses = {raw: (g.field, g.group, g.why, g.certain)
-                               for raw, g in guesses.items()}
+            station.guesses = {
+                raw: (g.field, g.group, g.why, g.certain) for raw, g in guesses.items()
+            }
             station.undecided = dict(undecided)
 
     # ---- reading, from the web server's thread --------------------------------
@@ -256,7 +281,7 @@ class Log:
             ident (str): The station's identity.
 
         Returns:
-            dict: What is known about it, or None if it has never uploaded.
+            dict | None: What is known about it, or None if it has never uploaded.
         """
         with self.lock:
             station = self.stations.get(ident)
@@ -339,16 +364,19 @@ class Log:
             list: One entry per console, each with what named it, how many uploads
             have been refused, when the last one arrived, and a sample of readings.
         """
-        seen = {}
+        seen = {}  # type: Dict[str, Dict[str, Any]]
         for upload in self.waiting(redact, limit=self.keep):
             ident = upload['ident'] or '(unnamed)'
-            row = seen.setdefault(ident, {
-                'ident': ident,
-                'protocol': upload['protocol'],
-                'client': upload['client'],
-                'uploads': 0,
-                'last_seen': upload['at'],
-                'sample': upload,
-            })
+            row = seen.setdefault(
+                ident,
+                {
+                    'ident': ident,
+                    'protocol': upload['protocol'],
+                    'client': upload['client'],
+                    'uploads': 0,
+                    'last_seen': upload['at'],
+                    'sample': upload,
+                },
+            )
             row['uploads'] += 1
         return list(seen.values())

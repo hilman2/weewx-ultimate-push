@@ -46,8 +46,11 @@ def test_a_near_miss_is_no_better_than_a_wild_guess():
 def test_an_address_that_keeps_trying_stops_being_answered():
     door = Doorman(TOKEN, tries=3, window=300)
 
-    assert [door.check(THERE, 'nope', now=100) for _ in range(3)] == \
-        ['wrong', 'wrong', 'wrong']
+    assert [door.check(THERE, 'nope', now=100) for _ in range(3)] == [
+        'wrong',
+        'wrong',
+        'wrong',
+    ]
     assert door.check(THERE, 'nope', now=100) == 'blocked'
 
 
@@ -90,8 +93,11 @@ def test_getting_it_right_clears_the_tally_that_decides():
         door.check(HERE, 'nope', now=100)
 
     assert door.check(HERE, TOKEN, now=100) == 'ok'
-    assert [door.check(HERE, 'nope', now=100) for _ in range(3)] == \
-        ['wrong', 'wrong', 'wrong']
+    assert [door.check(HERE, 'nope', now=100) for _ in range(3)] == [
+        'wrong',
+        'wrong',
+        'wrong',
+    ]
     assert door.check(HERE, TOKEN, now=100) == 'ok'
 
 
@@ -110,8 +116,8 @@ def test_the_quietest_address_is_the_one_forgotten():
     door = Doorman(TOKEN, tries=99, remember=3)
     for address in ('a', 'b', 'c'):
         door.check(address, 'nope', now=100)
-    door.check('a', 'nope', now=101)          # 'a' is trying again
-    door.check('d', 'nope', now=102)          # and 'd' turns up
+    door.check('a', 'nope', now=101)  # 'a' is trying again
+    door.check('d', 'nope', now=102)  # and 'd' turns up
 
     assert 'a' in door.wrong
     assert 'b' not in door.wrong

@@ -49,8 +49,10 @@ class AcuriteBridge(Protocol):
 
     name = 'acurite'
     label = 'Acurite'
-    hardware = ('smartHUB and Access bridges, with a 5-in-1, towers, Pro sensors '
-                'and the 899 rain gauge')
+    hardware = (
+        'smartHUB and Access bridges, with a 5-in-1, towers, Pro sensors '
+        'and the 899 rain gauge'
+    )
 
     # It posts to the Weather Underground endpoint, which it shares with hardware that
     # really is speaking that protocol. The `mt` parameter is what separates them, so
@@ -82,10 +84,20 @@ class AcuriteBridge(Protocol):
     # The bridge, not the sensor. Every frame from one station carries the same id.
     identity = ('id',)
 
-    metadata = frozenset([
-        'id', 'sensor', 'mt', 'dateutc', 'action', 'realtime', 'rtfreq',
-        'probe', 'check', 'water',
-    ])
+    metadata = frozenset(
+        [
+            'id',
+            'sensor',
+            'mt',
+            'dateutc',
+            'action',
+            'realtime',
+            'rtfreq',
+            'probe',
+            'check',
+            'water',
+        ]
+    )
 
     fields = _catalog.FIELDS
     groups = _catalog.GROUPS
@@ -127,8 +139,11 @@ class AcuriteBridge(Protocol):
                 value = BATTERY.get(value, value)
             elif name == 'rssi':
                 value = _bars_to_percent(value)
-            if (kind in _catalog.STATION_TYPES or name in cls.metadata
-                    or name in _catalog.BRIDGE_READINGS):
+            if (
+                kind in _catalog.STATION_TYPES
+                or name in cls.metadata
+                or name in _catalog.BRIDGE_READINGS
+            ):
                 named[name] = value
             else:
                 named['%s%s_%s' % (kind, raw.get('sensor', ''), name)] = value

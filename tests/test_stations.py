@@ -20,23 +20,27 @@ import pytest
 
 pytest.importorskip('weewx', reason="WeeWX is not installed")
 
-from ultimatepush import roles                          # noqa: E402
-from ultimatepush.driver import UltimatePushDriver      # noqa: E402
+from ultimatepush import roles  # noqa: E402
+from ultimatepush.driver import UltimatePushDriver  # noqa: E402
 
 
 @pytest.fixture
 def driver(tmp_path):
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='',
+        port=0,
+        address='127.0.0.1',
+        report_file='',
         console_file=str(tmp_path / 'consoles.txt'),
-        override_file=str(tmp_path / 'web.conf'))
+        override_file=str(tmp_path / 'web.conf'),
+    )
     yield made
     made.closePort()
 
 
 def post(driver, path, body):
-    connection = http.client.HTTPConnection('127.0.0.1', driver.listener.ports[0],
-                                            timeout=5)
+    connection = http.client.HTTPConnection(
+        '127.0.0.1', driver.listener.ports[0], timeout=5
+    )
     try:
         connection.request('POST', path, body)
         response = connection.getresponse()
@@ -117,8 +121,14 @@ def test_a_path_burned_into_firmware_is_always_answered(driver, payload):
     _, made = driver.web_create('ecowitt', 'garden')
     send(driver, made['path'], payload('hp2561ae_pro'))
 
-    assert post(driver, '/weatherstation/updateweatherstation.php',
-                'ID=x&PASSWORD=y&tempf=61.0') == 200
+    assert (
+        post(
+            driver,
+            '/weatherstation/updateweatherstation.php',
+            'ID=x&PASSWORD=y&tempf=61.0',
+        )
+        == 200
+    )
 
 
 # ---------------------------------------------------------------- roles
@@ -164,8 +174,15 @@ def test_what_has_nowhere_to_go_is_dropped_not_written_over(driver, payload):
     send(driver, main['path'], payload('hp2561ae_pro'))
     second = send(driver, extra['path'], payload('hp2561ae_pro'))
 
-    for field in ('barometer', 'pressure', 'windSpeed', 'windGust', 'dayRain',
-                  'rainRate', 'inTemp'):
+    for field in (
+        'barometer',
+        'pressure',
+        'windSpeed',
+        'windGust',
+        'dayRain',
+        'rainRate',
+        'inTemp',
+    ):
         assert field not in second, field
 
 
@@ -220,9 +237,13 @@ def test_the_next_free_channel():
 
 
 def test_collisions_name_everybody_involved():
-    found = roles.collisions({'garden': {'outTemp', 'barometer'},
-                              'roof': {'outTemp', 'windSpeed'},
-                              'shed': {'outTemp'}})
+    found = roles.collisions(
+        {
+            'garden': {'outTemp', 'barometer'},
+            'roof': {'outTemp', 'windSpeed'},
+            'shed': {'outTemp'},
+        }
+    )
 
     assert found == {'outTemp': ['garden', 'roof', 'shed']}
 
@@ -388,24 +409,40 @@ def test_a_channel_is_never_handed_out_twice(driver):
 # ---------------------------------------------------------------- by hand
 
 
-def test_a_station_written_by_hand_can_do_everything_the_interface_can(tmp_path,
-                                                                       payload):
+def test_a_station_written_by_hand_can_do_everything_the_interface_can(
+    tmp_path, payload
+):
     """Nothing here is only reachable by clicking. A role, a channel and a path work
     the same written into weewx.conf."""
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='',
-        console_file=str(tmp_path / 'c.txt'), override_file=str(tmp_path / 'w.conf'),
+        port=0,
+        address='127.0.0.1',
+        report_file='',
+        console_file=str(tmp_path / 'c.txt'),
+        override_file=str(tmp_path / 'w.conf'),
         stations={
             'garden': {'passkey': 'AAAA', 'path': '/one/report'},
-            'roof': {'passkey': 'BBBB', 'path': '/two/report',
-                     'role': 'extra', 'channel': '4'},
-        })
+            'roof': {
+                'passkey': 'BBBB',
+                'path': '/two/report',
+                'role': 'extra',
+                'channel': '4',
+            },
+        },
+    )
     try:
-        send(made, '/one/report', 'PASSKEY=AAAA&stationtype=GW2000A&tempf=59.7'
-                                  '&humidity=91&baromrelin=29.92')
-        second = send(made, '/two/report',
-                      'PASSKEY=BBBB&stationtype=GW2000A&tempf=61.0&humidity=80'
-                      '&baromrelin=29.99')
+        send(
+            made,
+            '/one/report',
+            'PASSKEY=AAAA&stationtype=GW2000A&tempf=59.7'
+            '&humidity=91&baromrelin=29.92',
+        )
+        second = send(
+            made,
+            '/two/report',
+            'PASSKEY=BBBB&stationtype=GW2000A&tempf=61.0&humidity=80'
+            '&baromrelin=29.99',
+        )
     finally:
         made.closePort()
 
@@ -417,10 +454,13 @@ def test_a_station_written_by_hand_can_do_everything_the_interface_can(tmp_path,
 
 def test_a_role_that_is_not_a_role_is_refused_at_startup(tmp_path):
     with pytest.raises(ValueError) as caught:
-        UltimatePushDriver(port=0, address='127.0.0.1', report_file='',
-                           console_file=str(tmp_path / 'c.txt'),
-                           stations={'garden': {'passkey': 'AAAA',
-                                                'role': 'chief'}})
+        UltimatePushDriver(
+            port=0,
+            address='127.0.0.1',
+            report_file='',
+            console_file=str(tmp_path / 'c.txt'),
+            stations={'garden': {'passkey': 'AAAA', 'role': 'chief'}},
+        )
 
     assert 'chief' in str(caught.value)
 
@@ -432,10 +472,12 @@ def test_two_main_stations_are_said_out_loud(tmp_path, caplog):
 
     with caplog.at_level(logging.WARNING):
         made = UltimatePushDriver(
-            port=0, address='127.0.0.1', report_file='',
+            port=0,
+            address='127.0.0.1',
+            report_file='',
             console_file=str(tmp_path / 'c.txt'),
-            stations={'garden': {'passkey': 'AAAA'},
-                      'roof': {'passkey': 'BBBB'}})
+            stations={'garden': {'passkey': 'AAAA'}, 'roof': {'passkey': 'BBBB'}},
+        )
         made.closePort()
 
     assert 'set up as the main one' in caplog.text
@@ -453,11 +495,15 @@ def test_an_extra_station_waits_for_the_main_one_after_a_restart(tmp_path, paylo
     One interval of two sensors in one column is the failure this whole mechanism
     exists to prevent, and it would happen at every restart.
     """
+
     def build():
         return UltimatePushDriver(
-            port=0, address='127.0.0.1', report_file='',
+            port=0,
+            address='127.0.0.1',
+            report_file='',
             console_file=str(tmp_path / 'consoles.txt'),
-            override_file=str(tmp_path / 'web.conf'))
+            override_file=str(tmp_path / 'web.conf'),
+        )
 
     made = build()
     _, garden = made.web_create('ecowitt', 'garden')
@@ -489,9 +535,12 @@ def test_an_extra_station_waits_for_the_main_one_after_a_restart(tmp_path, paylo
 def test_an_extra_station_is_not_held_back_when_there_is_no_main_one(tmp_path, payload):
     """Otherwise it would wait for something that is never coming."""
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='',
+        port=0,
+        address='127.0.0.1',
+        report_file='',
         console_file=str(tmp_path / 'consoles.txt'),
-        override_file=str(tmp_path / 'web.conf'))
+        override_file=str(tmp_path / 'web.conf'),
+    )
     try:
         _, roof = made.web_create('ecowitt', 'roof')
         made.web_role('path:' + roof['path'], roles.EXTRA)
@@ -578,9 +627,13 @@ def test_the_main_station_keeps_no_channel(driver):
 def test_a_station_weewx_conf_names_is_not_edited_here(tmp_path):
     """One owner per setting. That file is the station's declaration."""
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='',
-        console_file=str(tmp_path / 'c.txt'), override_file=str(tmp_path / 'w.conf'),
-        stations={'garden': {'passkey': 'A' * 32}})
+        port=0,
+        address='127.0.0.1',
+        report_file='',
+        console_file=str(tmp_path / 'c.txt'),
+        override_file=str(tmp_path / 'w.conf'),
+        stations={'garden': {'passkey': 'A' * 32}},
+    )
     try:
         ok, message = made.web_edit('A' * 32, name='roof')
     finally:
@@ -617,8 +670,7 @@ def test_taking_the_main_station_out_leaves_the_extra_one_writing(driver, payloa
     assert packet['extraTemp1'] is not None
 
 
-def test_the_drivers_own_path_stays_open_once_another_has_a_secret_one(driver,
-                                                                      payload):
+def test_the_drivers_own_path_stays_open_once_another_has_a_secret_one(driver, payload):
     """The console that was here first posts to '/', because that is what the setup
     page told somebody to type. Setting up a second station with a path of its own
     must not turn the first one away: it would go quiet for a reason nobody would
@@ -644,22 +696,33 @@ def an_archive(tmp_path, filled=None):
     import configobj
     import weewx.manager
 
-    config = configobj.ConfigObj({
-        'WEEWX_ROOT': str(tmp_path),
-        'DatabaseTypes': {'SQLite': {'driver': 'weedb.sqlite',
-                                     'SQLITE_ROOT': str(tmp_path)}},
-        'Databases': {'archive_sqlite': {'database_type': 'SQLite',
-                                         'database_name': 'test.sdb'}},
-        'DataBindings': {'wx_binding': {
-            'database': 'archive_sqlite',
-            'table_name': 'archive',
-            'manager': 'weewx.manager.DaySummaryManager',
-            'schema': 'schemas.wview_extended.schema'}},
-    })
+    config = configobj.ConfigObj(
+        {
+            'WEEWX_ROOT': str(tmp_path),
+            'DatabaseTypes': {
+                'SQLite': {'driver': 'weedb.sqlite', 'SQLITE_ROOT': str(tmp_path)}
+            },
+            'Databases': {
+                'archive_sqlite': {
+                    'database_type': 'SQLite',
+                    'database_name': 'test.sdb',
+                }
+            },
+            'DataBindings': {
+                'wx_binding': {
+                    'database': 'archive_sqlite',
+                    'table_name': 'archive',
+                    'manager': 'weewx.manager.DaySummaryManager',
+                    'schema': 'schemas.wview_extended.schema',
+                }
+            },
+        }
+    )
     config.filename = str(tmp_path / 'weewx.conf')
     config.write()
-    with weewx.manager.open_manager_with_config(config, 'wx_binding',
-                                                initialize=True) as manager:
+    with weewx.manager.open_manager_with_config(
+        config, 'wx_binding', initialize=True
+    ) as manager:
         when = 1700000000
         for n in range(3):
             record = {'dateTime': when + n * 300, 'usUnits': 1, 'interval': 5}
@@ -670,10 +733,13 @@ def an_archive(tmp_path, filled=None):
 
 def with_archive(tmp_path, config):
     return UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='',
+        port=0,
+        address='127.0.0.1',
+        report_file='',
         console_file=str(tmp_path / 'consoles.txt'),
         override_file=str(tmp_path / 'web.conf'),
-        config_dict=config)
+        config_dict=config,
+    )
 
 
 def test_a_channel_whose_columns_hold_readings_is_not_handed_out(tmp_path):
@@ -792,11 +858,15 @@ def test_who_owns_what_survives_a_restart(tmp_path, payload):
     """The whole reason it is written down. Learning it again would mean holding
     every extra station back until the main one is heard, once per restart, and a
     station that went quiet for a week would come back to find its columns taken."""
+
     def build():
         return UltimatePushDriver(
-            port=0, address='127.0.0.1', report_file='',
+            port=0,
+            address='127.0.0.1',
+            report_file='',
             console_file=str(tmp_path / 'consoles.txt'),
-            override_file=str(tmp_path / 'web.conf'))
+            override_file=str(tmp_path / 'web.conf'),
+        )
 
     made = build()
     _, garden = made.web_create('ecowitt', 'garden')

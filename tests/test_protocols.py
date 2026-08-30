@@ -30,20 +30,23 @@ def sender(text, path='/data/report/'):
 # ---------------------------------------------------------------- real payloads
 
 
-@pytest.mark.parametrize('fixture, path, expected', [
-    ('hp2561ae_pro', '/data/report/', 'ecowitt'),
-    ('ambient/ambweather_v4', '/data/report/', 'ambient'),
-    ('wunderground/observer_imperial', WU_PATH, 'wunderground'),
-    ('wunderground/observer_metric', WU_PATH, 'wunderground'),
-    ('wunderground/easyweather_hp2550', WU_PATH, 'wunderground'),
-    ('wunderground/missing_values', WU_PATH, 'wunderground'),
-    ('acurite/5n1x31', WU_PATH, 'acurite'),
-    ('acurite/tower', WU_PATH, 'acurite'),
-    ('lacrosse/base', '/', 'lacrosse'),
-    ('lacrosse/thermo', '/', 'lacrosse'),
-    ('weatherflow/obs_st', '', 'weatherflow'),
-    ('weatherflow/rapid_wind', '', 'weatherflow'),
-])
+@pytest.mark.parametrize(
+    'fixture, path, expected',
+    [
+        ('hp2561ae_pro', '/data/report/', 'ecowitt'),
+        ('ambient/ambweather_v4', '/data/report/', 'ambient'),
+        ('wunderground/observer_imperial', WU_PATH, 'wunderground'),
+        ('wunderground/observer_metric', WU_PATH, 'wunderground'),
+        ('wunderground/easyweather_hp2550', WU_PATH, 'wunderground'),
+        ('wunderground/missing_values', WU_PATH, 'wunderground'),
+        ('acurite/5n1x31', WU_PATH, 'acurite'),
+        ('acurite/tower', WU_PATH, 'acurite'),
+        ('lacrosse/base', '/', 'lacrosse'),
+        ('lacrosse/thermo', '/', 'lacrosse'),
+        ('weatherflow/obs_st', '', 'weatherflow'),
+        ('weatherflow/rapid_wind', '', 'weatherflow'),
+    ],
+)
 def test_a_captured_upload_is_recognised(payload, fixture, path, expected):
     assert sender(payload(fixture), path) == expected
 
@@ -71,7 +74,9 @@ def test_the_endpoint_settles_wunderground():
     """Its hardware cannot be told to use another path, so the path is the strongest
     signal there is. It is also the only signal when a proxy strips the credentials."""
     assert sender('tempf=1', WU_PATH) == 'wunderground'
-    assert sender('tempf=1', '/weatherstation/updateweatherstation.asp') == 'wunderground'
+    assert (
+        sender('tempf=1', '/weatherstation/updateweatherstation.asp') == 'wunderground'
+    )
     assert sender('tempf=1', '/data/report/') is None
 
 
@@ -86,8 +91,10 @@ def test_an_acurite_bridge_outranks_wunderground_on_its_own_endpoint():
     Read as Weather Underground, its 5-in-1 would arrive and every tower would be
     dropped. 'mt' is the only thing that separates them, and it wins.
     """
-    frame = ('dateutc=now&action=updateraw&realtime=1&id=24C86E&mt=tower'
-             '&sensor=00002719&humidity=15&tempf=83.8&baromin=29.92')
+    frame = (
+        'dateutc=now&action=updateraw&realtime=1&id=24C86E&mt=tower'
+        '&sensor=00002719&humidity=15&tempf=83.8&baromin=29.92'
+    )
 
     assert sender(frame, WU_PATH) == 'acurite'
 
@@ -107,8 +114,10 @@ def test_each_protocol_answers_the_way_its_hardware_expects():
     assert answers['ecowitt'] == ('{"errcode":"0","errmsg":"ok"}', 'application/json')
     assert answers['wunderground'] == ('success', 'text/plain')
     assert answers['ambient'] == ('success', 'text/plain')
-    assert answers['acurite'] == ('{ "success": 1, "checkversion": "224" }',
-                                  'application/json')
+    assert answers['acurite'] == (
+        '{ "success": 1, "checkversion": "224" }',
+        'application/json',
+    )
     # A broadcast is not answered. There is nobody to answer to.
     assert answers['weatherflow'] == ('', 'text/plain')
 

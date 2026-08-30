@@ -66,8 +66,9 @@ def test_nothing_can_be_said(inferrer):
 
 def test_a_series_will_not_collide(inferrer):
     """If the derived name is already taken, fall back rather than overwrite."""
-    crowded = infer.Inferrer({'tf_ch1': 'soilTemp1', 'tf_ch2': 'soilTemp2',
-                              'other': 'soilTemp3'})
+    crowded = infer.Inferrer(
+        {'tf_ch1': 'soilTemp1', 'tf_ch2': 'soilTemp2', 'other': 'soilTemp3'}
+    )
     guess = crowded.guess('tf_ch3')
 
     assert guess.field != 'soilTemp3'
@@ -93,8 +94,11 @@ def test_a_channel_past_the_end_of_the_family_is_not_derived():
 
 def test_a_channel_within_the_family_is_derived():
     """Without a published limit, the series is all there is to go on."""
-    inferrer = infer.Inferrer({'zz_ch1': 'zzTemp1', 'zz_ch2': 'zzTemp2'},
-                              {'zzTemp1': 'group_temperature'}, catalog.CHANNELS)
+    inferrer = infer.Inferrer(
+        {'zz_ch1': 'zzTemp1', 'zz_ch2': 'zzTemp2'},
+        {'zzTemp1': 'group_temperature'},
+        catalog.CHANNELS,
+    )
     guess = inferrer.guess('zz_ch3')
 
     assert guess.field == 'zzTemp3'

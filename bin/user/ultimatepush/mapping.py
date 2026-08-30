@@ -19,13 +19,14 @@ import logging
 import re
 
 from . import infer, transport
+from typing import List
 
 log = logging.getLogger(__name__)
 
-OFF = 'off'          # drop it, the way every other driver does
-SERIES = 'series'    # take it when it continues a series and its placement is not
-                     # in question, report the rest
-ALL = 'all'          # take whatever can be named, including from rules
+OFF = 'off'  # drop it, the way every other driver does
+SERIES = 'series'  # take it when it continues a series and its placement is not
+# in question, report the rest
+ALL = 'all'  # take whatever can be named, including from rules
 MODES = (OFF, SERIES, ALL)
 
 
@@ -49,11 +50,19 @@ class Mapper:
         max_ahead (int): The same, for a clock that is fast.
     """
 
-    def __init__(self, dialect, extensions=None, infer_unknown=SERIES,
-                 max_behind=transport.MAX_BEHIND, max_ahead=transport.MAX_AHEAD):
+    def __init__(
+        self,
+        dialect,
+        extensions=None,
+        infer_unknown=SERIES,
+        max_behind=transport.MAX_BEHIND,
+        max_ahead=transport.MAX_AHEAD,
+    ):
         if infer_unknown not in MODES:
-            raise ValueError("infer_unknown must be one of %s, not '%s'"
-                             % (', '.join(MODES), infer_unknown))
+            raise ValueError(
+                "infer_unknown must be one of %s, not '%s'"
+                % (', '.join(MODES), infer_unknown)
+            )
         self.dialect = dialect
         self.mode = infer_unknown
         # How far the console's own clock may be out before its timestamp is dropped
@@ -74,8 +83,9 @@ class Mapper:
             self.undecided.pop(raw, None)
         self.groups = dict(dialect.groups)
         self.scale = dict(dialect.scale)
-        self.inferrer = infer.Inferrer(self.fields, self.groups, dialect.channels,
-                                       prefix=dialect.prefix)
+        self.inferrer = infer.Inferrer(
+            self.fields, self.groups, dialect.channels, prefix=dialect.prefix
+        )
         # Every unmapped field is looked at once. After that it is either part of the
         # mapping or a known refusal, and either way it does not need saying again.
         self.seen = {}
@@ -104,8 +114,12 @@ class Mapper:
             self.undecided.pop(raw, None)
             self.fields[raw] = field
             self.seen.pop(raw, None)
-            log.info("This firmware means '%s' by '%s', not '%s'. Moving it.",
-                     field, raw, was or 'nothing')
+            log.info(
+                "This firmware means '%s' by '%s', not '%s'. Moving it.",
+                field,
+                raw,
+                was or 'nothing',
+            )
 
     def to_packet(self, raw, now=None):
         """Return (packet, guesses) for one upload.
@@ -124,7 +138,7 @@ class Mapper:
             raw (dict or str): The name/value pairs, or a captured payload as text,
                 which is parsed here. A diagnostic run and a test both start from a
                 file rather than from a request.
-            now (float): The time to measure the console's own timestamp against.
+            now (float | None): The time to measure the console's own timestamp against.
                 Defaults to the current time.
 
         Returns:
@@ -133,13 +147,12 @@ class Mapper:
         """
         if isinstance(raw, str):
             raw = transport.parse(raw)
-        readings, _ = transport.numbers(raw, self.dialect.metadata,
-                                        self.dialect.absent)
+        readings, _ = transport.numbers(raw, self.dialect.metadata, self.dialect.absent)
 
         self._check_shared_channels(readings)
 
         packet = {}
-        fresh = []
+        fresh = []  # type: List[infer.Guess]
         for name, value in readings.items():
             if name in self.undecided:
                 self._say_undecided(name)
@@ -159,10 +172,12 @@ class Mapper:
                 value = value * factor
             packet[field] = value
 
-        stamp = transport.device_time(raw, now=now, max_behind=self.max_behind,
-                                      max_ahead=self.max_ahead)
-        packet['dateTime'] = int(stamp if stamp is not None
-                                 else (now if now is not None else _now()))
+        stamp = transport.device_time(
+            raw, now=now, max_behind=self.max_behind, max_ahead=self.max_ahead
+        )
+        packet['dateTime'] = int(
+            stamp if stamp is not None else (now if now is not None else _now())
+        )
         return packet, fresh
 
     def _say_undecided(self, name):
@@ -180,8 +195,13 @@ class Mapper:
             "cannot be separated. Add one of these under [[field_map_extensions]]: "
             "'%s = %s' for this driver's placement, or '%s = %s' if your history came "
             "from %s.",
-            name, name, self.fields.get(name, '?'),
-            name, self.undecided[name], self.dialect.contested_with)
+            name,
+            name,
+            self.fields.get(name, '?'),
+            name,
+            self.undecided[name],
+            self.dialect.contested_with,
+        )
 
     def _check_shared_channels(self, readings):
         """Warn if two sensors turn out to be writing the same field after all.
@@ -198,24 +218,27 @@ class Mapper:
             for name in readings:
                 if not name.startswith(first):
                     continue
-                twin = second + name[len(first):]
+                twin = second + name[len(first) :]
                 if twin in readings and (name, twin) not in self.warned:
                     self.warned.add((name, twin))
-                    log.warning("Both '%s' and '%s' arrived, and they map to the same "
-                                "field. One will overwrite the other. Give one of them "
-                                "a field of its own in field_map_extensions.",
-                                name, twin)
+                    log.warning(
+                        "Both '%s' and '%s' arrived, and they map to the same "
+                        "field. One will overwrite the other. Give one of them "
+                        "a field of its own in field_map_extensions.",
+                        name,
+                        twin,
+                    )
 
     def _unmapped(self, name, fresh):
         """Decide what happens to a field that is not in the mapping.
 
         Args:
             name (str): The raw field name.
-            fresh (dict): Guesses made during this upload, added to as fields are
-                worked out.
+            fresh (list): Guesses made during this upload, appended to as fields
+                are worked out. Holds infer.Guess.
 
         Returns:
-            str: The WeeWX field to write it to, or None to leave it out.
+            str | None: The WeeWX field to write it to, or None to leave it out.
         """
         if name in self.ignored:
             return None
@@ -236,19 +259,35 @@ class Mapper:
                 # The channel is derived, but where its family lands is a convention,
                 # and the field it would take may already hold a different sensor's
                 # history. Two series in one column cannot be separated afterwards.
-                log.info("New channel '%s' would go to '%s'. Which sensor that is, and "
-                         "whether that field is free, only you know. Add "
-                         "'%s = %s' under [[field_map_extensions]] to accept it.%s",
-                         name, guess.field, name, guess.field, note)
+                log.info(
+                    "New channel '%s' would go to '%s'. Which sensor that is, and "
+                    "whether that field is free, only you know. Add "
+                    "'%s = %s' under [[field_map_extensions]] to accept it.%s",
+                    name,
+                    guess.field,
+                    name,
+                    guess.field,
+                    note,
+                )
             else:
-                log.info("New field '%s' looks like %s (%s), but it was only guessed. "
-                         "Left out. Add it to field_map_extensions to keep it.",
-                         name, guess.group or 'unknown', guess.why)
+                log.info(
+                    "New field '%s' looks like %s (%s), but it was only guessed. "
+                    "Left out. Add it to field_map_extensions to keep it.",
+                    name,
+                    guess.group or 'unknown',
+                    guess.why,
+                )
             self.ignored.add(name)
             return None
 
-        log.info("New field '%s' -> '%s' (%s), %s.%s", name, guess.field,
-                 guess.group or 'no group', guess.why, self.placement_note(name) or '')
+        log.info(
+            "New field '%s' -> '%s' (%s), %s.%s",
+            name,
+            guess.field,
+            guess.group or 'no group',
+            guess.why,
+            self.placement_note(name) or '',
+        )
         self.seen[name] = guess
         if guess.group:
             self.groups[guess.field] = guess.group
@@ -280,4 +319,5 @@ class Mapper:
 
 def _now():
     import time
+
     return time.time()

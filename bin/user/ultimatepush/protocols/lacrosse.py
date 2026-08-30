@@ -72,8 +72,9 @@ class LW30x(Protocol):
     # The undocumented parameters are in here, which is what keeps them out of the
     # packet: a column of numbers nobody can label is worse than no column. They are
     # still written to the report, so somebody with the hardware can work them out.
-    metadata = frozenset(IDENTIFIERS + ('lost', 'reg', 'dateutc')
-                         + _catalog.UNDOCUMENTED)
+    metadata = frozenset(
+        IDENTIFIERS + ('lost', 'reg', 'dateutc') + _catalog.UNDOCUMENTED
+    )
 
     fields = _catalog.FIELDS
     groups = _catalog.GROUPS

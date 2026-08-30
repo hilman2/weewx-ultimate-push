@@ -16,89 +16,162 @@ import argparse
 import os.path
 import re
 import sys
+from typing import Set
 
 # model, what it is, patterns matching the raw fields it sends.
 #
 # A pattern is a regular expression against the raw field name. Channel numbers are
 # written as \d+ so one entry covers the whole family.
 ARRAYS = [
-    ('WS90', "7-in-1 array. Ultrasonic wind, piezo rain, temperature, humidity, "
-             "solar, UV. No moving parts. Sold as the Wittboy.",
-     [r'^ws90', r'_piezo$', r'^(r|e|h|d|w|m|y)rain_piezo$', r'^srain_piezo$',
-      r'^wh90batt', r'^ws90cap_volt', r'^wh90(sig|rssi)']),
-    ('WS85', "3-in-1 array. Ultrasonic wind and piezo rain, no temperature.",
-     [r'^ws85', r'^wh85']),
-    ('WS80', "6-in-1 array. Ultrasonic wind, temperature, humidity, solar, UV. "
-             "No rain gauge.",
-     [r'^ws80', r'^wh80']),
-    ('WS69 / WH65', "7-in-1 array with moving parts: cup anemometer, wind vane, "
-                    "tipping bucket, temperature, humidity, solar, UV. The one most "
-                    "outdoor stations ship with. Sold as WH65B and WH65L depending on "
-                    "the radio band.",
-     [r'^wh65', r'^ws69', r'^wh69(sig|rssi)']),
-    ('WS68', "Wind, solar and UV only. No temperature, no rain.",
-     [r'^ws68', r'^wh68']),
-    ('WH24', "The earlier 7-in-1 array, from the WH2900 era. Same readings as the "
-             "WH65, different radio.",
-     [r'^wh24']),
+    (
+        'WS90',
+        "7-in-1 array. Ultrasonic wind, piezo rain, temperature, humidity, "
+        "solar, UV. No moving parts. Sold as the Wittboy.",
+        [
+            r'^ws90',
+            r'_piezo$',
+            r'^(r|e|h|d|w|m|y)rain_piezo$',
+            r'^srain_piezo$',
+            r'^wh90batt',
+            r'^ws90cap_volt',
+            r'^wh90(sig|rssi)',
+        ],
+    ),
+    (
+        'WS85',
+        "3-in-1 array. Ultrasonic wind and piezo rain, no temperature.",
+        [r'^ws85', r'^wh85'],
+    ),
+    (
+        'WS80',
+        "6-in-1 array. Ultrasonic wind, temperature, humidity, solar, UV. "
+        "No rain gauge.",
+        [r'^ws80', r'^wh80'],
+    ),
+    (
+        'WS69 / WH65',
+        "7-in-1 array with moving parts: cup anemometer, wind vane, "
+        "tipping bucket, temperature, humidity, solar, UV. The one most "
+        "outdoor stations ship with. Sold as WH65B and WH65L depending on "
+        "the radio band.",
+        [r'^wh65', r'^ws69', r'^wh69(sig|rssi)'],
+    ),
+    ('WS68', "Wind, solar and UV only. No temperature, no rain.", [r'^ws68', r'^wh68']),
+    (
+        'WH24',
+        "The earlier 7-in-1 array, from the WH2900 era. Same readings as the "
+        "WH65, different radio.",
+        [r'^wh24'],
+    ),
     ('WN67', "Array without solar or UV.", [r'^wn67', r'^wh67']),
 ]
 
 SENSORS = [
-    ('WH31 / WN31', "Multi-channel temperature and humidity, 8 channels. The small "
-                    "white sensors people put in a greenhouse or a shed.",
-     [r'^temp\d+f$', r'^humidity\d+$', r'^batt\d+$', r'^wh31']),
+    (
+        'WH31 / WN31',
+        "Multi-channel temperature and humidity, 8 channels. The small "
+        "white sensors people put in a greenhouse or a shed.",
+        [r'^temp\d+f$', r'^humidity\d+$', r'^batt\d+$', r'^wh31'],
+    ),
     ('WN30', "Temperature only, on the same channels as the WH31.", [r'^wn30']),
     ('WN36', "Pool thermometer. A WN30 in a floating housing.", [r'^wn36']),
-    ('WN32 / WH32 / WH26', "The outdoor temperature and humidity sensor a station "
-                           "without an array uses. WH26 is the older name for it.",
-     [r'^wh32', r'^wn32', r'^wh26']),
-    ('WN32P / WH25', "Indoor temperature, humidity and pressure. Built into most "
-                     "consoles.",
-     [r'^wh25', r'^tempin', r'^humidityin', r'^barom']),
-    ('WN34 S/L/D', "Multi-channel temperature, 8 channels. One device in three "
-                   "housings: a spike for soil, a PVC lead, and a silicone lead for a "
-                   "pool. Nothing in the upload says which.",
-     [r'^tf_ch\d+$', r'^tf_batt\d+$', r'^wh34', r'^wn34']),
-    ('WN35', "Leaf wetness, 8 channels.",
-     [r'^leafwetness_ch\d+$', r'^leaf_batt\d+$', r'^wh35', r'^wn35']),
-    ('WH51 / WH51L', "Soil moisture, one probe. Shares its 16 channels with the WH52.",
-     [r'^soilmoisture\d+$', r'^soilbatt\d+$', r'^soilad\d+$', r'^wh51']),
-    ('WH52', "Soil moisture, temperature and conductivity in one probe. Shares its "
-             "channels with the WH51.",
-     [r'^soil_ec']),
-    ('WH40 / WH40H', "Tipping bucket rain gauge, for stations without an array. The H "
-                     "is the self-emptying one.",
-     [r'^wh40', r'rainin$', r'^rainrate', r'^totalrain', r'^rainratein$']),
-    ('WH41 / WH43', "Outdoor particulate sensor, PM2.5, 4 channels.",
-     [r'^pm25', r'^wh41', r'^wh43']),
-    ('WH45', "5-in-1 indoor air quality: CO2, PM2.5, PM10, temperature, humidity.",
-     [r'^wh45', r'^co2', r'^tf_co2', r'^humi_co2', r'^pm25_co2', r'^pm10']),
-    ('WH46 / WH46D', "7-in-1 air quality. The WH45 plus PM1 and PM4.",
-     [r'^wh46', r'^pm1', r'^pm4']),
-    ('WH55', "Water leak detector, 4 channels.",
-     [r'^leak', r'^wh55']),
-    ('WH57', "Lightning detector. Distance to the last strike and a daily count.",
-     [r'^lightning', r'^wh57']),
-    ('WN38', "Black globe thermometer, for WBGT heat stress.",
-     [r'^bgt', r'^wbgt', r'^wn38']),
-    ('WH54 / LDS01', "Laser distance sensor, 4 channels. Water level and snow depth.",
-     [r'^air_ch\d+$', r'^depth_ch\d+$', r'^thi_ch\d+$', r'^lds', r'^wh54']),
-    ('WFC01 / WFC02', "Irrigation valve with flow metering, 16 channels.",
-     [r'^wfc', r'^flow', r'^water']),
+    (
+        'WN32 / WH32 / WH26',
+        "The outdoor temperature and humidity sensor a station "
+        "without an array uses. WH26 is the older name for it.",
+        [r'^wh32', r'^wn32', r'^wh26'],
+    ),
+    (
+        'WN32P / WH25',
+        "Indoor temperature, humidity and pressure. Built into most " "consoles.",
+        [r'^wh25', r'^tempin', r'^humidityin', r'^barom'],
+    ),
+    (
+        'WN34 S/L/D',
+        "Multi-channel temperature, 8 channels. One device in three "
+        "housings: a spike for soil, a PVC lead, and a silicone lead for a "
+        "pool. Nothing in the upload says which.",
+        [r'^tf_ch\d+$', r'^tf_batt\d+$', r'^wh34', r'^wn34'],
+    ),
+    (
+        'WN35',
+        "Leaf wetness, 8 channels.",
+        [r'^leafwetness_ch\d+$', r'^leaf_batt\d+$', r'^wh35', r'^wn35'],
+    ),
+    (
+        'WH51 / WH51L',
+        "Soil moisture, one probe. Shares its 16 channels with the WH52.",
+        [r'^soilmoisture\d+$', r'^soilbatt\d+$', r'^soilad\d+$', r'^wh51'],
+    ),
+    (
+        'WH52',
+        "Soil moisture, temperature and conductivity in one probe. Shares its "
+        "channels with the WH51.",
+        [r'^soil_ec'],
+    ),
+    (
+        'WH40 / WH40H',
+        "Tipping bucket rain gauge, for stations without an array. The H "
+        "is the self-emptying one.",
+        [r'^wh40', r'rainin$', r'^rainrate', r'^totalrain', r'^rainratein$'],
+    ),
+    (
+        'WH41 / WH43',
+        "Outdoor particulate sensor, PM2.5, 4 channels.",
+        [r'^pm25', r'^wh41', r'^wh43'],
+    ),
+    (
+        'WH45',
+        "5-in-1 indoor air quality: CO2, PM2.5, PM10, temperature, humidity.",
+        [r'^wh45', r'^co2', r'^tf_co2', r'^humi_co2', r'^pm25_co2', r'^pm10'],
+    ),
+    (
+        'WH46 / WH46D',
+        "7-in-1 air quality. The WH45 plus PM1 and PM4.",
+        [r'^wh46', r'^pm1', r'^pm4'],
+    ),
+    ('WH55', "Water leak detector, 4 channels.", [r'^leak', r'^wh55']),
+    (
+        'WH57',
+        "Lightning detector. Distance to the last strike and a daily count.",
+        [r'^lightning', r'^wh57'],
+    ),
+    (
+        'WN38',
+        "Black globe thermometer, for WBGT heat stress.",
+        [r'^bgt', r'^wbgt', r'^wn38'],
+    ),
+    (
+        'WH54 / LDS01',
+        "Laser distance sensor, 4 channels. Water level and snow depth.",
+        [r'^air_ch\d+$', r'^depth_ch\d+$', r'^thi_ch\d+$', r'^lds', r'^wh54'],
+    ),
+    (
+        'WFC01 / WFC02',
+        "Irrigation valve with flow metering, 16 channels.",
+        [r'^wfc', r'^flow', r'^water'],
+    ),
     ('AC1100', "Mains power meter, 16 channels.", [r'^ac\d', r'^ac1100', r'^elect']),
     ('WN20', "Rain gauge with its own display.", [r'^wn20']),
 ]
 
 # Consoles and gateways: model, what it is, how it uploads.
 CONSOLES = [
-    ('GW1000', "The first gateway. Wi-Fi, built-in temperature, humidity and "
-               "pressure on a lead. No display.", "Wi-Fi"),
+    (
+        'GW1000',
+        "The first gateway. Wi-Fi, built-in temperature, humidity and "
+        "pressure on a lead. No display.",
+        "Wi-Fi",
+    ),
     ('GW1100', "GW1000 with the sensor inside the housing.", "Wi-Fi"),
     ('GW1200', "Adds the LDS01 and newer sensors.", "Wi-Fi"),
     ('GW2000', "Gateway with Ethernet as well as Wi-Fi.", "Wi-Fi + RJ45"),
-    ('GW3000', "Current gateway. Ethernet, and an SD card that records when the "
-               "network is down.", "Wi-Fi + RJ45"),
+    (
+        'GW3000',
+        "Current gateway. Ethernet, and an SD card that records when the "
+        "network is down.",
+        "Wi-Fi + RJ45",
+    ),
     ('HP2551', "Colour TFT console, the common one for a WS69 station.", "Wi-Fi"),
     ('HP2560 / HP2561', "Larger console, more channels, SD card.", "Wi-Fi"),
     ('HP3500 / HP3501', "Console with a separate outdoor array.", "Wi-Fi"),
@@ -116,38 +189,64 @@ CONSOLES = [
 # Older Fine Offset hardware, sold under many names. These predate the Ecowitt brand
 # and mostly speak the WU protocol rather than the Ecowitt one.
 OLDER = [
-    ('WH2900', "Wi-Fi console with a WH24 array. Sold as Ambient WS-2902, Froggit "
-               "WH2900 and others. Uploads in Wunderground format; some firmware "
-               "allows a custom server."),
-    ('WH2600', "Bridge without a display, WH24 array. Sold as Ambient ObserverIP, "
-               "Aercus WeatherSleuth, Froggit WH2600."),
-    ('HP1000', "Console with Wi-Fi upload, same array. Sold as Aercus WeatherRanger, "
-               "Ambient WS-1001."),
+    (
+        'WH2900',
+        "Wi-Fi console with a WH24 array. Sold as Ambient WS-2902, Froggit "
+        "WH2900 and others. Uploads in Wunderground format; some firmware "
+        "allows a custom server.",
+    ),
+    (
+        'WH2600',
+        "Bridge without a display, WH24 array. Sold as Ambient ObserverIP, "
+        "Aercus WeatherSleuth, Froggit WH2600.",
+    ),
+    (
+        'HP1000',
+        "Console with Wi-Fi upload, same array. Sold as Aercus WeatherRanger, "
+        "Ambient WS-1001.",
+    ),
     ('WH2650', "Gateway between the WH24 array and Wi-Fi."),
-    ('WH1080 / WH1081', "USB console, no network at all. WeeWX reads it with the "
-                        "`fousb` driver in the core, not with this one."),
-    ('WH23xx / WH4000', "Serial or USB console. Sold as Tycon TP2700, MiSol WH2310. "
-                        "Needs `weewx-wh23xx`."),
+    (
+        'WH1080 / WH1081',
+        "USB console, no network at all. WeeWX reads it with the "
+        "`fousb` driver in the core, not with this one.",
+    ),
+    (
+        'WH23xx / WH4000',
+        "Serial or USB console. Sold as Tycon TP2700, MiSol WH2310. "
+        "Needs `weewx-wh23xx`.",
+    ),
 ]
 
 # Readings that come from whichever outdoor array is fitted. A WS90, a WS69 and a
 # WS80 all send tempf, and nothing in the upload says which one it was.
 ARRAY_READINGS = [
-    (r'^tempf$|^dewptf$|^feelslikef$|^heatindexf$|^windchillf$|^humidity$',
-     "Outdoor temperature and humidity, with what the console derives from them"),
-    (r'^wind(dir|speed|gust)|^winddir_avg10m$|^windspdmph_avg10m$|^windrun$|'
-     r'^maxdailygust$|^windgustmph_max10m$', "Wind"),
-    (r'rainin$|^rainrate|^rainyear$|^piezo$|gain$|^rainGain$|^rainFallPriority$|^rst[Rr]ain',
-     "Rain, and the calibration the console keeps for it"),
-    (r'^solarradiation$|^uv$|^sunhours$|^sunshine$|^radcompensation$',
-     "Solar and UV, with sunshine derived from them"),
+    (
+        r'^tempf$|^dewptf$|^feelslikef$|^heatindexf$|^windchillf$|^humidity$',
+        "Outdoor temperature and humidity, with what the console derives from them",
+    ),
+    (
+        r'^wind(dir|speed|gust)|^winddir_avg10m$|^windspdmph_avg10m$|^windrun$|'
+        r'^maxdailygust$|^windgustmph_max10m$',
+        "Wind",
+    ),
+    (
+        r'rainin$|^rainrate|^rainyear$|^piezo$|gain$|^rainGain$|^rainFallPriority$|^rst[Rr]ain',
+        "Rain, and the calibration the console keeps for it",
+    ),
+    (
+        r'^solarradiation$|^uv$|^sunhours$|^sunshine$|^radcompensation$',
+        "Solar and UV, with sunshine derived from them",
+    ),
     (r'^vpd$', "Vapour pressure deficit, calculated by the console"),
 ]
 
 # What a console says about itself.
 CONSOLE_READINGS = [
-    (r'^(heap|runtime|interval|model|stationtype|upgrade|newVersion)$',
-     "Firmware, uptime, free memory, upload interval"),
+    (
+        r'^(heap|runtime|interval|model|stationtype|upgrade|newVersion)$',
+        "Firmware, uptime, free memory, upload interval",
+    ),
     (r'^(console_batt|consolebattp|ws1900batt|charge|ext_volt)$', "Console power"),
 ]
 
@@ -240,11 +339,10 @@ def main(argv=None):
     sys.path.insert(0, os.path.join('bin', 'user'))
     from ultimatepush.catalogs import ecowitt as catalog
 
-    claimed = set()
+    claimed = set()  # type: Set[str]
     lines = [HEADER]
 
-    for title, group in (("Outdoor sensor arrays", ARRAYS),
-                         ("Sensors", SENSORS)):
+    for title, group in (("Outdoor sensor arrays", ARRAYS), ("Sensors", SENSORS)):
         lines.append("## %s\n" % title)
         for model, description, patterns in group:
             matched = fields_for(patterns, catalog)
@@ -257,27 +355,35 @@ def main(argv=None):
             lines.append("Fields: %s\n" % summarise(matched, catalog))
         lines.append("")
 
-    for title, group, note in (
-        ("What any outdoor array sends", ARRAY_READINGS,
-         "A WS90, a WS69 and a WS80 all report the weather in the same fields. Which "
-         "array sent a reading is not in the upload, so these belong to whichever one "
-         "is fitted."),
-        ("What a console says about itself", CONSOLE_READINGS,
-         "Diagnostics rather than weather, and useful for spotting a console that is "
-         "about to give trouble."),
+    for title, readings, note in (
+        (
+            "What any outdoor array sends",
+            ARRAY_READINGS,
+            "A WS90, a WS69 and a WS80 all report the weather in the same fields. Which "
+            "array sent a reading is not in the upload, so these belong to whichever one "
+            "is fitted.",
+        ),
+        (
+            "What a console says about itself",
+            CONSOLE_READINGS,
+            "Diagnostics rather than weather, and useful for spotting a console that is "
+            "about to give trouble.",
+        ),
     ):
         lines.append("## %s\n" % title)
         lines.append(note + "\n")
-        for pattern, description in group:
+        for pattern, description in readings:
             matched = fields_for([pattern], catalog)
             claimed.update(raw for raw, _ in matched)
             lines.append("- **%s.** %s" % (description, summarise(matched, catalog, 8)))
         lines.append("")
 
     lines.append("## Consoles and gateways\n")
-    lines.append("What a console does for this driver is upload. The differences that "
-                 "matter are how many sensors it accepts and whether its firmware "
-                 "offers a custom server.\n")
+    lines.append(
+        "What a console does for this driver is upload. The differences that "
+        "matter are how many sensors it accepts and whether its firmware "
+        "offers a custom server.\n"
+    )
     lines.append("| Model | Upload | What it is |")
     lines.append("|---|---|---|")
     for model, description, upload in CONSOLES:
@@ -285,9 +391,11 @@ def main(argv=None):
     lines.append("")
 
     lines.append("## Older Fine Offset hardware\n")
-    lines.append("These predate the Ecowitt brand. Most speak the Wunderground "
-                 "protocol, and only some firmware versions offer a custom server. "
-                 "Where they do, this driver reads them.\n")
+    lines.append(
+        "These predate the Ecowitt brand. Most speak the Wunderground "
+        "protocol, and only some firmware versions offer a custom server. "
+        "Where they do, this driver reads them.\n"
+    )
     lines.append("| Model | What it is |")
     lines.append("|---|---|")
     for model, description in OLDER:
@@ -296,18 +404,26 @@ def main(argv=None):
 
     orphans = sorted(set(catalog.FIELDS) - claimed)
     lines.append("## Fields nobody has identified\n")
-    lines.append("%d of %d. Which device sends these, and what they mean, is not "
-                 "known here. If you can tell from your own station, please say so:\n"
-                 "<https://github.com/hilman2/weewx-ultimate-push/issues>\n"
-                 % (len(orphans), len(catalog.FIELDS)))
+    lines.append(
+        "%d of %d. Which device sends these, and what they mean, is not "
+        "known here. If you can tell from your own station, please say so:\n"
+        "<https://github.com/hilman2/weewx-ultimate-push/issues>\n"
+        % (len(orphans), len(catalog.FIELDS))
+    )
     lines.append('`' + '`, `'.join(orphans) + '`' if orphans else "_none_")
 
     with open(args.out, 'w', encoding='utf-8', newline='\n') as fd:
         fd.write('\n'.join(lines) + '\n')
 
-    print("%d devices, %d of %d fields claimed -> %s"
-          % (len(ARRAYS) + len(SENSORS) + len(CONSOLES) + len(OLDER),
-             len(claimed), len(catalog.FIELDS), args.out))
+    print(
+        "%d devices, %d of %d fields claimed -> %s"
+        % (
+            len(ARRAYS) + len(SENSORS) + len(CONSOLES) + len(OLDER),
+            len(claimed),
+            len(catalog.FIELDS),
+            args.out,
+        )
+    )
     return 0
 
 

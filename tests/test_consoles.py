@@ -19,17 +19,19 @@ import pytest
 
 weewx = pytest.importorskip('weewx', reason="WeeWX is not installed")
 
-from ultimatepush import consoles                        # noqa: E402
-from ultimatepush.driver import UltimatePushDriver            # noqa: E402
-from ultimatepush.protocols import detect, registry             # noqa: E402
-from helpers import FakeRequest                                  # noqa: E402
+from ultimatepush import consoles  # noqa: E402
+from ultimatepush.driver import UltimatePushDriver  # noqa: E402
+from ultimatepush.protocols import detect, registry  # noqa: E402
+from helpers import FakeRequest  # noqa: E402
 
 GARDEN = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 ROOF = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
 
 
 def post(driver, body):
-    connection = http.client.HTTPConnection('127.0.0.1', driver.listener.port, timeout=5)
+    connection = http.client.HTTPConnection(
+        '127.0.0.1', driver.listener.port, timeout=5
+    )
     try:
         connection.request('POST', '/', body)
         connection.getresponse().read()
@@ -63,6 +65,7 @@ def make_driver(tmp_path):
 def named_by(text, path='/data/report/'):
     """(protocol, identity) for a payload, the way the driver works it out."""
     from ultimatepush import transport
+
     raw = transport.parse(text)
     protocol = detect(FakeRequest(text, path=path), raw, registry())
     if protocol is None:
@@ -79,10 +82,12 @@ def test_what_identifies_a_console():
     """
     assert named_by('PASSKEY=ABC&stationtype=GW2000A&tempf=1') == ('ecowitt', 'ABC')
     assert named_by('PASSKEY=ABC&stationtype=AMBWeatherV4.0.2&tempf=1') == (
-        'ambient', 'ABC')
-    assert named_by('ID=KX123&PASSWORD=y&tempf=1',
-                    '/weatherstation/updateweatherstation.php') == (
-        'wunderground', 'KX123')
+        'ambient',
+        'ABC',
+    )
+    assert named_by(
+        'ID=KX123&PASSWORD=y&tempf=1', '/weatherstation/updateweatherstation.php'
+    ) == ('wunderground', 'KX123')
 
 
 def test_a_payload_that_names_no_protocol_is_not_guessed_at():
@@ -127,7 +132,7 @@ def test_a_second_console_is_refused(make_driver, caplog):
         post(driver, 'PASSKEY=%s&tf_ch1=66.5&tempf=59.9' % GARDEN)
         arrived = next(packets)
 
-    assert arrived['extraTemp9'] == 66.5      # the known console, uninterrupted
+    assert arrived['extraTemp9'] == 66.5  # the known console, uninterrupted
     assert ROOF in caplog.text
     assert '[[stations]]' in caplog.text
 
@@ -183,12 +188,18 @@ def test_a_configured_passkey_needs_no_file(make_driver):
 
 
 def test_named_consoles_each_keep_their_channels(make_driver):
-    driver = make_driver(stations={
-        'garden': {'passkey': GARDEN,
-                   'field_map_extensions': {'tf_ch1': 'soilTemp1'}},
-        'roof': {'passkey': ROOF,
-                 'field_map_extensions': {'tf_ch1': 'extraTemp12'}},
-    })
+    driver = make_driver(
+        stations={
+            'garden': {
+                'passkey': GARDEN,
+                'field_map_extensions': {'tf_ch1': 'soilTemp1'},
+            },
+            'roof': {
+                'passkey': ROOF,
+                'field_map_extensions': {'tf_ch1': 'extraTemp12'},
+            },
+        }
+    )
     post(driver, 'PASSKEY=%s&tf_ch1=66.0' % GARDEN)
     post(driver, 'PASSKEY=%s&tf_ch1=41.2' % ROOF)
 
@@ -240,7 +251,7 @@ def test_an_unwritable_file_does_not_stop_the_driver(make_driver, caplog):
         post(driver, 'PASSKEY=%s&tempf=59.7' % GARDEN)
         packet = next(driver.genLoopPackets())
 
-    assert packet['outTemp'] == 59.7      # readings still arrive
+    assert packet['outTemp'] == 59.7  # readings still arrive
     assert 'Cannot record' in caplog.text
 
 
@@ -255,18 +266,21 @@ def database(tmp_path):
     config = {
         'WEEWX_ROOT': str(tmp_path),
         'DatabaseTypes': {
-            'SQLite': {'driver': 'weedb.sqlite', 'SQLITE_ROOT': str(tmp_path)}},
+            'SQLite': {'driver': 'weedb.sqlite', 'SQLITE_ROOT': str(tmp_path)}
+        },
         'Databases': {
-            'archive_sqlite': {'database_name': 'test.sdb',
-                               'database_type': 'SQLite'}},
+            'archive_sqlite': {'database_name': 'test.sdb', 'database_type': 'SQLite'}
+        },
         'DataBindings': {
-            'wx_binding': {'database': 'archive_sqlite',
-                           'table_name': 'archive',
-                           'manager': 'weewx.manager.DaySummaryManager',
-                           'schema': 'schemas.wview_extended.schema'}},
+            'wx_binding': {
+                'database': 'archive_sqlite',
+                'table_name': 'archive',
+                'manager': 'weewx.manager.DaySummaryManager',
+                'schema': 'schemas.wview_extended.schema',
+            }
+        },
     }
-    with weewx.manager.open_manager_with_config(config, 'wx_binding',
-                                                initialize=True):
+    with weewx.manager.open_manager_with_config(config, 'wx_binding', initialize=True):
         pass
     return config
 
@@ -279,7 +293,7 @@ def test_the_list_lives_in_the_database(tmp_path, database):
     assert store.add(GARDEN, 'first seen') == 'database'
     assert store.read() == [GARDEN]
     assert store.where == 'database'
-    assert not os.path.exists(path)          # the file was never needed
+    assert not os.path.exists(path)  # the file was never needed
 
 
 def test_the_database_outlives_the_file(tmp_path, database):

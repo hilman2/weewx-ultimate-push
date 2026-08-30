@@ -29,6 +29,7 @@ import json
 import re
 import sys
 import urllib.request
+from typing import Dict
 
 DOC = "https://doc.ecowitt.net/server/index.php?s=/api/page/info&page_id=%d"
 # Real-time data, history data, device detail. Between them they name every family.
@@ -58,7 +59,7 @@ def fetch(page_id, timeout=30):
 
 def channels_in(text):
     """Return {family prefix: highest channel number} as the documentation has it."""
-    found = {}
+    found = {}  # type: Dict[str, int]
     for name, number in re.findall(r'\b([a-z_]+_ch|ch)_?(\d+)\b', text):
         found[name] = max(found.get(name, 0), int(number))
     return found
@@ -98,8 +99,10 @@ def main(argv=None):
             problems += 1
         elif not theirs:
             flag = '  <-- not found in the documentation'
-        print("%-24s %-8s %-10s %s%s"
-              % (family, model, theirs if theirs else '?', ours_count, flag))
+        print(
+            "%-24s %-8s %-10s %s%s"
+            % (family, model, theirs if theirs else '?', ours_count, flag)
+        )
 
     print("\nFamilies the documentation names that we do not map:")
     unknown = sorted(set(documented) - set(FAMILIES))

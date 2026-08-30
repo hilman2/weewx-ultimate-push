@@ -20,23 +20,27 @@ import pytest
 
 pytest.importorskip('weewx', reason="WeeWX is not installed")
 
-from ultimatepush import mapping, roles                  # noqa: E402
-from ultimatepush.driver import UltimatePushDriver       # noqa: E402
+from ultimatepush import mapping, roles  # noqa: E402
+from ultimatepush.driver import UltimatePushDriver  # noqa: E402
 
 
 @pytest.fixture
 def driver(tmp_path):
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='',
+        port=0,
+        address='127.0.0.1',
+        report_file='',
         console_file=str(tmp_path / 'consoles.txt'),
-        override_file=str(tmp_path / 'web.conf'))
+        override_file=str(tmp_path / 'web.conf'),
+    )
     yield made
     made.closePort()
 
 
 def post(driver, path, body):
-    connection = http.client.HTTPConnection('127.0.0.1', driver.listener.ports[0],
-                                            timeout=5)
+    connection = http.client.HTTPConnection(
+        '127.0.0.1', driver.listener.ports[0], timeout=5
+    )
     try:
         connection.request('POST', path, body)
         connection.getresponse().read()
@@ -93,13 +97,14 @@ def test_a_row_knows_whether_the_database_really_has_the_column(driver, payload)
     looking for a fault in the wrong place."""
     two_stations(driver, payload)
 
-    rows = [s for s in driver.web_fields()['stations']
-            if s['name'] == 'garden'][0]['rows']
+    rows = [s for s in driver.web_fields()['stations'] if s['name'] == 'garden'][0][
+        'rows'
+    ]
     warm = [r for r in rows if r['field'] == 'outTemp'][0]
     rain = [r for r in rows if r['field'] == 'dayRain'][0]
 
-    assert warm['column'] is True          # in the schema
-    assert rain['column'] is False         # not in the schema
+    assert warm['column'] is True  # in the schema
+    assert rain['column'] is False  # not in the schema
 
 
 # ---------------------------------------------------------------- one owner
@@ -125,14 +130,16 @@ def test_saying_yes_moves_it_and_leaves_the_old_one_nowhere(driver, payload):
     was just taken out of."""
     _garden, roof = two_stations(driver, payload)
 
-    answer = driver.web_set_field('path:' + roof['path'], 'tempf', 'outTemp',
-                                  force=True)
+    answer = driver.web_set_field(
+        'path:' + roof['path'], 'tempf', 'outTemp', force=True
+    )
 
     assert answer['ok'], answer['message']
     assert driver.web_fields()['holders']['outTemp']['name'] == 'roof'
 
-    garden_rows = [s for s in driver.web_fields()['stations']
-                   if s['name'] == 'garden'][0]['rows']
+    garden_rows = [s for s in driver.web_fields()['stations'] if s['name'] == 'garden'][
+        0
+    ]['rows']
     warm = [r for r in garden_rows if r['raw'] == 'tempf'][0]
     assert warm['nowhere'] is True
     assert warm['field'] == ''
@@ -147,7 +154,7 @@ def test_a_reading_placed_nowhere_is_not_written(driver, payload):
     packet = send(driver, garden['path'], payload('hp2561ae_pro'))
 
     assert 'outTemp' not in packet
-    assert packet['barometer'] is not None      # and the rest is untouched
+    assert packet['barometer'] is not None  # and the rest is untouched
 
 
 def test_putting_a_field_back_where_it_was_is_not_a_conflict(driver, payload):
@@ -176,28 +183,41 @@ def test_a_column_can_be_made_from_the_page(tmp_path, payload):
     import configobj
     import weewx.manager
 
-    config = configobj.ConfigObj({
-        'WEEWX_ROOT': str(tmp_path),
-        'DatabaseTypes': {'SQLite': {'driver': 'weedb.sqlite',
-                                     'SQLITE_ROOT': str(tmp_path)}},
-        'Databases': {'archive_sqlite': {'database_type': 'SQLite',
-                                         'database_name': 'test.sdb'}},
-        'DataBindings': {'wx_binding': {
-            'database': 'archive_sqlite',
-            'table_name': 'archive',
-            'manager': 'weewx.manager.DaySummaryManager',
-            'schema': 'schemas.wview_extended.schema'}},
-    })
+    config = configobj.ConfigObj(
+        {
+            'WEEWX_ROOT': str(tmp_path),
+            'DatabaseTypes': {
+                'SQLite': {'driver': 'weedb.sqlite', 'SQLITE_ROOT': str(tmp_path)}
+            },
+            'Databases': {
+                'archive_sqlite': {
+                    'database_type': 'SQLite',
+                    'database_name': 'test.sdb',
+                }
+            },
+            'DataBindings': {
+                'wx_binding': {
+                    'database': 'archive_sqlite',
+                    'table_name': 'archive',
+                    'manager': 'weewx.manager.DaySummaryManager',
+                    'schema': 'schemas.wview_extended.schema',
+                }
+            },
+        }
+    )
     config.filename = str(tmp_path / 'weewx.conf')
     config.write()
-    with weewx.manager.open_manager_with_config(config, 'wx_binding',
-                                                initialize=True):
+    with weewx.manager.open_manager_with_config(config, 'wx_binding', initialize=True):
         pass
 
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='', config_dict=config,
+        port=0,
+        address='127.0.0.1',
+        report_file='',
+        config_dict=config,
         console_file=str(tmp_path / 'consoles.txt'),
-        override_file=str(tmp_path / 'web.conf'))
+        override_file=str(tmp_path / 'web.conf'),
+    )
     try:
         _, garden = made.web_create('ecowitt', 'garden')
         send(made, garden['path'], payload('hp2561ae_pro'))
@@ -244,28 +264,41 @@ def test_the_two_tabs_agree_about_what_the_database_has(tmp_path, payload):
     import configobj
     import weewx.manager
 
-    config = configobj.ConfigObj({
-        'WEEWX_ROOT': str(tmp_path),
-        'DatabaseTypes': {'SQLite': {'driver': 'weedb.sqlite',
-                                     'SQLITE_ROOT': str(tmp_path)}},
-        'Databases': {'archive_sqlite': {'database_type': 'SQLite',
-                                         'database_name': 'test.sdb'}},
-        'DataBindings': {'wx_binding': {
-            'database': 'archive_sqlite',
-            'table_name': 'archive',
-            'manager': 'weewx.manager.DaySummaryManager',
-            'schema': 'schemas.wview_extended.schema'}},
-    })
+    config = configobj.ConfigObj(
+        {
+            'WEEWX_ROOT': str(tmp_path),
+            'DatabaseTypes': {
+                'SQLite': {'driver': 'weedb.sqlite', 'SQLITE_ROOT': str(tmp_path)}
+            },
+            'Databases': {
+                'archive_sqlite': {
+                    'database_type': 'SQLite',
+                    'database_name': 'test.sdb',
+                }
+            },
+            'DataBindings': {
+                'wx_binding': {
+                    'database': 'archive_sqlite',
+                    'table_name': 'archive',
+                    'manager': 'weewx.manager.DaySummaryManager',
+                    'schema': 'schemas.wview_extended.schema',
+                }
+            },
+        }
+    )
     config.filename = str(tmp_path / 'weewx.conf')
     config.write()
-    with weewx.manager.open_manager_with_config(config, 'wx_binding',
-                                                initialize=True):
+    with weewx.manager.open_manager_with_config(config, 'wx_binding', initialize=True):
         pass
 
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='', config_dict=config,
+        port=0,
+        address='127.0.0.1',
+        report_file='',
+        config_dict=config,
         console_file=str(tmp_path / 'consoles.txt'),
-        override_file=str(tmp_path / 'web.conf'))
+        override_file=str(tmp_path / 'web.conf'),
+    )
     try:
         _, garden = made.web_create('ecowitt', 'garden')
         send(made, garden['path'], payload('hp2561ae_pro'))

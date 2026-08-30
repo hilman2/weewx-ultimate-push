@@ -28,6 +28,13 @@ which has to stay byte for byte the same as the core's for the shim test to pass
 
 import logging
 import threading
+from typing import TYPE_CHECKING
+
+# For the docstring types only. The request class comes from whichever listener
+# the driver found; the bundled copy is byte for byte the same file, so the two
+# name one type, and nothing here imports either at runtime.
+if TYPE_CHECKING:
+    import weewx.listener
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +47,7 @@ def http_listener(base, answer, queue=True, **options):
     """Return an HTTP listener whose answer decides its own content type.
 
     Args:
-        base (type): The HTTPListener class to build on, from weewx.listener or from
+        base (type[weewx.listener.HTTPListener]): The class to build on, from weewx.listener or from
             the bundled copy. Passed in rather than imported so that this module does
             not have to know which one the driver found.
         answer (callable): Given a Request, returns (body, content_type).
@@ -48,14 +55,14 @@ def http_listener(base, answer, queue=True, **options):
             False for the web interface, where the answer is the whole point and a
             request nobody drains would fill the queue and start dropping the oldest
             with a warning each time.
-        **options: Passed through to the base class.
+        **options (Any): Passed through to the base class.
 
     Returns:
         type: A listener class, ready to be instantiated with the usual listener
         options.
     """
 
-    class Server(base):
+    class Server(base):  # type: ignore[valid-type,misc]  # base is a parameter
         """An HTTPListener that lets each answer choose its own content type."""
 
         def __init__(self, **kwargs):
@@ -69,7 +76,8 @@ def http_listener(base, answer, queue=True, **options):
             """Hand a request on to whoever is iterating, where anybody is.
 
             Args:
-                request: The request the base class has just answered.
+                request (weewx.listener.Request): The request the base class has
+                just answered.
             """
             # The base class calls this after the answer has gone out. A listener
             # that exists to answer has nothing to hand on.
@@ -80,7 +88,7 @@ def http_listener(base, answer, queue=True, **options):
             """The body to send back, remembering the content type it wants.
 
             Args:
-                request: The request to answer.
+                request (weewx.listener.Request): The request to answer.
 
             Returns:
                 The body, as the base class expects it.
@@ -94,8 +102,9 @@ def http_listener(base, answer, queue=True, **options):
 
         @property
         def content_type(self):
-            return getattr(self._per_request, 'content_type',
-                           self._default_content_type)
+            return getattr(
+                self._per_request, 'content_type', self._default_content_type
+            )
 
         @content_type.setter
         def content_type(self, value):

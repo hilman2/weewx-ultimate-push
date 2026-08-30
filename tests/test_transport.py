@@ -71,8 +71,9 @@ def test_device_time_is_used_when_it_is_plausible(payload):
 def test_device_time_is_refused_when_it_is_not(payload):
     """Consoles are often wrong about the time, sometimes by years."""
     raw = transport.parse(payload('hp2561ae_pro'))
-    a_year_later = calendar.timegm(time.strptime('2027-08-25 11:06:42',
-                                                 '%Y-%m-%d %H:%M:%S'))
+    a_year_later = calendar.timegm(
+        time.strptime('2027-08-25 11:06:42', '%Y-%m-%d %H:%M:%S')
+    )
 
     assert transport.device_time(raw, now=a_year_later) is None
 
@@ -92,9 +93,9 @@ def test_a_late_upload_keeps_its_own_time(payload):
     raw = transport.parse(payload('hp2561ae_pro'))
     sent = calendar.timegm(time.strptime('2026-08-25 11:06:42', '%Y-%m-%d %H:%M:%S'))
 
-    assert transport.device_time(raw, now=sent + 5) == sent          # network delay
-    assert transport.device_time(raw, now=sent + 20 * 60) == sent    # a queue, a relay
-    assert transport.device_time(raw, now=sent + 59 * 60) == sent    # an outage
+    assert transport.device_time(raw, now=sent + 5) == sent  # network delay
+    assert transport.device_time(raw, now=sent + 20 * 60) == sent  # a queue, a relay
+    assert transport.device_time(raw, now=sent + 59 * 60) == sent  # an outage
 
 
 def test_a_clock_that_is_hours_behind_is_still_refused(payload):
@@ -110,7 +111,7 @@ def test_a_clock_that_runs_fast_is_refused_at_once(payload):
     raw = transport.parse(payload('hp2561ae_pro'))
     sent = calendar.timegm(time.strptime('2026-08-25 11:06:42', '%Y-%m-%d %H:%M:%S'))
 
-    assert transport.device_time(raw, now=sent - 30) == sent      # drift between clocks
+    assert transport.device_time(raw, now=sent - 30) == sent  # drift between clocks
     assert transport.device_time(raw, now=sent - 5 * 60) is None  # a wrong clock
 
 

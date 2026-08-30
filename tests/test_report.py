@@ -15,7 +15,7 @@ def test_the_passkey_is_replaced(payload):
 
     assert 'PASSKEY=X' in text
     assert '0000000000000000000000000000AAAA' not in text
-    assert 'tempf=59.7' in text          # the weather survives
+    assert 'tempf=59.7' in text  # the weather survives
 
 
 def test_a_wunderground_login_is_replaced():
@@ -35,10 +35,10 @@ def test_the_report_carries_what_an_issue_needs(tmp_path, payload):
 
     assert 'weewx-ultimate-push' in text
     assert 'PASSKEY=X' in text
-    assert 'tempinf=75.4' in text                     # the upload itself
-    assert 'issues/new' in text                       # where to send it
-    assert 'yearlyrainin' in text                     # what could not be placed
-    assert 'tf_ch1' in text                           # what is waiting
+    assert 'tempinf=75.4' in text  # the upload itself
+    assert 'issues/new' in text  # where to send it
+    assert 'yearlyrainin' in text  # what could not be placed
+    assert 'tf_ch1' in text  # what is waiting
 
 
 def test_nothing_to_report_writes_nothing(tmp_path):

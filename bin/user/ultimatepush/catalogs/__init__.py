@@ -27,5 +27,4 @@ to generate from:
 
 from . import acurite, ambient, ecowitt, lacrosse, weatherflow, wunderground
 
-__all__ = ['acurite', 'ambient', 'ecowitt', 'lacrosse', 'weatherflow',
-           'wunderground']
+__all__ = ['acurite', 'ambient', 'ecowitt', 'lacrosse', 'weatherflow', 'wunderground']

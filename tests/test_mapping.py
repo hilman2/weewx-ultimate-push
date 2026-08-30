@@ -28,14 +28,17 @@ def test_the_sensors_that_the_interceptor_drops(payload):
     The two WN34 channels and the WH52 temperature need a placement first, because
     that is the user's to give. Everything else arrives on its own.
     """
-    placed = {'tf_ch1': 'extraTemp9', 'tf_ch2': 'extraTemp10',
-              'soil_ec_temp1': 'soilTemp1'}
+    placed = {
+        'tf_ch1': 'extraTemp9',
+        'tf_ch2': 'extraTemp10',
+        'soil_ec_temp1': 'soilTemp1',
+    }
     packet, _ = mapper_for(extensions=placed).to_packet(payload('hp2561ae_pro'))
 
-    assert packet['extraTemp9'] == 66.2         # WN34, first channel
-    assert packet['extraTemp10'] == 61.5        # WN34, second channel
-    assert packet['soilMoist1'] == 30.0         # WH52, moisture, no decision needed
-    assert packet['soilTemp1'] == 65.7          # WH52, temperature
+    assert packet['extraTemp9'] == 66.2  # WN34, first channel
+    assert packet['extraTemp10'] == 61.5  # WN34, second channel
+    assert packet['soilMoist1'] == 30.0  # WH52, moisture, no decision needed
+    assert packet['soilTemp1'] == 65.7  # WH52, temperature
     assert packet['lightning_distance'] == 1.0  # WH57
     assert packet['lightning_num'] == 0.0
     assert packet['vpd'] == 0.047
@@ -81,14 +84,17 @@ def test_infer_all_takes_the_guess_too(payload):
 def test_infer_off_reports_nothing_and_takes_nothing(payload):
     packet, guesses = mapper_for(infer_unknown='off').to_packet(payload('hp2561ae_pro'))
 
-    assert guesses          # still reported, so the log says what was left out
+    assert guesses  # still reported, so the log says what was left out
     assert 'ecowitt_yearlyrainin' not in packet
 
 
 def test_a_derived_field_is_taken_by_default():
     """A series continued from the catalog is not a guess, so it goes in."""
-    mapper = mapper_for(fields={'zz_ch1': 'zzTemp1', 'zz_ch2': 'zzTemp2'},
-                    groups={'zzTemp1': 'group_temperature'}, channels={})
+    mapper = mapper_for(
+        fields={'zz_ch1': 'zzTemp1', 'zz_ch2': 'zzTemp2'},
+        groups={'zzTemp1': 'group_temperature'},
+        channels={},
+    )
     packet, guesses = mapper.to_packet('zz_ch3=66.2')
 
     assert packet['zzTemp3'] == 66.2
@@ -124,8 +130,11 @@ def test_a_field_is_only_reported_once(payload):
 
 
 def test_unit_groups_grow_with_what_arrives():
-    mapper = mapper_for(fields={'zz_ch1': 'zzTemp1', 'zz_ch2': 'zzTemp2'},
-                    groups={'zzTemp1': 'group_temperature'}, channels={})
+    mapper = mapper_for(
+        fields={'zz_ch1': 'zzTemp1', 'zz_ch2': 'zzTemp2'},
+        groups={'zzTemp1': 'group_temperature'},
+        channels={},
+    )
     assert 'zzTemp3' not in mapper.wanted_groups()
 
     mapper.to_packet('zz_ch3=66.2')
@@ -169,9 +178,12 @@ def test_a_channel_can_be_put_where_it_actually_is():
 
 def test_a_derived_channel_can_be_redirected_too():
     """What holds for the catalog holds for a channel the driver worked out."""
-    mapper = mapper_for(extensions={'zz_ch3': 'extraTemp6'},
-                    fields={'zz_ch1': 'zzTemp1', 'zz_ch2': 'zzTemp2'},
-                    groups={}, channels={})
+    mapper = mapper_for(
+        extensions={'zz_ch3': 'extraTemp6'},
+        fields={'zz_ch1': 'zzTemp1', 'zz_ch2': 'zzTemp2'},
+        groups={},
+        channels={},
+    )
     packet, guesses = mapper.to_packet('zz_ch3=78.4')
 
     assert packet['extraTemp6'] == 78.4
@@ -213,20 +225,27 @@ def test_a_new_channel_of_an_ambiguous_family_waits_for_a_decision(caplog):
     cannot be told apart later, so this one waits to be confirmed."""
     import logging
 
-    mapper = mapper_for(fields=AMBIGUOUS, groups={'myTemp1': 'group_temperature'},
-                        channels={}, placement_unknown=AMBIGUOUS_PLACEMENT)
+    mapper = mapper_for(
+        fields=AMBIGUOUS,
+        groups={'myTemp1': 'group_temperature'},
+        channels={},
+        placement_unknown=AMBIGUOUS_PLACEMENT,
+    )
     with caplog.at_level(logging.INFO):
         packet, guesses = mapper.to_packet('temp3f=66.2')
 
     assert 'myTemp3' not in packet
-    assert guesses[0].certain is True       # derived, and still not taken
+    assert guesses[0].certain is True  # derived, and still not taken
     assert 'field_map_extensions' in caplog.text
 
 
 def test_an_unambiguous_new_channel_is_taken():
     """Nobody puts a laser rangefinder anywhere but where it measures."""
-    mapper = mapper_for(fields={'zz_ch1': 'zzDepth1', 'zz_ch2': 'zzDepth2'},
-                    groups={'zzDepth1': 'group_distance'}, channels={})
+    mapper = mapper_for(
+        fields={'zz_ch1': 'zzDepth1', 'zz_ch2': 'zzDepth2'},
+        groups={'zzDepth1': 'group_distance'},
+        channels={},
+    )
     packet, guesses = mapper.to_packet('zz_ch3=1200')
 
     assert packet['zzDepth3'] == 1200.0
@@ -236,8 +255,9 @@ def test_an_unambiguous_new_channel_is_taken():
 def test_the_suggested_line_is_ready_to_paste(caplog):
     import logging
 
-    mapper = mapper_for(fields=AMBIGUOUS, groups={}, channels={},
-                        placement_unknown=AMBIGUOUS_PLACEMENT)
+    mapper = mapper_for(
+        fields=AMBIGUOUS, groups={}, channels={}, placement_unknown=AMBIGUOUS_PLACEMENT
+    )
     with caplog.at_level(logging.INFO):
         mapper.to_packet('temp3f=66.2')
 
@@ -251,7 +271,7 @@ def test_a_contested_field_waits_for_the_user(caplog):
     with caplog.at_level(logging.WARNING):
         packet, _ = mapper_for().to_packet('tf_ch1=66.2&tempf=59.7')
 
-    assert packet['outTemp'] == 59.7        # nothing to decide about that one
+    assert packet['outTemp'] == 59.7  # nothing to decide about that one
     assert 'extraTemp9' not in packet
     assert "'tf_ch1 = extraTemp9'" in caplog.text
     assert "'tf_ch1 = soilTemp1'" in caplog.text
@@ -285,7 +305,7 @@ def test_the_hardware_settles_most_of_it(payload):
     mapper = mapper_for()
     packet, _ = mapper.to_packet(payload('hp2561ae_pro'))
 
-    assert len(packet) - 1 == 29        # less the timestamp
+    assert len(packet) - 1 == 29  # less the timestamp
     assert len(mapper.warned) == 6
     assert packet['soilMoist1'] == 30.0
     assert packet['lightning_distance'] == 1.0

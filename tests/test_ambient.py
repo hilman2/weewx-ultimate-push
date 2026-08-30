@@ -32,12 +32,12 @@ def test_a_captured_upload_becomes_a_packet(payload):
     assert dialect.units == protocols.US
     assert packet['outTemp'] == 69.1
     assert packet['inTemp'] == 73.4
-    assert packet['barometer'] == 29.89      # baromrelin
-    assert packet['pressure'] == 29.48       # baromabsin
+    assert packet['barometer'] == 29.89  # baromrelin
+    assert packet['pressure'] == 29.48  # baromabsin
     assert packet['radiation'] == 299.23
     assert packet['UV'] == 3.0
     assert packet['maxdailygust'] == 3.4
-    assert packet['totalRain'] == 0.87       # no Ecowitt console sends this
+    assert packet['totalRain'] == 0.87  # no Ecowitt console sends this
     assert guesses == []
 
 
@@ -48,10 +48,11 @@ def test_the_names_ecowitt_does_not_have():
         '&soilhum1=42&soilhum10=17&soiltemp1f=55.4'
         '&battout=1&battin=0&battsm1=1'
         '&lightning_day=7&lightning_distance=12&lightning_hour=2'
-        '&relay1=1&relay10=0&aqi_pm25=51&pm25=12.5&24hourrainin=0.31')
+        '&relay1=1&relay10=0&aqi_pm25=51&pm25=12.5&24hourrainin=0.31'
+    )
 
     assert packet['soilMoist1'] == 42.0
-    assert packet['soilMoist10'] == 17.0     # Ambient goes to ten, Ecowitt to sixteen
+    assert packet['soilMoist10'] == 17.0  # Ambient goes to ten, Ecowitt to sixteen
     assert packet['soilTemp1'] == 55.4
     assert packet['outTempBatteryStatus'] == 1.0
     assert packet['inTempBatteryStatus'] == 0.0
@@ -69,7 +70,8 @@ def test_the_aqin_module_arrives():
     packet, _, _ = packet_of(
         'PASSKEY=A&stationtype=AMBWeatherV4.3.4&tempf=60'
         '&pm25_in_aqin=8.1&aqi_pm25_aqin=34&co2_in_aqin=612'
-        '&pm_in_temp_aqin=70.2&pm_in_humidity_aqin=44')
+        '&pm_in_temp_aqin=70.2&pm_in_humidity_aqin=44'
+    )
 
     assert packet['pm2_5_in_aqin'] == 8.1
     assert packet['pm2_5_aqi_aqin'] == 34.0
@@ -82,12 +84,15 @@ def test_a_reading_both_protocols_send_lands_in_the_same_column():
     """Two consoles reporting the same thing into two different columns would be a
     decision nobody made on purpose."""
     shared = set(catalog.FIELDS) & set(ecowitt_catalog.FIELDS)
-    disagreements = {raw: (catalog.FIELDS[raw], ecowitt_catalog.FIELDS[raw])
-                     for raw in shared
-                     if catalog.FIELDS[raw] != ecowitt_catalog.FIELDS[raw]}
+    disagreements = {
+        raw: (catalog.FIELDS[raw], ecowitt_catalog.FIELDS[raw])
+        for raw in shared
+        if catalog.FIELDS[raw] != ecowitt_catalog.FIELDS[raw]
+    }
 
-    assert not disagreements, \
-        "the same name goes to two places: %s" % sorted(disagreements.items())
+    assert not disagreements, "the same name goes to two places: %s" % sorted(
+        disagreements.items()
+    )
 
 
 def test_the_catalog_covers_every_channel_the_hardware_has():

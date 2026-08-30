@@ -22,8 +22,8 @@ import pytest
 
 weewx = pytest.importorskip('weewx', reason="WeeWX is not installed")
 
-from ultimatepush import overrides                       # noqa: E402
-from ultimatepush.driver import UltimatePushDriver       # noqa: E402
+from ultimatepush import overrides  # noqa: E402
+from ultimatepush.driver import UltimatePushDriver  # noqa: E402
 
 TOKEN = 'a-token-long-enough-to-pass'
 PASSKEY = '0000000000000000000000000000AAAA'
@@ -33,17 +33,22 @@ PASSKEY = '0000000000000000000000000000AAAA'
 def station(tmp_path):
     """A driver with the interface on, and nothing of anybody else's on disk."""
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', passkey=PASSKEY, report_file='',
+        port=0,
+        address='127.0.0.1',
+        passkey=PASSKEY,
+        report_file='',
         console_file=str(tmp_path / 'consoles.txt'),
         override_file=str(tmp_path / 'web.conf'),
-        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': TOKEN})
+        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': TOKEN},
+    )
     yield made
     made.closePort()
 
 
 def upload(driver, body, path='/data/report/'):
-    connection = http.client.HTTPConnection('127.0.0.1', driver.listener.ports[0],
-                                            timeout=5)
+    connection = http.client.HTTPConnection(
+        '127.0.0.1', driver.listener.ports[0], timeout=5
+    )
     try:
         connection.request('POST', path, body)
         return connection.getresponse().read()
@@ -53,8 +58,9 @@ def upload(driver, body, path='/data/report/'):
 
 def web(driver, path, body=None, token=TOKEN):
     """(status, content type, parsed body) from the admin listener."""
-    connection = http.client.HTTPConnection('127.0.0.1', driver.listener.ports[1],
-                                            timeout=5)
+    connection = http.client.HTTPConnection(
+        '127.0.0.1', driver.listener.ports[1], timeout=5
+    )
     try:
         headers = {'X-Auth-Token': token} if token else {}
         if body is None:
@@ -84,8 +90,13 @@ def send(driver, payload):
 
 def test_it_is_off_unless_asked_for(tmp_path):
     """A port that can change the field map does not open because somebody upgraded."""
-    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=PASSKEY,
-                              console_file=str(tmp_path / 'c.txt'), report_file='')
+    made = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        passkey=PASSKEY,
+        console_file=str(tmp_path / 'c.txt'),
+        report_file='',
+    )
     try:
         assert len(made.listener.ports) == 1
     finally:
@@ -96,9 +107,14 @@ def test_it_refuses_to_start_without_a_token(tmp_path):
     """The token is the only thing between the field map and the rest of the
     network, so a missing one is a refusal rather than a warning."""
     with pytest.raises(ValueError) as caught:
-        UltimatePushDriver(port=0, address='127.0.0.1', passkey=PASSKEY,
-                           console_file=str(tmp_path / 'c.txt'), report_file='',
-                           web={'enable': 'true', 'port': 0, 'token': 'short'})
+        UltimatePushDriver(
+            port=0,
+            address='127.0.0.1',
+            passkey=PASSKEY,
+            console_file=str(tmp_path / 'c.txt'),
+            report_file='',
+            web={'enable': 'true', 'port': 0, 'token': 'short'},
+        )
 
     assert 'token' in str(caught.value)
 
@@ -107,10 +123,19 @@ def test_ten_characters_is_enough(tmp_path):
     """A weather station, not a bank. Ten random characters is about sixty bits, and
     the doorman is what covers a token somebody thought up instead."""
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', passkey=PASSKEY, report_file='',
-        console_file=str(tmp_path / 'c.txt'), override_file=str(tmp_path / 'w.conf'),
-        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1',
-             'token': 'abcde12345'})
+        port=0,
+        address='127.0.0.1',
+        passkey=PASSKEY,
+        report_file='',
+        console_file=str(tmp_path / 'c.txt'),
+        override_file=str(tmp_path / 'w.conf'),
+        web={
+            'enable': 'true',
+            'port': 0,
+            'address': '127.0.0.1',
+            'token': 'abcde12345',
+        },
+    )
     try:
         assert len(made.listener.ports) == 2
     finally:
@@ -145,10 +170,21 @@ def test_a_person_who_mistypes_it_is_told_where_to_look(station):
 def test_an_address_that_keeps_guessing_stops_being_answered(tmp_path):
     """The black hole. Three wrong ones here, then nothing, right token or not."""
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', passkey=PASSKEY, report_file='',
-        console_file=str(tmp_path / 'c.txt'), override_file=str(tmp_path / 'w.conf'),
-        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': TOKEN,
-             'tries': 3, 'window': 300})
+        port=0,
+        address='127.0.0.1',
+        passkey=PASSKEY,
+        report_file='',
+        console_file=str(tmp_path / 'c.txt'),
+        override_file=str(tmp_path / 'w.conf'),
+        web={
+            'enable': 'true',
+            'port': 0,
+            'address': '127.0.0.1',
+            'token': TOKEN,
+            'tries': 3,
+            'window': 300,
+        },
+    )
     try:
         for _ in range(3):
             assert web(made, '/api/state', token='wrong-but-long')[2]['ok'] is False
@@ -306,8 +342,9 @@ def test_placing_a_field_takes_effect_on_the_next_upload(station, payload):
     """Without a restart. That is the whole reason the settings do not live in
     weewx.conf, which WeeWX only reads when it starts."""
     send(station, payload('hp2561ae_pro'))
-    _, _, answer = web(station, '/api/field',
-                       {'ident': PASSKEY, 'raw': 'tf_ch1', 'field': 'soilTemp5'})
+    _, _, answer = web(
+        station, '/api/field', {'ident': PASSKEY, 'raw': 'tf_ch1', 'field': 'soilTemp5'}
+    )
     assert answer['ok'] is True
 
     packet = send(station, payload('hp2561ae_pro'))
@@ -316,8 +353,9 @@ def test_placing_a_field_takes_effect_on_the_next_upload(station, payload):
 
 def test_a_placement_survives_in_a_file_of_the_drivers_own(station, payload, tmp_path):
     send(station, payload('hp2561ae_pro'))
-    web(station, '/api/field', {'ident': PASSKEY, 'raw': 'tf_ch1',
-                                'field': 'soilTemp5'})
+    web(
+        station, '/api/field', {'ident': PASSKEY, 'raw': 'tf_ch1', 'field': 'soilTemp5'}
+    )
 
     written = (tmp_path / 'web.conf').read_text(encoding='utf-8')
     assert 'tf_ch1 = soilTemp5' in written
@@ -336,11 +374,15 @@ def test_the_interface_can_change_a_placement_weewx_conf_made(tmp_path, payload)
     The row says where the placement came from, so the change is made knowingly.
     """
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', passkey=PASSKEY, report_file='',
+        port=0,
+        address='127.0.0.1',
+        passkey=PASSKEY,
+        report_file='',
         console_file=str(tmp_path / 'consoles.txt'),
         override_file=str(tmp_path / 'web.conf'),
         field_map_extensions={'tf_ch2': 'extraTemp10'},
-        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': TOKEN})
+        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': TOKEN},
+    )
     try:
         answer = made.web_set_field(PASSKEY, 'tf_ch2', 'extraTemp12')
         assert answer['ok'], answer['message']
@@ -356,12 +398,19 @@ def test_a_station_named_in_weewx_conf_still_keeps_its_field_map(tmp_path):
     part of that declaration, and half of it living somewhere else is how a
     configuration becomes impossible to read."""
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='',
+        port=0,
+        address='127.0.0.1',
+        report_file='',
         console_file=str(tmp_path / 'consoles.txt'),
         override_file=str(tmp_path / 'web.conf'),
-        stations={'garden': {'passkey': PASSKEY,
-                             'field_map_extensions': {'tf_ch2': 'extraTemp10'}}},
-        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': TOKEN})
+        stations={
+            'garden': {
+                'passkey': PASSKEY,
+                'field_map_extensions': {'tf_ch2': 'extraTemp10'},
+            }
+        },
+        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': TOKEN},
+    )
     try:
         answer = made.web_set_field(PASSKEY, 'tf_ch2', 'extraTemp12')
     finally:
@@ -401,8 +450,7 @@ def test_the_stations_route_lists_what_can_be_changed(station, payload):
     one in, and one that only showed the ones that had uploaded would leave somebody
     who just set a station up looking at nothing."""
     send(station, payload('hp2561ae_pro'))
-    _, _, answer = web(station, '/api/create',
-                       {'protocol': 'ecowitt', 'name': 'roof'})
+    _, _, answer = web(station, '/api/create', {'protocol': 'ecowitt', 'name': 'roof'})
     assert answer['ok'] is True
 
     _, _, found = web(station, '/api/stations')
@@ -422,17 +470,20 @@ def test_the_edit_route_changes_a_station(station):
     _, _, made = web(station, '/api/create', {'protocol': 'ecowitt', 'name': 'roof'})
     ident = 'path:' + made['station']['path']
 
-    _, _, answer = web(station, '/api/edit',
-                       {'ident': ident, 'name': 'the_roof', 'role': 'extra',
-                        'channel': 3})
+    _, _, answer = web(
+        station,
+        '/api/edit',
+        {'ident': ident, 'name': 'the_roof', 'role': 'extra', 'channel': 3},
+    )
 
     assert answer['ok'] is True
     assert station.web_stations[ident].name == 'the_roof'
     assert station.web_stations[ident].channel == 3
 
 
-def test_the_edit_route_will_not_hand_over_the_main_station_by_accident(station,
-                                                                       payload):
+def test_the_edit_route_will_not_hand_over_the_main_station_by_accident(
+    station, payload
+):
     """The interface says what it costs and asks again. Something posting straight at
     the route has said neither, so the route says no."""
     send(station, payload('hp2561ae_pro'))
@@ -442,31 +493,37 @@ def test_the_edit_route_will_not_hand_over_the_main_station_by_accident(station,
     _, _, refused = web(station, '/api/edit', {'ident': ident, 'role': 'main'})
     assert refused['ok'] is False
 
-    _, _, agreed = web(station, '/api/edit',
-                       {'ident': ident, 'role': 'main', 'force': True})
+    _, _, agreed = web(
+        station, '/api/edit', {'ident': ident, 'role': 'main', 'force': True}
+    )
     assert agreed['ok'] is True
     assert station.web_stations[ident].role == 'main'
 
 
 def test_a_name_that_would_not_survive_a_config_file_is_refused(station):
-    _, _, answer = web(station, '/api/accept',
-                       {'ident': 'D' * 32, 'name': 'roof]\n[Station'})
+    _, _, answer = web(
+        station, '/api/accept', {'ident': 'D' * 32, 'name': 'roof]\n[Station'}
+    )
 
     assert answer['ok'] is False
 
 
 def test_a_field_name_no_column_could_have_is_refused(station, payload):
     send(station, payload('hp2561ae_pro'))
-    _, _, answer = web(station, '/api/field',
-                       {'ident': PASSKEY, 'raw': 'tf_ch1', 'field': 'drop table;--'})
+    _, _, answer = web(
+        station,
+        '/api/field',
+        {'ident': PASSKEY, 'raw': 'tf_ch1', 'field': 'drop table;--'},
+    )
 
     assert answer['ok'] is False
 
 
 def test_clearing_a_field_puts_it_back_where_it_was(station, payload):
     send(station, payload('hp2561ae_pro'))
-    web(station, '/api/field', {'ident': PASSKEY, 'raw': 'tf_ch1',
-                                'field': 'soilTemp5'})
+    web(
+        station, '/api/field', {'ident': PASSKEY, 'raw': 'tf_ch1', 'field': 'soilTemp5'}
+    )
     assert send(station, payload('hp2561ae_pro')).get('soilTemp5') == 66.2
 
     web(station, '/api/field', {'ident': PASSKEY, 'raw': 'tf_ch1', 'field': ''})
@@ -482,9 +539,13 @@ def test_a_broken_settings_file_does_not_stop_the_readings(tmp_path, payload):
     """The weather matters more than the settings. The log says what to fix."""
     (tmp_path / 'web.conf').write_text('[stations\n  broken = ', encoding='utf-8')
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', passkey=PASSKEY, report_file='',
+        port=0,
+        address='127.0.0.1',
+        passkey=PASSKEY,
+        report_file='',
         console_file=str(tmp_path / 'consoles.txt'),
-        override_file=str(tmp_path / 'web.conf'))
+        override_file=str(tmp_path / 'web.conf'),
+    )
     try:
         packet = send(made, payload('hp2561ae_pro'))
     finally:
@@ -501,11 +562,13 @@ def test_an_unknown_route_answers_rather_than_hanging(station):
 
 
 def test_nonsense_in_a_post_is_survivable(station):
-    connection = http.client.HTTPConnection('127.0.0.1', station.listener.ports[1],
-                                            timeout=5)
+    connection = http.client.HTTPConnection(
+        '127.0.0.1', station.listener.ports[1], timeout=5
+    )
     try:
-        connection.request('POST', '/api/field', 'not json at all',
-                           {'X-Auth-Token': TOKEN})
+        connection.request(
+            'POST', '/api/field', 'not json at all', {'X-Auth-Token': TOKEN}
+        )
         assert connection.getresponse().status == 200
     finally:
         connection.close()
@@ -550,9 +613,11 @@ def test_the_url_can_be_asked_for_again(tmp_path, capsys):
     from ultimatepush.__main__ import main
 
     conf = tmp_path / 'weewx.conf'
-    conf.write_text("[UltimatePush]\n    [[web]]\n        enable = true\n"
-                    "        port = 8080\n        token = kJ7mQx2vRt9w\n",
-                    encoding='utf-8')
+    conf.write_text(
+        "[UltimatePush]\n    [[web]]\n        enable = true\n"
+        "        port = 8080\n        token = kJ7mQx2vRt9w\n",
+        encoding='utf-8',
+    )
 
     assert main(['--url', '--config', str(conf)]) == 0
     assert 'kJ7mQx2vRt9w' in capsys.readouterr().out
@@ -562,8 +627,9 @@ def test_it_says_so_when_there_is_nowhere_to_go(tmp_path, capsys):
     from ultimatepush.__main__ import main
 
     conf = tmp_path / 'weewx.conf'
-    conf.write_text("[UltimatePush]\n    [[web]]\n        enable = false\n",
-                    encoding='utf-8')
+    conf.write_text(
+        "[UltimatePush]\n    [[web]]\n        enable = false\n", encoding='utf-8'
+    )
 
     assert main(['--url', '--config', str(conf)]) == 1
     assert 'switched off' in capsys.readouterr().out
@@ -580,8 +646,9 @@ def test_the_installer_leaves_it_ready_to_open():
     import sys
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    spec = importlib.util.spec_from_file_location('up_install',
-                                                  os.path.join(root, 'install.py'))
+    spec = importlib.util.spec_from_file_location(
+        'up_install', os.path.join(root, 'install.py')
+    )
     module = importlib.util.module_from_spec(spec)
     sys.modules['up_install'] = module
     spec.loader.exec_module(module)
@@ -596,8 +663,10 @@ def test_the_installer_leaves_it_ready_to_open():
 # ---------------------------------------------------- what is knocking
 
 
-STRANGER = ('PASSKEY=%s&stationtype=GW2000A&tempf=61.0&humidity=88&'
-            'windspeedmph=3.4&baromrelin=29.91&dailyrainin=0.02' % ('B' * 32))
+STRANGER = (
+    'PASSKEY=%s&stationtype=GW2000A&tempf=61.0&humidity=88&'
+    'windspeedmph=3.4&baromrelin=29.91&dailyrainin=0.02' % ('B' * 32)
+)
 
 
 def test_a_refused_upload_shows_the_readings_it_sent(station, payload):
@@ -613,7 +682,7 @@ def test_a_refused_upload_shows_the_readings_it_sent(station, payload):
     assert readings
 
     placed = {row['field']: row['value'] for row in readings if row['field']}
-    assert placed['outTemp'] == '61.0'          # exactly as it arrived
+    assert placed['outTemp'] == '61.0'  # exactly as it arrived
     assert placed['outHumidity'] == '88'
 
     # Ordered by what a person can check against a thermometer or a window, rather
@@ -645,7 +714,7 @@ def test_an_upload_no_protocol_recognised_still_shows_what_arrived(station):
     station._packet_from(_last_request(station))
 
     waiting = station.web_overview()['waiting']
-    if waiting:                       # a protocol may yet claim it; if not, show it
+    if waiting:  # a protocol may yet claim it; if not, show it
         readings = waiting[0]['sample']['readings']
         assert {row['raw'] for row in readings} >= {'temperature', 'whatever'}
 
@@ -676,7 +745,7 @@ def _string_left_open(script):
             elif char == "'":
                 inside = not inside
             elif not inside and char == '/' and was == '/':
-                break                       # the rest of the line is a comment
+                break  # the rest of the line is a comment
             was = char
         if inside:
             return number
@@ -701,7 +770,8 @@ def test_the_page_is_javascript_a_browser_can_parse():
     assert line is None, (
         "line %d of the page's script leaves a string open, which a browser reads as "
         "a syntax error, and then the whole page stops working: %s"
-        % (line or 0, script.split(NEWLINE)[(line or 1) - 1].strip()))
+        % (line or 0, script.split(NEWLINE)[(line or 1) - 1].strip())
+    )
 
 
 def test_the_open_string_check_would_notice():
@@ -737,8 +807,8 @@ def test_every_tab_has_something_to_draw():
     from ultimatepush import page
 
     script = page.PAGE.split('<script>')[1].split('</script>')[0]
-    dispatcher = script[script.index('function draw() {'):]
-    dispatcher = dispatcher[:dispatcher.index(NEWLINE + '}')]
+    dispatcher = script[script.index('function draw() {') :]
+    dispatcher = dispatcher[: dispatcher.index(NEWLINE + '}')]
 
     for tab in sorted(set(re.findall(r'data-tab="([a-z]+)"', page.PAGE))):
         renderer = 'draw' + tab.capitalize()

@@ -73,11 +73,25 @@ class WeatherFlow(Protocol):
     # they are one station with two sensors rather than two stations.
     identity = ('hub_sn',)
 
-    metadata = frozenset([
-        'serial_number', 'hub_sn', 'type', 'firmware_revision', 'dateutc',
-        'reset_flags', 'seq', 'fs', 'radio_stats', 'mqtt_stats', 'debug',
-        'timestamp', 'obs', 'ob', 'evt',
-    ])
+    metadata = frozenset(
+        [
+            'serial_number',
+            'hub_sn',
+            'type',
+            'firmware_revision',
+            'dateutc',
+            'reset_flags',
+            'seq',
+            'fs',
+            'radio_stats',
+            'mqtt_stats',
+            'debug',
+            'timestamp',
+            'obs',
+            'ob',
+            'evt',
+        ]
+    )
 
     fields = _catalog.FIELDS
     groups = _catalog.GROUPS
@@ -128,8 +142,12 @@ class WeatherFlow(Protocol):
         named = {}
         for position, value in enumerate(values):
             if position >= len(layout):
-                log.debug("%s carries %d values and %d are named. Ignoring the rest.",
-                          kind, len(values), len(layout))
+                log.debug(
+                    "%s carries %d values and %d are named. Ignoring the rest.",
+                    kind,
+                    len(values),
+                    len(layout),
+                )
                 break
             named[layout[position]] = value
 
@@ -171,8 +189,9 @@ def _timestamped(named, epoch):
     """
     if epoch:
         try:
-            named['dateutc'] = time.strftime(transport.DEVICE_TIME_FORMAT,
-                                             time.gmtime(float(epoch)))
+            named['dateutc'] = time.strftime(
+                transport.DEVICE_TIME_FORMAT, time.gmtime(float(epoch))
+            )
         except (TypeError, ValueError, OSError):
             pass
     return named

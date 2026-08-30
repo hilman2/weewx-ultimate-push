@@ -36,6 +36,7 @@ never arrived.
 
 import logging
 import re
+from typing import Dict, List, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +45,8 @@ log = logging.getLogger(__name__)
 INDEXED = re.compile(r'^(?P<stem>.*?)(?P<index>\d+)(?P<tail>[A-Za-z_]*)$')
 
 # What a name says about what it measures, when no series covers it. Ordered: the
-# first match wins, so the specific patterns come before the general ones.
+# first match wins, so the specific patterns come before the general ones. Add a rule
+# here; _RULES below is this list compiled, and is what _from_rules reads.
 RULES = [
     (r'rssi$', 'group_db', 'dB'),
     (r'_sig$', 'group_count', 'count'),
@@ -64,7 +66,7 @@ RULES = [
     (r'^(depth|air|thi)_ch', 'group_distance', 'mm'),
 ]
 
-RULES = [(re.compile(pattern), group, unit) for pattern, group, unit in RULES]
+_RULES = [(re.compile(pattern), group, unit) for pattern, group, unit in RULES]
 
 
 class Guess:
@@ -101,8 +103,12 @@ class Guess:
         self.why = why
 
     def __repr__(self):
-        return "Guess(%s -> %s, %s, %s)" % (self.raw, self.field, self.group,
-                                            'series' if self.certain else 'rule')
+        return "Guess(%s -> %s, %s, %s)" % (
+            self.raw,
+            self.field,
+            self.group,
+            'series' if self.certain else 'rule',
+        )
 
     def __eq__(self, other):
         return isinstance(other, Guess) and repr(self) == repr(other)
@@ -115,7 +121,7 @@ def _split(name):
         name (str): A raw or WeeWX field name.
 
     Returns:
-        tuple: (stem, number, tail), with the number as an int, or None when
+        tuple | None: (stem, number, tail), with the number as an int, or None when
         the name carries no number.
     """
     match = INDEXED.match(name)
@@ -161,7 +167,9 @@ class Inferrer:
             dict: One entry per family the catalog holds, describing how to continue
             it for a channel the catalog does not have yet.
         """
-        seen = {}
+        # (raw stem, raw tail) -> [((target stem, target tail, index shift),
+        # target field), ...], one entry per catalog member of that family.
+        seen = {}  # type: Dict[Tuple[str, str], List[Tuple[Tuple[str, str, int], str]]]
         for raw, target in fields.items():
             raw_parts = _split(raw)
             target_parts = _split(target)
@@ -186,13 +194,13 @@ class Inferrer:
     def guess(self, raw):
         """Work out where an unmapped field belongs.
 
-    Args:
-        raw (str): The raw field name the console sent.
+        Args:
+            raw (str): The raw field name the console sent.
 
-    Returns:
-        Guess: What the field looks like and why, or None when nothing can be said
-        about it. A Guess is not applied on its own; `infer_unknown` decides that.
-    """
+        Returns:
+            Guess | None: What the field looks like and why, or None when nothing can be said
+            about it. A Guess is not applied on its own; `infer_unknown` decides that.
+        """
         return self._from_series(raw) or self._from_rules(raw)
 
     def _from_series(self, raw):
@@ -202,7 +210,7 @@ class Inferrer:
             raw (str): The raw field name.
 
         Returns:
-            Guess: Where it goes, or None when it continues nothing.
+            Guess | None: Where it goes, or None when it continues nothing.
         """
         parts = _split(raw)
         if not parts:
@@ -221,11 +229,23 @@ class Inferrer:
         if limit and index > limit[1]:
             # Ecowitt says this family stops before here. The reading is real, so it is
             # not dropped, but it is not derived either: say so and let somebody look.
-            return Guess(raw, field, group, None, False,
-                         "channel %d, past the %d a %s is said to support"
-                         % (index, limit[1], limit[0]))
-        return Guess(raw, field, group, None, True,
-                     "continues %s, e.g. %s" % (stem + tail, members[0]))
+            return Guess(
+                raw,
+                field,
+                group,
+                None,
+                False,
+                "channel %d, past the %d a %s is said to support"
+                % (index, limit[1], limit[0]),
+            )
+        return Guess(
+            raw,
+            field,
+            group,
+            None,
+            True,
+            "continues %s, e.g. %s" % (stem + tail, members[0]),
+        )
 
     def _from_rules(self, raw):
         """Read a field name for what it says it measures.
@@ -234,12 +254,18 @@ class Inferrer:
             raw (str): The raw field name.
 
         Returns:
-            Guess: What it looks like, or None when the name says nothing.
+            Guess | None: What it looks like, or None when the name says nothing.
         """
-        for pattern, group, unit in RULES:
+        for pattern, group, unit in _RULES:
             if pattern.search(raw):
-                return Guess(raw, self.prefix + raw, group, unit, False,
-                             "name matches %s" % pattern.pattern)
+                return Guess(
+                    raw,
+                    self.prefix + raw,
+                    group,
+                    unit,
+                    False,
+                    "name matches %s" % pattern.pattern,
+                )
         return None
 
 
@@ -255,7 +281,13 @@ def report(guesses):
     """
     lines = []
     for guess in sorted(guesses, key=lambda g: (not g.certain, g.raw)):
-        lines.append("%-24s -> %-22s %-26s %s"
-                     % (guess.raw, guess.field, guess.group or '',
-                        ('derived: ' if guess.certain else 'guessed: ') + guess.why))
+        lines.append(
+            "%-24s -> %-22s %-26s %s"
+            % (
+                guess.raw,
+                guess.field,
+                guess.group or '',
+                ('derived: ' if guess.certain else 'guessed: ') + guess.why,
+            )
+        )
     return lines

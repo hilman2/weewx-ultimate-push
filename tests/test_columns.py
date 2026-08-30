@@ -14,16 +14,24 @@ SCHEMA = {'dateTime', 'usUnits', 'interval', 'outTemp', 'soilTemp1', 'soilTemp2'
 
 
 def test_only_what_is_missing():
-    packet = {'dateTime': 1, 'usUnits': 1, 'outTemp': 59.7,
-              'soilTemp1': 66.2, 'soilTemp9': 61.5}
+    packet = {
+        'dateTime': 1,
+        'usUnits': 1,
+        'outTemp': 59.7,
+        'soilTemp1': 66.2,
+        'soilTemp9': 61.5,
+    }
 
     assert columns.missing(packet, {}, known=SCHEMA) == [('soilTemp9', 'REAL')]
 
 
 def test_counted_things_are_integers():
     packet = {'lightning_num': 0.0, 'lightning_time': 1787604643.0, 'vpd': 0.047}
-    groups = {'lightning_num': 'group_count', 'lightning_time': 'group_time',
-              'vpd': 'group_pressure'}
+    groups = {
+        'lightning_num': 'group_count',
+        'lightning_time': 'group_time',
+        'vpd': 'group_pressure',
+    }
 
     assert columns.missing(packet, groups, known=SCHEMA) == [
         ('lightning_num', 'INTEGER'),
@@ -44,8 +52,10 @@ def test_a_real_station_needs_a_manageable_number(payload):
 def test_commands_are_ready_to_paste():
     lines = columns.commands([('soilTemp9', 'REAL')], config='/etc/weewx/weewx.conf')
 
-    assert lines == ['weectl database add-column soilTemp9 --type REAL '
-                     '--config=/etc/weewx/weewx.conf -y']
+    assert lines == [
+        'weectl database add-column soilTemp9 --type REAL '
+        '--config=/etc/weewx/weewx.conf -y'
+    ]
 
 
 def test_the_standard_schema_is_what_we_compare_against():
@@ -71,12 +81,26 @@ def test_occupied_needs_a_database():
 def test_numbered_families_are_found_and_the_odd_ones_are_not():
     """extraTemp1..8 is a family. appTemp1, co2 and pm2_5 are one field each that
     happens to end in a digit, and offering appTemp2 would be an invention."""
-    found = columns.families({
-        'extraTemp1', 'extraTemp2', 'extraTemp3', 'extraTemp4',
-        'extraTemp5', 'extraTemp6', 'extraTemp7', 'extraTemp8',
-        'soilMoist1', 'soilMoist2', 'soilMoist3', 'soilMoist4',
-        'appTemp1', 'co2', 'pm2_5', 'outTemp',
-    })
+    found = columns.families(
+        {
+            'extraTemp1',
+            'extraTemp2',
+            'extraTemp3',
+            'extraTemp4',
+            'extraTemp5',
+            'extraTemp6',
+            'extraTemp7',
+            'extraTemp8',
+            'soilMoist1',
+            'soilMoist2',
+            'soilMoist3',
+            'soilMoist4',
+            'appTemp1',
+            'co2',
+            'pm2_5',
+            'outTemp',
+        }
+    )
 
     assert found['extraTemp'] == 8
     assert found['soilMoist'] == 4
@@ -121,6 +145,7 @@ def test_what_is_offered_carries_its_unit_group():
     would be a worse answer than not offering it."""
     pytest.importorskip('weewx', reason="WeeWX is not installed")
     import weewx.units
+
     columns.by_group()
 
     assert weewx.units.obs_group_dict.get('extraTemp12') == 'group_temperature'
@@ -135,22 +160,31 @@ def a_database(tmp_path):
     import configobj
     import weewx.manager
 
-    config = configobj.ConfigObj({
-        'WEEWX_ROOT': str(tmp_path),
-        'DatabaseTypes': {'SQLite': {'driver': 'weedb.sqlite',
-                                     'SQLITE_ROOT': str(tmp_path)}},
-        'Databases': {'archive_sqlite': {'database_type': 'SQLite',
-                                         'database_name': 'test.sdb'}},
-        'DataBindings': {'wx_binding': {
-            'database': 'archive_sqlite',
-            'table_name': 'archive',
-            'manager': 'weewx.manager.DaySummaryManager',
-            'schema': 'schemas.wview_extended.schema'}},
-    })
+    config = configobj.ConfigObj(
+        {
+            'WEEWX_ROOT': str(tmp_path),
+            'DatabaseTypes': {
+                'SQLite': {'driver': 'weedb.sqlite', 'SQLITE_ROOT': str(tmp_path)}
+            },
+            'Databases': {
+                'archive_sqlite': {
+                    'database_type': 'SQLite',
+                    'database_name': 'test.sdb',
+                }
+            },
+            'DataBindings': {
+                'wx_binding': {
+                    'database': 'archive_sqlite',
+                    'table_name': 'archive',
+                    'manager': 'weewx.manager.DaySummaryManager',
+                    'schema': 'schemas.wview_extended.schema',
+                }
+            },
+        }
+    )
     config.filename = str(tmp_path / 'weewx.conf')
     config.write()
-    with weewx.manager.open_manager_with_config(config, 'wx_binding',
-                                                initialize=True):
+    with weewx.manager.open_manager_with_config(config, 'wx_binding', initialize=True):
         pass
     return config.filename
 

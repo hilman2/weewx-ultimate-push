@@ -73,7 +73,15 @@ import threading
 import time
 import urllib.parse
 
+from typing import TYPE_CHECKING
+
 from . import columns, protocols, transport
+
+# For the docstring types only. The request class comes from whichever listener
+# the driver found; the bundled copy is byte for byte the same file, so the two
+# name one type.
+if TYPE_CHECKING:
+    import weewx.listener
 
 log = logging.getLogger(__name__)
 
@@ -144,7 +152,7 @@ class Doorman:
         Args:
             client (str): The address it came from.
             presented (str): The token the request carried.
-            now (float): The time to measure the window against. Defaults to the
+            now (float | None): The time to measure the window against. Defaults to the
                 current time, and is passed in by tests.
 
         Returns:
@@ -171,9 +179,13 @@ class Doorman:
             self._note(client, now)
             self.refused += 1
             if len(recent) == self.tries:
-                log.warning("%s has presented a wrong token %d times. It gets no "
-                            "answer from the web interface for the next %d seconds.",
-                            client, self.tries, self.window)
+                log.warning(
+                    "%s has presented a wrong token %d times. It gets no "
+                    "answer from the web interface for the next %d seconds.",
+                    client,
+                    self.tries,
+                    self.window,
+                )
         return 'wrong'
 
     def _recent(self, client, now):
@@ -221,7 +233,7 @@ class Doorman:
         without waiting for it.
 
         Args:
-            now (float): The time to measure the window against. Defaults to the
+            now (float | None): The time to measure the window against. Defaults to the
                 current time.
 
         Returns:
@@ -231,16 +243,21 @@ class Doorman:
         now = time.time() if now is None else now
         with self.lock:
             addresses = [
-                {'client': client,
-                 'wrong': count,
-                 'last': last,
-                 'blocked': len(self._recent(client, now)) >= self.tries}
+                {
+                    'client': client,
+                    'wrong': count,
+                    'last': last,
+                    'blocked': len(self._recent(client, now)) >= self.tries,
+                }
                 for client, (count, last) in self.knocking.items()
             ]
             refused = self.refused
-        return {'refused': refused,
-                'clients': sorted(addresses, key=lambda a: -a['last'])[:20],
-                'tries': self.tries, 'window': self.window}
+        return {
+            'refused': refused,
+            'clients': sorted(addresses, key=lambda a: -a['last'])[:20],
+            'tries': self.tries,
+            'window': self.window,
+        }
 
 
 class Site:
@@ -267,14 +284,14 @@ class Site:
         down with it.
 
         Args:
-            request: The request, as the listener hands it over.
+            request (weewx.listener.Request): The request, as the listener hands
+                it over.
 
         Returns:
             tuple: (body, content_type).
         """
         try:
-            standing = self.doorman.check(request.client_address,
-                                          _presented(request))
+            standing = self.doorman.check(request.client_address, _presented(request))
             if standing == 'blocked':
                 # The black hole. No explanation, no hint that the address is known,
                 # and nothing that costs us more than a dictionary lookup.
@@ -285,15 +302,19 @@ class Site:
                 return _json({'ok': False, 'error': "Wrong token."})
             return self._route(request)
         except Exception as e:
-            log.error("The web interface could not answer %s: %s",
-                      getattr(request, 'path', '?'), e, exc_info=True)
+            log.error(
+                "The web interface could not answer %s: %s",
+                getattr(request, 'path', '?'),
+                e,
+                exc_info=True,
+            )
             return _json({'ok': False, 'error': str(e)})
 
     def _route(self, request):
         """Work out which route a request is for, and answer it.
 
         Args:
-            request: The request.
+            request (weewx.listener.Request): The request.
 
         Returns:
             tuple: (body, content_type).
@@ -301,17 +322,22 @@ class Site:
         path = (request.path or '/').rstrip('/') or '/'
         if not path.startswith(API.rstrip('/')):
             from .page import PAGE
+
             return PAGE, HTML
 
-        route = path[len(API.rstrip('/')):].lstrip('/')
+        route = path[len(API.rstrip('/')) :].lstrip('/')
         query = dict(urllib.parse.parse_qsl(request.query or ''))
 
         if request.method == 'GET':
             return self._get(route, query)
         if request.method == 'POST':
             return self._post(route, _body(request))
-        return _json({'ok': False, 'error': "%s is not a method this answers to."
-                                            % request.method})
+        return _json(
+            {
+                'ok': False,
+                'error': "%s is not a method this answers to." % request.method,
+            }
+        )
 
     # ---- reading -------------------------------------------------------------
 
@@ -336,23 +362,36 @@ class Site:
         if route == 'stations':
             return _json(self.driver.web_stations_view())
         if route == 'before':
-            return _json(self.driver.web_before(
-                query.get('protocol', ''), query.get('role') or None,
-                query.get('channel') or None, query.get('ident') or None))
+            return _json(
+                self.driver.web_before(
+                    query.get('protocol', ''),
+                    query.get('role') or None,
+                    query.get('channel') or None,
+                    query.get('ident') or None,
+                )
+            )
         if route == 'station':
             found = self.driver.web_station(query.get('ident', ''))
             if found is None:
                 return _json({'ok': False, 'error': "No station by that name."})
             return _json(found)
         if route == 'raw':
-            return _json({'ok': True,
-                          'uploads': self.driver.activity.recent(
-                              query.get('ident', ''), transport.redact)})
+            return _json(
+                {
+                    'ok': True,
+                    'uploads': self.driver.activity.recent(
+                        query.get('ident', ''), transport.redact
+                    ),
+                }
+            )
         if route == 'waiting':
             return _json({'ok': True, 'stations': self.driver.web_waiting()})
         if route == 'columns':
-            return _json(self.driver.web_columns(
-                query.get('ident', ''), refresh=query.get('refresh') == 'yes'))
+            return _json(
+                self.driver.web_columns(
+                    query.get('ident', ''), refresh=query.get('refresh') == 'yes'
+                )
+            )
         if route == 'catalog':
             return _json(_catalog_of(query.get('protocol', '')))
         return _json({'ok': False, 'error': "No such route: %s" % route})
@@ -370,39 +409,56 @@ class Site:
             tuple: (body, content_type).
         """
         if route == 'create':
-            ok, answer = self.driver.web_create(body.get('protocol', ''),
-                                                body.get('name', ''),
-                                                role=body.get('role') or None,
-                                                channel=body.get('channel') or None,
-                                                force=bool(body.get('force')))
-            return _json({'ok': ok, 'station': answer} if ok
-                         else {'ok': False, 'message': answer})
+            ok, answer = self.driver.web_create(
+                body.get('protocol', ''),
+                body.get('name', ''),
+                role=body.get('role') or None,
+                channel=body.get('channel') or None,
+                force=bool(body.get('force')),
+            )
+            return _json(
+                {'ok': ok, 'station': answer}
+                if ok
+                else {'ok': False, 'message': answer}
+            )
         if route == 'accept':
             ok, message = self.driver.web_accept(
-                body.get('ident', ''), body.get('name'), body.get('infer_unknown'))
+                body.get('ident', ''), body.get('name'), body.get('infer_unknown')
+            )
             return _json({'ok': ok, 'message': message})
         if route == 'field':
-            return _json(self.driver.web_set_field(
-                body.get('ident', ''), body.get('raw', ''), body.get('field', ''),
-                force=bool(body.get('force'))))
+            return _json(
+                self.driver.web_set_field(
+                    body.get('ident', ''),
+                    body.get('raw', ''),
+                    body.get('field', ''),
+                    force=bool(body.get('force')),
+                )
+            )
         if route == 'add-column':
-            return _json(self.driver.web_add_column(body.get('field', ''),
-                                                    body.get('type')))
+            return _json(
+                self.driver.web_add_column(body.get('field', ''), body.get('type'))
+            )
         if route == 'role':
-            ok, message = self.driver.web_role(body.get('ident', ''),
-                                               body.get('role', ''),
-                                               force=bool(body.get('force')))
+            ok, message = self.driver.web_role(
+                body.get('ident', ''),
+                body.get('role', ''),
+                force=bool(body.get('force')),
+            )
             return _json({'ok': ok, 'message': message})
         if route == 'edit':
-            ok, message = self.driver.web_edit(body.get('ident', ''),
-                                               name=body.get('name'),
-                                               role=body.get('role') or None,
-                                               channel=body.get('channel') or None,
-                                               force=bool(body.get('force')))
+            ok, message = self.driver.web_edit(
+                body.get('ident', ''),
+                name=body.get('name'),
+                role=body.get('role') or None,
+                channel=body.get('channel') or None,
+                force=bool(body.get('force')),
+            )
             return _json({'ok': ok, 'message': message})
         if route == 'release':
-            ok, message = self.driver.web_release(body.get('ident', ''),
-                                                  body.get('field', ''))
+            ok, message = self.driver.web_release(
+                body.get('ident', ''), body.get('field', '')
+            )
             return _json({'ok': ok, 'message': message})
         if route == 'forget':
             ok, message = self.driver.web_forget(body.get('ident', ''))
@@ -417,7 +473,8 @@ def _presented(request):
     opened with one there and its own calls send the header afterwards.
 
     Args:
-        request: The request, as the listener hands it over.
+        request (weewx.listener.Request): The request, as the listener hands it
+            over.
 
     Returns:
         str: The token, from the header, the Authorization header or the query
@@ -428,7 +485,7 @@ def _presented(request):
     if not token:
         authorization = headers.get('authorization', '')
         if authorization.startswith('Bearer '):
-            token = authorization[len('Bearer '):].strip()
+            token = authorization[len('Bearer ') :].strip()
     if not token:
         token = dict(urllib.parse.parse_qsl(request.query or '')).get('token', '')
     return token
@@ -438,7 +495,7 @@ def _wants_html(request):
     """Whether a person is looking at this, rather than the page's own script.
 
     Args:
-        request: The request.
+        request (weewx.listener.Request): The request.
 
     Returns:
         bool: True for anything that is not an API call, which gets a page rather
@@ -447,21 +504,23 @@ def _wants_html(request):
     return not (request.path or '').startswith(API.rstrip('/'))
 
 
-REFUSED_PAGE = ("<!doctype html><meta charset=utf-8>"
-                "<title>weewx-ultimate-push</title>"
-                "<body style=\"font:15px system-ui;margin:3rem;max-width:32rem\">"
-                "<h1 style=\"font-size:1rem\">Wrong token.</h1>"
-                "<p>The address for this page ends in <code>?token=</code> and then "
-                "the token from the driver section of weewx.conf.</p>"
-                "<p style=\"color:#777\">After a few wrong ones this address stops "
-                "being answered for a while.</p>")
+REFUSED_PAGE = (
+    "<!doctype html><meta charset=utf-8>"
+    "<title>weewx-ultimate-push</title>"
+    "<body style=\"font:15px system-ui;margin:3rem;max-width:32rem\">"
+    "<h1 style=\"font-size:1rem\">Wrong token.</h1>"
+    "<p>The address for this page ends in <code>?token=</code> and then "
+    "the token from the driver section of weewx.conf.</p>"
+    "<p style=\"color:#777\">After a few wrong ones this address stops "
+    "being answered for a while.</p>"
+)
 
 
 def _body(request):
     """The JSON a POST carried.
 
     Args:
-        request: The request.
+        request (weewx.listener.Request): The request.
 
     Returns:
         dict: What it carried, or an empty dict when it carried nothing readable.
@@ -499,8 +558,11 @@ def _catalog_of(name):
     if protocol is None:
         return {'ok': False, 'error': "No protocol called '%s'." % name}
     dialect = protocol.dialect({})
-    return {'ok': True, 'protocol': name,
-            'fields': sorted(set(dialect.fields.values()))}
+    return {
+        'ok': True,
+        'protocol': name,
+        'fields': sorted(set(dialect.fields.values())),
+    }
 
 
 def schema_fields():
@@ -535,6 +597,7 @@ def lan_address():
     own weather station is.
     """
     import socket
+
     probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         probe.connect(('192.0.2.1', 9))
@@ -561,5 +624,8 @@ def url(address, port, token):
         str: The whole address, ready to paste into a browser.
     """
     host = address if address and address not in ('0.0.0.0', '::', '*') else None
-    return 'http://%s:%d/?token=%s' % (host or lan_address() or 'this-machine',
-                                       port, token)
+    return 'http://%s:%d/?token=%s' % (
+        host or lan_address() or 'this-machine',
+        port,
+        token,
+    )

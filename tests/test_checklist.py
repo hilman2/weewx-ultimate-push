@@ -19,29 +19,38 @@ import pytest
 
 pytest.importorskip('weewx', reason="WeeWX is not installed")
 
-from ultimatepush import checklist                      # noqa: E402
-from ultimatepush.driver import UltimatePushDriver      # noqa: E402
+from ultimatepush import checklist  # noqa: E402
+from ultimatepush.driver import UltimatePushDriver  # noqa: E402
 
 TOKEN = 'a-token-long-enough-to-pass'
 PASSKEY = '0000000000000000000000000000AAAA'
-PLACED = {'tf_ch1': 'extraTemp9', 'tf_ch2': 'extraTemp10',
-          'tf_batt1': 'wn34_ch1_batt', 'tf_batt2': 'wn34_ch2_batt',
-          'soil_ec_temp1': 'soilTemp1', 'lightning_time': 'lightning_time'}
+PLACED = {
+    'tf_ch1': 'extraTemp9',
+    'tf_ch2': 'extraTemp10',
+    'tf_batt1': 'wn34_ch1_batt',
+    'tf_batt2': 'wn34_ch2_batt',
+    'soil_ec_temp1': 'soilTemp1',
+    'lightning_time': 'lightning_time',
+}
 
 
 @pytest.fixture
 def station(tmp_path):
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='',
+        port=0,
+        address='127.0.0.1',
+        report_file='',
         console_file=str(tmp_path / 'consoles.txt'),
-        override_file=str(tmp_path / 'web.conf'))
+        override_file=str(tmp_path / 'web.conf'),
+    )
     yield made
     made.closePort()
 
 
 def upload(driver, body, path='/'):
-    connection = http.client.HTTPConnection('127.0.0.1', driver.listener.ports[0],
-                                            timeout=5)
+    connection = http.client.HTTPConnection(
+        '127.0.0.1', driver.listener.ports[0], timeout=5
+    )
     try:
         connection.request('POST', path, body)
         connection.getresponse().read()
@@ -105,8 +114,9 @@ def test_a_thing_to_type_is_never_a_sentence(station):
 def test_hardware_that_cannot_be_pointed_anywhere_says_so(station):
     """An Acurite bridge has no server field. Offering a table of settings would be
     inviting somebody to look for one that is not there."""
-    acurite = [p for p in step(station, 'hardware')['protocols']
-               if p['name'] == 'acurite'][0]
+    acurite = [
+        p for p in step(station, 'hardware')['protocols'] if p['name'] == 'acurite'
+    ][0]
 
     assert acurite['settings'] == []
     assert any('myacurite' in note for note in acurite['notes'])
@@ -180,10 +190,19 @@ def test_a_station_left_at_the_north_pole_is_told_so(tmp_path):
     """Sunrise, sunset and every solar figure come from this, and nothing else in
     WeeWX says out loud that it was never set."""
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='',
-        console_file=str(tmp_path / 'c.txt'), override_file=str(tmp_path / 'w.conf'),
-        config_dict={'Station': {'location': "Santa's Workshop",
-                                 'latitude': '0.0', 'longitude': '0.0'}})
+        port=0,
+        address='127.0.0.1',
+        report_file='',
+        console_file=str(tmp_path / 'c.txt'),
+        override_file=str(tmp_path / 'w.conf'),
+        config_dict={
+            'Station': {
+                'location': "Santa's Workshop",
+                'latitude': '0.0',
+                'longitude': '0.0',
+            }
+        },
+    )
     try:
         location = [s for s in made.web_setup()['steps'] if s['id'] == 'location'][0]
     finally:
@@ -196,10 +215,19 @@ def test_a_station_left_at_the_north_pole_is_told_so(tmp_path):
 
 def test_a_station_that_knows_where_it_is_passes(tmp_path):
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='',
-        console_file=str(tmp_path / 'c.txt'), override_file=str(tmp_path / 'w.conf'),
-        config_dict={'Station': {'location': 'Kirchdorf an der Amper',
-                                 'latitude': '48.4596', 'longitude': '11.6539'}})
+        port=0,
+        address='127.0.0.1',
+        report_file='',
+        console_file=str(tmp_path / 'c.txt'),
+        override_file=str(tmp_path / 'w.conf'),
+        config_dict={
+            'Station': {
+                'location': 'Kirchdorf an der Amper',
+                'latitude': '48.4596',
+                'longitude': '11.6539',
+            }
+        },
+    )
     try:
         location = [s for s in made.web_setup()['steps'] if s['id'] == 'location'][0]
     finally:
@@ -224,10 +252,19 @@ def test_without_a_configuration_the_location_is_not_claimed_to_be_wrong(station
 def test_it_reaches_done(tmp_path, payload):
     """With everything answered, it stops asking and stays as a health page."""
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='',
-        console_file=str(tmp_path / 'c.txt'), override_file=str(tmp_path / 'w.conf'),
-        config_dict={'Station': {'location': 'Kirchdorf', 'latitude': '48.4',
-                                 'longitude': '11.6'}})
+        port=0,
+        address='127.0.0.1',
+        report_file='',
+        console_file=str(tmp_path / 'c.txt'),
+        override_file=str(tmp_path / 'w.conf'),
+        config_dict={
+            'Station': {
+                'location': 'Kirchdorf',
+                'latitude': '48.4',
+                'longitude': '11.6',
+            }
+        },
+    )
     try:
         send(made, payload('hp2561ae_pro'))
         for raw, field in PLACED.items():
@@ -256,8 +293,9 @@ class _Nothing:
     """A driver that has heard nothing, for checking the shape of the answer."""
 
     enabled = []
-    activity = type('L', (), {'snapshot': lambda self: [],
-                              'unknown_stations': lambda self, r: []})()
+    activity = type(
+        'L', (), {'snapshot': lambda self: [], 'unknown_stations': lambda self, r: []}
+    )()
     web_stations = {}
     overrides = type('O', (), {'stations': lambda self: {}})()
 

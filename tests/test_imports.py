@@ -44,8 +44,13 @@ WITHOUT_WEEWX = [
 ]
 # The listener is WeeWX's own file, bundled here for older installations. It uses
 # weeutil, as the core copy does, so it needs WeeWX like the driver does.
-WITH_WEEWX = ['ultimatepush.driver', 'ultimatepush.server', 'ultimatepush.admin',
-              'ultimatepush.__main__', 'user.listener']
+WITH_WEEWX = [
+    'ultimatepush.driver',
+    'ultimatepush.server',
+    'ultimatepush.admin',
+    'ultimatepush.__main__',
+    'user.listener',
+]
 
 
 @pytest.mark.parametrize('name', WITHOUT_WEEWX)
@@ -89,8 +94,17 @@ def test_the_command_line_reads_an_upload(tmp_path, capsys):
     result = {}
 
     def run():
-        result['code'] = main(['--port', str(port), '--address', '127.0.0.1',
-                               '--timeout', '20', '--no-database'])
+        result['code'] = main(
+            [
+                '--port',
+                str(port),
+                '--address',
+                '127.0.0.1',
+                '--timeout',
+                '20',
+                '--no-database',
+            ]
+        )
 
     runner = threading.Thread(target=run)
     runner.start()
@@ -98,10 +112,14 @@ def test_the_command_line_reads_an_upload(tmp_path, capsys):
         for _ in range(100):
             try:
                 connection = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
-                connection.request('POST', '/', 'PASSKEY=ABC&stationtype=GW2000A'
-                                                '&tempf=59.7&baromrelin=29.92')
-                assert connection.getresponse().read() == \
-                    b'{"errcode":"0","errmsg":"ok"}'
+                connection.request(
+                    'POST',
+                    '/',
+                    'PASSKEY=ABC&stationtype=GW2000A' '&tempf=59.7&baromrelin=29.92',
+                )
+                assert (
+                    connection.getresponse().read() == b'{"errcode":"0","errmsg":"ok"}'
+                )
                 connection.close()
                 break
             except OSError:

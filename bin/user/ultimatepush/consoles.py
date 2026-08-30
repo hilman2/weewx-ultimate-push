@@ -66,9 +66,9 @@ def path_for(weewx_root=None, configured=None, sqlite_root=None):
     belongs to root and the driver cannot write there at all.
 
     Args:
-        weewx_root (str): The WeeWX root directory, when there is one.
-        configured (str): A path set in weewx.conf, which wins over everything else.
-        sqlite_root (str): Where the SQLite database lives, when it is SQLite.
+        weewx_root (str | None): The WeeWX root directory, when there is one.
+        configured (str | None): A path set in weewx.conf, which wins over everything else.
+        sqlite_root (str | None): Where the SQLite database lives, when it is SQLite.
 
     Returns:
         str: The path to the file.
@@ -115,7 +115,7 @@ class Store:
             note (str): Why it was recorded, kept beside it in the file.
 
         Returns:
-            str: Where it went, 'database' or the path of the file, or None if it
+            str | None: Where it went, 'database' or the path of the file, or None if it
             could not be recorded anywhere.
         """
         known = self.read()
@@ -133,11 +133,14 @@ class Store:
             return None
         try:
             import weewx.manager
-            return weewx.manager.open_manager_with_config(self.config_dict,
-                                                          self.binding)
+
+            return weewx.manager.open_manager_with_config(
+                self.config_dict, self.binding
+            )
         except Exception as e:
-            log.debug("No database to keep the console list in (%s). Using %s.",
-                      e, self.path)
+            log.debug(
+                "No database to keep the console list in (%s). Using %s.", e, self.path
+            )
             return None
 
     def _from_database(self):
@@ -185,8 +188,9 @@ def _read_file(path):
     """
     try:
         with open(path, encoding='utf-8') as fd:
-            return [line.split('#')[0].strip() for line in fd
-                    if line.split('#')[0].strip()]
+            return [
+                line.split('#')[0].strip() for line in fd if line.split('#')[0].strip()
+            ]
     except OSError:
         return []
 
@@ -212,9 +216,12 @@ def _write_file(path, passkey, note=''):
                 fd.write(HEADER)
             fd.write('%s%s\n' % (passkey, ('    # %s' % note) if note else ''))
     except OSError as e:
-        log.error("Cannot record the console in %s: %s. It will have to be learned "
-                  "again after a restart, or set 'passkey' in the driver section.",
-                  path, e)
+        log.error(
+            "Cannot record the console in %s: %s. It will have to be learned "
+            "again after a restart, or set 'passkey' in the driver section.",
+            path,
+            e,
+        )
         return False
     return True
 

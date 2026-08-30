@@ -28,17 +28,36 @@ import logging
 import re
 import time
 import urllib.parse
+from typing import Any, Dict, Optional
 
 log = logging.getLogger(__name__)
 
 # Fields that name the device rather than measure anything, in any protocol. A
 # protocol adds its own on top; this is the floor, so that a field common to several
 # of them does not have to be repeated in each.
-METADATA = frozenset([
-    'PASSKEY', 'stationtype', 'model', 'freq', 'dateutc', 'ID', 'PASSWORD',
-    'action', 'realtime', 'rtfreq', 'softwaretype', 'runtime', 'heap', 'interval',
-    'mac', 'macAddress', 'serial_number', 'hub_sn', 'firmware_revision',
-])
+METADATA = frozenset(
+    [
+        'PASSKEY',
+        'stationtype',
+        'model',
+        'freq',
+        'dateutc',
+        'ID',
+        'PASSWORD',
+        'action',
+        'realtime',
+        'rtfreq',
+        'softwaretype',
+        'runtime',
+        'heap',
+        'interval',
+        'mac',
+        'macAddress',
+        'serial_number',
+        'hub_sn',
+        'firmware_revision',
+    ]
+)
 
 # Values that mean "the sensor had nothing to report". Every protocol has at least
 # one; Fine Offset firmwares add -9999, which is a protocol's own business.
@@ -103,13 +122,13 @@ def device_time(raw, now=None, max_behind=MAX_BEHIND, max_ahead=MAX_AHEAD):
 
     Args:
         raw (dict): The upload, which may or may not carry `dateutc`.
-        now (float): The time to measure against. Defaults to the current time.
+        now (float | None): The time to measure against. Defaults to the current time.
         max_behind (int): How many seconds behind `now` the console's time may be
             and still be used.
         max_ahead (int): The same, for a console whose clock runs fast.
 
     Returns:
-        float: Seconds since the epoch, or None when the console sent no time or
+        float | None: Seconds since the epoch, or None when the console sent no time or
         sent one outside the window. The caller then uses its own clock.
     """
     stamp = raw.get('dateutc')
@@ -127,10 +146,13 @@ def device_time(raw, now=None, max_behind=MAX_BEHIND, max_ahead=MAX_AHEAD):
         now = time.time()
     behind = now - seconds
     if behind > max_behind or -behind > max_ahead:
-        log.warning("Device time %s is %s %s than ours, past what %s allows. Using "
-                    "ours.", stamp, _how_far(abs(behind)),
-                    "behind" if behind > 0 else "ahead",
-                    "max_behind" if behind > 0 else "max_ahead")
+        log.warning(
+            "Device time %s is %s %s than ours, past what %s allows. Using " "ours.",
+            stamp,
+            _how_far(abs(behind)),
+            "behind" if behind > 0 else "ahead",
+            "max_behind" if behind > 0 else "max_ahead",
+        )
         return None
     return seconds
 
@@ -157,13 +179,14 @@ def _timegm(parsed):
     """Seconds since the epoch for a struct_time that is already UTC.
 
     Args:
-        parsed (struct_time): A time already known to be UTC, so that the local
-            timezone is not applied to it.
+        parsed (time.struct_time): A time already known to be UTC, so that the
+            local timezone is not applied to it.
 
     Returns:
         float: Seconds since the epoch.
     """
     import calendar
+
     return calendar.timegm(parsed)
 
 
@@ -191,8 +214,8 @@ def numbers(raw, metadata=METADATA, absent=()):
         could not.
     """
     empty = ABSENT + tuple(absent)
-    readings = {}
-    text = {}
+    readings = {}  # type: Dict[str, Optional[float]]
+    text = {}  # type: Dict[str, Any]
     for name, value in raw.items():
         if name in metadata:
             text[name] = value
@@ -213,9 +236,18 @@ def numbers(raw, metadata=METADATA, absent=()):
 # Values that name a station rather than describe the weather. A payload is going to
 # be pasted into an issue tracker sooner or later, and these are what somebody else
 # could use to impersonate the station or find it.
-SECRETS = ('PASSKEY', 'ID', 'PASSWORD', 'key', 'stationkey', 'mac', 'macAddress',
-           'id',
-           'serial_number', 'hub_sn')
+SECRETS = (
+    'PASSKEY',
+    'ID',
+    'PASSWORD',
+    'key',
+    'stationkey',
+    'mac',
+    'macAddress',
+    'id',
+    'serial_number',
+    'hub_sn',
+)
 
 
 def redact(text):
@@ -232,12 +264,10 @@ def redact(text):
         is safe to attach to an issue.
     """
     for name in SECRETS:
-        text = re.sub(r'(^|[?&])%s=[^&]*' % re.escape(name),
-                      r'\g<1>%s=X' % name, text)
+        text = re.sub(r'(^|[?&])%s=[^&]*' % re.escape(name), r'\g<1>%s=X' % name, text)
         # WeatherFlow sends JSON, where the same values are quoted rather than
         # urlencoded. One pass over both shapes, so a datagram is as safe to paste.
-        text = re.sub(r'("%s"\s*:\s*)"[^"]*"' % re.escape(name),
-                      r'\g<1>"X"', text)
+        text = re.sub(r'("%s"\s*:\s*)"[^"]*"' % re.escape(name), r'\g<1>"X"', text)
     return text
 
 
@@ -254,5 +284,6 @@ def same_secret(presented, expected):
     Returns:
         bool: Whether they match.
     """
-    return hmac.compare_digest(str(presented).encode('utf-8'),
-                               str(expected).encode('utf-8'))
+    return hmac.compare_digest(
+        str(presented).encode('utf-8'), str(expected).encode('utf-8')
+    )

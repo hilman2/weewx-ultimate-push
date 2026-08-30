@@ -29,24 +29,24 @@ Source: WeatherFlow Tempest UDP reference v171,
 LAYOUTS = {
     # Tempest, the all-in-one. 18 values.
     'obs_st': (
-        'time_epoch',              # seconds
-        'wind_lull',               # m/s, the minimum over the sample interval
-        'wind_avg',                # m/s
-        'wind_gust',               # m/s
-        'wind_direction',          # degrees
-        'wind_sample_interval',    # seconds
-        'station_pressure',        # mb
-        'air_temperature',         # C
-        'relative_humidity',       # %
-        'illuminance',             # lux
-        'uv',                      # index
-        'solar_radiation',         # W/m2
-        'rain_amount',             # mm, over the report interval
-        'precipitation_type',      # 0 none, 1 rain, 2 hail, 3 rain and hail
+        'time_epoch',  # seconds
+        'wind_lull',  # m/s, the minimum over the sample interval
+        'wind_avg',  # m/s
+        'wind_gust',  # m/s
+        'wind_direction',  # degrees
+        'wind_sample_interval',  # seconds
+        'station_pressure',  # mb
+        'air_temperature',  # C
+        'relative_humidity',  # %
+        'illuminance',  # lux
+        'uv',  # index
+        'solar_radiation',  # W/m2
+        'rain_amount',  # mm, over the report interval
+        'precipitation_type',  # 0 none, 1 rain, 2 hail, 3 rain and hail
         'lightning_avg_distance',  # km
-        'lightning_count',         # strikes over the report interval
-        'st_battery',              # volts
-        'report_interval',         # minutes
+        'lightning_count',  # strikes over the report interval
+        'st_battery',  # volts
+        'report_interval',  # minutes
     ),
     # AIR: temperature, humidity, pressure, lightning. 8 values.
     'obs_air': (
@@ -72,7 +72,7 @@ LAYOUTS = {
         'sky_battery',
         'report_interval',
         'solar_radiation',
-        'local_day_rain',          # mm since local midnight
+        'local_day_rain',  # mm since local midnight
         'precipitation_type',
         'wind_sample_interval',
     ),
@@ -86,12 +86,10 @@ LAYOUTS = {
     'evt_strike': (
         'time_epoch',
         'lightning_avg_distance',  # this strike's distance, km
-        'lightning_energy',        # unitless, WeatherFlow gives no scale
+        'lightning_energy',  # unitless, WeatherFlow gives no scale
     ),
     # Rain has started. Nothing is measured, so nothing is mapped.
-    'evt_precip': (
-        'time_epoch',
-    ),
+    'evt_precip': ('time_epoch',),
 }
 
 # The status messages are objects rather than arrays, so they need no layout. These
@@ -107,34 +105,28 @@ FIELDS = {
     # from it and the altitude, which is the right way round: the altitude is in
     # weewx.conf and the station does not know it.
     'station_pressure': 'pressure',
-
     'wind_avg': 'windSpeed',
     'wind_gust': 'windGust',
     'wind_direction': 'windDir',
     'wind_lull': 'windLull',
     'wind_sample_interval': 'windSampleInterval',
-
     # Already the amount since the last report, which is what WeeWX means by 'rain'.
     # Every other protocol here sends running counters that StdDelta has to difference;
     # this one does not, and must not be differenced again.
     'rain_amount': 'rain',
     'local_day_rain': 'dayRain',
     'precipitation_type': 'precipType',
-
     'illuminance': 'illuminance',
     'uv': 'UV',
     'solar_radiation': 'radiation',
-
     # Strikes since the last report, which is exactly what this WeeWX field is.
     'lightning_count': 'lightning_strike_count',
     'lightning_avg_distance': 'lightning_distance',
     'lightning_energy': 'lightning_energy',
-
     'st_battery': 'st_batt',
     'air_battery': 'air_batt',
     'sky_battery': 'sky_batt',
     'report_interval': 'ws_interval',
-
     'uptime': 'wf_uptime',
     'voltage': 'wf_voltage',
     'rssi': 'wf_rssi',
@@ -165,5 +157,5 @@ GROUPS = {
 SCALE = {
     # Minutes. group_deltatime is seconds, and the Ecowitt catalog already puts its
     # own upload interval in this column in seconds.
-    'report_interval': 60,
+    'report_interval': 60.0,
 }

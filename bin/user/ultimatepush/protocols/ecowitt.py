@@ -26,8 +26,10 @@ class Ecowitt(Protocol):
 
     name = 'ecowitt'
     label = 'Ecowitt'
-    hardware = ('GW1000, GW1100, GW1200, GW2000, GW3000, HP2551, HP2561, WS3800, '
-                'WS3900, WS3910, WN1980 and their relatives')
+    hardware = (
+        'GW1000, GW1100, GW1200, GW2000, GW3000, HP2551, HP2561, WS3800, '
+        'WS3900, WS3910, WN1980 and their relatives'
+    )
 
     # The path is whatever the user typed into WSView, so this protocol claims none.
     paths = ()
@@ -52,10 +54,18 @@ class Ecowitt(Protocol):
     identity = ('PASSKEY',)
     secret_kind = 'path'
 
-    metadata = frozenset([
-        'PASSKEY', 'stationtype', 'model', 'freq', 'dateutc', 'runtime', 'heap',
-        'interval',
-    ])
+    metadata = frozenset(
+        [
+            'PASSKEY',
+            'stationtype',
+            'model',
+            'freq',
+            'dateutc',
+            'runtime',
+            'heap',
+            'interval',
+        ]
+    )
 
     fields = _catalog.FIELDS
     groups = _catalog.GROUPS

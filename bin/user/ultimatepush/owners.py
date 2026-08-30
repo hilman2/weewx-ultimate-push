@@ -59,7 +59,7 @@ class Register:
             field (str): A WeeWX field name, such as `outTemp`.
 
         Returns:
-            str: The station's identity, or None if the column is free.
+            str | None: The station's identity, or None if the column is free.
         """
         return self.owned.get(field)
 
@@ -111,7 +111,7 @@ class Register:
             field (str): The column to release.
 
         Returns:
-            str: The identity that held it, or None if nobody did.
+            str | None: The identity that held it, or None if nobody did.
         """
         return self.owned.pop(field, None)
 

@@ -21,20 +21,26 @@ weewx = pytest.importorskip('weewx', reason="WeeWX is not installed")
 
 from ultimatepush.driver import UltimatePushDriver  # noqa: E402  (after the skip)
 
-
 # A WN34 channel goes nowhere until somebody says where. These tests say.
 PLACED = {'tf_ch1': 'extraTemp9', 'tf_ch2': 'extraTemp10'}
 
 
 @pytest.fixture
 def driver():
-    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, field_map_extensions=PLACED)
+    made = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        passkey=FIXTURE_PASSKEY,
+        field_map_extensions=PLACED,
+    )
     yield made
     made.closePort()
 
 
 def upload(driver, body):
-    connection = http.client.HTTPConnection('127.0.0.1', driver.listener.port, timeout=5)
+    connection = http.client.HTTPConnection(
+        '127.0.0.1', driver.listener.port, timeout=5
+    )
     try:
         connection.request('POST', '/', body)
         response = connection.getresponse()
@@ -66,8 +72,13 @@ def test_new_fields_reach_the_unit_system(payload):
     """
     import weewx.units
 
-    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, infer_unknown='all',
-                         field_map_extensions=PLACED)
+    made = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        passkey=FIXTURE_PASSKEY,
+        infer_unknown='all',
+        field_map_extensions=PLACED,
+    )
     try:
         upload(made, 'PASSKEY=%s&soilmoisture17=30&tempf=59.7' % FIXTURE_PASSKEY)
         packet = next(made.genLoopPackets())
@@ -88,7 +99,9 @@ def test_an_empty_upload_yields_no_packet(driver):
 
 
 def test_the_hardware_name_is_configurable():
-    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, model='HP2561AE Pro')
+    made = UltimatePushDriver(
+        port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, model='HP2561AE Pro'
+    )
     try:
         assert made.hardware_name == 'HP2561AE Pro'
     finally:
@@ -98,7 +111,9 @@ def test_the_hardware_name_is_configurable():
 def test_the_driver_leaves_a_report(tmp_path, payload):
     """Getting a raw upload should not mean reconfiguring the console."""
     path = str(tmp_path / 'report.txt')
-    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=path)
+    made = UltimatePushDriver(
+        port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=path
+    )
     try:
         upload(made, payload('hp2561ae_pro'))
         next(made.genLoopPackets())
@@ -114,7 +129,9 @@ def test_the_driver_leaves_a_report(tmp_path, payload):
 
 def test_the_report_is_written_once(tmp_path, payload):
     path = str(tmp_path / 'report.txt')
-    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=path)
+    made = UltimatePushDriver(
+        port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=path
+    )
     try:
         upload(made, payload('hp2561ae_pro'))
         next(made.genLoopPackets())
@@ -129,7 +146,9 @@ def test_the_report_is_written_once(tmp_path, payload):
 
 def test_reporting_can_be_switched_off(tmp_path, payload):
     path = str(tmp_path / 'report.txt')
-    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file='')
+    made = UltimatePushDriver(
+        port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=''
+    )
     try:
         upload(made, payload('hp2561ae_pro'))
         next(made.genLoopPackets())
@@ -141,7 +160,9 @@ def test_reporting_can_be_switched_off(tmp_path, payload):
 
 def test_a_station_with_nothing_unknown_leaves_no_report(tmp_path):
     path = str(tmp_path / 'report.txt')
-    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=path)
+    made = UltimatePushDriver(
+        port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY, report_file=path
+    )
     try:
         upload(made, 'PASSKEY=%s&tempf=59.7&humidity=82' % FIXTURE_PASSKEY)
         next(made.genLoopPackets())
@@ -153,6 +174,7 @@ def test_a_station_with_nothing_unknown_leaves_no_report(tmp_path):
 
 # ------------------------------------------------------- the console's own clock
 
+
 def test_a_late_upload_keeps_the_time_it_was_taken(payload):
     """A reading held up on the way in still belongs to the minute it was taken.
 
@@ -162,12 +184,17 @@ def test_a_late_upload_keeps_the_time_it_was_taken(payload):
     import calendar
     import time
 
-    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY,
-                         field_map_extensions=PLACED)
+    made = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        passkey=FIXTURE_PASSKEY,
+        field_map_extensions=PLACED,
+    )
     try:
         body = payload('hp2561ae_pro')
-        sent = calendar.timegm(time.strptime('2026-08-25 11:06:42',
-                                             '%Y-%m-%d %H:%M:%S'))
+        sent = calendar.timegm(
+            time.strptime('2026-08-25 11:06:42', '%Y-%m-%d %H:%M:%S')
+        )
         _p, _s, mapper, raw = made.reading_for(FakeRequest(body))
         packet, _ = mapper.to_packet(raw, now=sent + 20 * 60)
         assert packet['dateTime'] == sent
@@ -180,12 +207,18 @@ def test_the_clock_window_comes_from_the_configuration(payload):
     import calendar
     import time
 
-    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY,
-                         field_map_extensions=PLACED, max_behind=2 * 86400)
+    made = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        passkey=FIXTURE_PASSKEY,
+        field_map_extensions=PLACED,
+        max_behind=2 * 86400,
+    )
     try:
         body = payload('hp2561ae_pro')
-        sent = calendar.timegm(time.strptime('2026-08-25 11:06:42',
-                                             '%Y-%m-%d %H:%M:%S'))
+        sent = calendar.timegm(
+            time.strptime('2026-08-25 11:06:42', '%Y-%m-%d %H:%M:%S')
+        )
         _p, _s, mapper, raw = made.reading_for(FakeRequest(body))
         packet, _ = mapper.to_packet(raw, now=sent + 86400)
         assert packet['dateTime'] == sent
@@ -197,12 +230,17 @@ def test_a_console_whose_clock_is_wrong_falls_back_to_arrival(payload):
     import calendar
     import time
 
-    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY,
-                         field_map_extensions=PLACED)
+    made = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        passkey=FIXTURE_PASSKEY,
+        field_map_extensions=PLACED,
+    )
     try:
         body = payload('hp2561ae_pro')
-        sent = calendar.timegm(time.strptime('2026-08-25 11:06:42',
-                                             '%Y-%m-%d %H:%M:%S'))
+        sent = calendar.timegm(
+            time.strptime('2026-08-25 11:06:42', '%Y-%m-%d %H:%M:%S')
+        )
         arrived = sent + 365 * 86400
         _p, _s, mapper, raw = made.reading_for(FakeRequest(body))
         packet, _ = mapper.to_packet(raw, now=arrived)
@@ -219,19 +257,29 @@ def test_one_port_serves_two_protocols(payload):
     same second. Each has to read the answer its own firmware expects, or it counts
     the upload as failed and eventually stops uploading.
     """
-    made = UltimatePushDriver(port=0, address='127.0.0.1', passkey=FIXTURE_PASSKEY,
-                              report_file='', field_map_extensions=PLACED)
+    made = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        passkey=FIXTURE_PASSKEY,
+        report_file='',
+        field_map_extensions=PLACED,
+    )
     try:
         port = made.listener.port
-        ecowitt = upload(made, 'PASSKEY=%s&stationtype=GW2000A_V3.1.5&tempf=59.7'
-                               '&baromrelin=29.92' % FIXTURE_PASSKEY)
+        ecowitt = upload(
+            made,
+            'PASSKEY=%s&stationtype=GW2000A_V3.1.5&tempf=59.7'
+            '&baromrelin=29.92' % FIXTURE_PASSKEY,
+        )
         assert ecowitt == (200, b'{"errcode":"0","errmsg":"ok"}')
 
         connection = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
         try:
             connection.request(
-                'GET', '/weatherstation/updateweatherstation.php?ID=%s&PASSWORD=x'
-                       '&tempf=43.3&baromin=29.05&indoortempf=76.5' % FIXTURE_PASSKEY)
+                'GET',
+                '/weatherstation/updateweatherstation.php?ID=%s&PASSWORD=x'
+                '&tempf=43.3&baromin=29.05&indoortempf=76.5' % FIXTURE_PASSKEY,
+            )
             response = connection.getresponse()
             assert (response.status, response.read()) == (200, b'success')
             assert response.getheader('Content-Type') == 'text/plain'
@@ -258,15 +306,45 @@ def test_a_broadcast_and_a_post_reach_the_same_loop():
     import json
     import socket
 
-    made = UltimatePushDriver(port=0, address='127.0.0.1', udp_port=0,
-                              protocols='ecowitt, weatherflow',
-                              passkey='HB-00013030', report_file='')
+    made = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        udp_port=0,
+        protocols='ecowitt, weatherflow',
+        passkey='HB-00013030',
+        report_file='',
+    )
     try:
         assert len(made.listener.ports) == 2
-        datagram = json.dumps({
-            'serial_number': 'ST-1', 'type': 'obs_st', 'hub_sn': 'HB-00013030',
-            'obs': [[1588948614, 0.18, 0.22, 0.27, 144, 6, 1017.57, 22.37, 50.26,
-                     328, 0.03, 3, 0.5, 0, 0, 0, 2.41, 1]]})
+        datagram = json.dumps(
+            {
+                'serial_number': 'ST-1',
+                'type': 'obs_st',
+                'hub_sn': 'HB-00013030',
+                'obs': [
+                    [
+                        1588948614,
+                        0.18,
+                        0.22,
+                        0.27,
+                        144,
+                        6,
+                        1017.57,
+                        22.37,
+                        50.26,
+                        328,
+                        0.03,
+                        3,
+                        0.5,
+                        0,
+                        0,
+                        0,
+                        2.41,
+                        1,
+                    ]
+                ],
+            }
+        )
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             sock.sendto(datagram.encode(), ('127.0.0.1', made.listener.ports[1]))
@@ -288,3 +366,29 @@ def test_a_protocol_this_driver_does_not_know_is_refused_at_startup():
 
     assert 'davis' in str(caught.value)
     assert 'ecowitt' in str(caught.value)
+
+
+def test_metric_wind_reaches_the_protocol():
+    """The option the documentation gives for wind that is out by a factor of 3.6.
+
+    It reads its choices out of the catalog and sets an attribute on the protocol,
+    which are two different modules with the same name. Getting that wrong raised
+    AttributeError from the constructor, and no test went through this path: the
+    others set WeatherUnderground.metric_wind directly.
+    """
+    from ultimatepush.protocols.wunderground import WeatherUnderground
+
+    made = UltimatePushDriver(port=0, address='127.0.0.1', metric_wind='mps')
+    try:
+        assert WeatherUnderground.metric_wind == 'mps'
+    finally:
+        WeatherUnderground.metric_wind = 'kph'
+        made.closePort()
+
+
+def test_an_unknown_metric_wind_is_refused_at_startup():
+    with pytest.raises(ValueError) as caught:
+        UltimatePushDriver(port=0, address='127.0.0.1', metric_wind='knots')
+
+    assert 'knots' in str(caught.value)
+    assert 'kph' in str(caught.value)

@@ -63,12 +63,22 @@ def test_every_field_the_specification_names_is_in_the_catalog(payload):
     named = spec_field_names(payload('wunderground/spec'))
     # The ones that identify the upload rather than measure anything, plus the two
     # free-text ones, which are not readings.
-    named -= {'action', 'ID', 'PASSWORD', 'dateutc', 'weather', 'clouds',
-              'softwaretype'}
+    named -= {
+        'action',
+        'ID',
+        'PASSWORD',
+        'dateutc',
+        'weather',
+        'clouds',
+        'softwaretype',
+    }
 
     missing = named - set(catalog.FIELDS)
-    assert not missing, "the specification names these and the catalog does not: %s" \
-                        % ', '.join(sorted(missing))
+    assert (
+        not missing
+    ), "the specification names these and the catalog does not: %s" % ', '.join(
+        sorted(missing)
+    )
     assert len(named) > 40, "the specification was not read properly"
 
 
@@ -87,11 +97,11 @@ def test_an_observer_upload_keeps_what_other_drivers_drop(payload):
     packet, dialect, _ = packet_of(payload('wunderground/observer_imperial'))
 
     assert dialect.units == protocols.US
-    assert packet['barometer'] == 29.05      # baromin, absent from the Ecowitt catalog
-    assert packet['inTemp'] == 76.5          # indoortempf, likewise
-    assert packet['inHumidity'] == 49.0      # indoorhumidity, likewise
-    assert packet['hourRain'] == 0.0         # rainin, the last 60 minutes
-    assert packet['UV'] == 0.0               # capitalised, likewise
+    assert packet['barometer'] == 29.05  # baromin, absent from the Ecowitt catalog
+    assert packet['inTemp'] == 76.5  # indoortempf, likewise
+    assert packet['inHumidity'] == 49.0  # indoorhumidity, likewise
+    assert packet['hourRain'] == 0.0  # rainin, the last 60 minutes
+    assert packet['UV'] == 0.0  # capitalised, likewise
     assert packet['outTemp'] == 43.3
     assert packet['yearRain'] == 0.91
 
@@ -112,10 +122,10 @@ def test_an_ecowitt_console_in_wunderground_mode(payload):
     packet, _, _ = packet_of(payload('wunderground/easyweather_hp2550'))
 
     assert packet['outTemp'] == 55.2
-    assert packet['soilMoist1'] == 52.0      # soilmoisture, no channel number
-    assert packet['pm2_5'] == 309.0          # AqPM2.5, a name with a dot in it
+    assert packet['soilMoist1'] == 52.0  # soilmoisture, no channel number
+    assert packet['pm2_5'] == 309.0  # AqPM2.5, a name with a dot in it
     assert packet['barometer'] == 29.729
-    assert packet['pressure'] == 29.729      # absbaromin, sent as well
+    assert packet['pressure'] == 29.729  # absbaromin, sent as well
 
 
 # ---------------------------------------------------------------- missing values
@@ -147,17 +157,17 @@ def test_the_metric_dialect_is_recognised_by_its_names(payload):
 
     assert dialect.name == 'wunderground/metric'
     assert dialect.units == protocols.METRIC
-    assert packet['inTemp'] == 22.8          # intemp, Celsius
+    assert packet['inTemp'] == 22.8  # intemp, Celsius
     assert packet['outTemp'] == 1.4
-    assert packet['pressure'] == 1009.5      # absbaro, hPa
-    assert packet['barometer'] == 1033.4     # relbaro
+    assert packet['pressure'] == 1009.5  # absbaro, hPa
+    assert packet['barometer'] == 1033.4  # relbaro
 
 
 def test_the_metric_dialect_converts_rain_to_what_weewx_metric_keeps(payload):
     """The console sends millimetres. weewx.METRIC keeps centimetres."""
     packet, _, _ = packet_of(payload('wunderground/observer_metric'))
 
-    assert packet['weekRain'] == pytest.approx(1.05)     # 10.5 mm
+    assert packet['weekRain'] == pytest.approx(1.05)  # 10.5 mm
     assert packet['monthRain'] == pytest.approx(1.05)
 
 
@@ -173,7 +183,7 @@ def test_uv_is_not_an_index_in_the_metric_dialect(payload):
 
     assert 'UV' not in packet
     assert packet['uvradiation'] == pytest.approx(0.38)  # 38 uW/cm2 -> W/m2
-    assert packet['luminosity'] == 1724.9                # light, lux
+    assert packet['luminosity'] == 1724.9  # light, lux
 
 
 def test_the_two_dialects_never_look_like_each_other(payload):
@@ -217,7 +227,8 @@ def test_the_two_firmwares_that_mean_station_pressure_say_so(payload):
     neighbour's.
     """
     text = payload('wunderground/observer_imperial').replace(
-        'Weather%20logger%20V2.1.9', 'WH2650A_V1.2.1')
+        'Weather%20logger%20V2.1.9', 'WH2650A_V1.2.1'
+    )
     packet, _, _ = packet_of(text)
 
     assert packet['pressure'] == 29.05
@@ -227,7 +238,8 @@ def test_the_two_firmwares_that_mean_station_pressure_say_so(payload):
 def test_a_users_own_mapping_outranks_the_firmware(payload):
     """Naming a field yourself is a decision. A default is not."""
     text = payload('wunderground/observer_imperial').replace(
-        'Weather%20logger%20V2.1.9', 'WH2650A_V1.2.1')
+        'Weather%20logger%20V2.1.9', 'WH2650A_V1.2.1'
+    )
     packet, _, _ = packet_of(text, extensions={'baromin': 'barometer'})
 
     assert packet['barometer'] == 29.05
@@ -238,11 +250,12 @@ def test_a_users_own_mapping_outranks_the_firmware(payload):
 
 def test_pollution_arrives_in_the_unit_weewx_keeps_the_column_in():
     """The specification gives some of these in ppb. group_fraction is ppm."""
-    packet, _, _ = packet_of('ID=K1&PASSWORD=x&AqSO2=1200&AqCO=1.5&AqPM10=42'
-                             '&AqOZONE=35&AqNO2=800')
+    packet, _, _ = packet_of(
+        'ID=K1&PASSWORD=x&AqSO2=1200&AqCO=1.5&AqPM10=42' '&AqOZONE=35&AqNO2=800'
+    )
 
-    assert packet['so2'] == pytest.approx(1.2)    # 1200 ppb
-    assert packet['co'] == 1.5                    # already ppm
-    assert packet['o3'] == pytest.approx(0.035)   # 35 ppb
-    assert packet['pm10_0'] == 42.0               # ug/m3, no conversion
-    assert packet['no2'] == 800.0                 # ug/m3 in WeeWX, no conversion
+    assert packet['so2'] == pytest.approx(1.2)  # 1200 ppb
+    assert packet['co'] == 1.5  # already ppm
+    assert packet['o3'] == pytest.approx(0.035)  # 35 ppb
+    assert packet['pm10_0'] == 42.0  # ug/m3, no conversion
+    assert packet['no2'] == 800.0  # ug/m3 in WeeWX, no conversion

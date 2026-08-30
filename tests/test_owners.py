@@ -17,7 +17,7 @@ import pytest
 
 pytest.importorskip('weewx', reason="WeeWX is not installed")
 
-from ultimatepush import owners                         # noqa: E402
+from ultimatepush import owners  # noqa: E402
 
 
 def test_a_column_goes_to_whoever_fills_it_first():
@@ -55,8 +55,9 @@ def test_and_never_the_other_way_round():
 
 
 def test_what_a_station_holds_can_be_said_and_given_up():
-    register = owners.Register({'extraTemp1': 'roof', 'extraHumid1': 'roof',
-                                'outTemp': 'garden'})
+    register = owners.Register(
+        {'extraTemp1': 'roof', 'extraHumid1': 'roof', 'outTemp': 'garden'}
+    )
 
     assert register.owns('roof') == ['extraHumid1', 'extraTemp1']
 
@@ -68,7 +69,14 @@ def test_what_a_station_holds_can_be_said_and_given_up():
 def test_the_things_that_are_not_readings_are_not_owned():
     """Every station sends the time and the units. Owning those would mean the first
     station to upload owning every packet."""
-    kept = owners.readings({'dateTime': 1, 'usUnits': 1, 'station': 'garden',
-                            'interval': 5, 'outTemp': 59.7})
+    kept = owners.readings(
+        {
+            'dateTime': 1,
+            'usUnits': 1,
+            'station': 'garden',
+            'interval': 5,
+            'outTemp': 59.7,
+        }
+    )
 
     assert kept == ['outTemp']

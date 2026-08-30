@@ -27,7 +27,8 @@ def digest(path):
 
 def test_the_bundled_listener_matches_weewx():
     weewx_listener = pytest.importorskip(
-        'weewx.listener', reason="WeeWX with a listener is not installed")
+        'weewx.listener', reason="WeeWX with a listener is not installed"
+    )
 
     assert digest(SHIM) == digest(weewx_listener.__file__)
 

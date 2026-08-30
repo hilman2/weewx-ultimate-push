@@ -31,6 +31,8 @@ The role is a default, not a cage. A field named by hand outranks it, the way a 
 named by hand outranks everything else here.
 """
 
+from typing import Dict, Set
+
 MAIN = 'main'
 EXTRA = 'extra'
 ROLES = (MAIN, EXTRA)
@@ -54,7 +56,7 @@ def shifted(field, channel):
         channel (int): The station's channel.
 
     Returns:
-        str: The field it is moved to, or None when there is nowhere for it to go.
+        str | None: The field it is moved to, or None when there is nowhere for it to go.
         Only temperature and humidity have anywhere; see the module docstring.
     """
     pattern = SHIFT.get(field)
@@ -80,7 +82,7 @@ def next_channel(taken):
         taken (set): The channels already in use.
 
     Returns:
-        int: The lowest free channel, or None when all of them are used.
+        int | None: The lowest free channel, or None when all of them are used.
     """
     for channel in range(1, CHANNELS + 1):
         if channel not in taken:
@@ -126,9 +128,8 @@ def collisions(by_station):
         write it, sorted so that the answer is the same every time somebody looks at
         it.
     """
-    owners = {}
+    owners = {}  # type: Dict[str, Set[str]]
     for station, fields in by_station.items():
         for field in fields:
             owners.setdefault(field, set()).add(station)
-    return {field: sorted(who) for field, who in sorted(owners.items())
-            if len(who) > 1}
+    return {field: sorted(who) for field, who in sorted(owners.items()) if len(who) > 1}

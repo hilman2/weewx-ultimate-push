@@ -39,8 +39,12 @@ def test_the_layouts_are_as_long_as_the_reference_says():
 def test_no_two_devices_share_a_battery_column():
     """An AIR and a SKY on one hub each have one. A single 'battery' would put two
     devices in one column, and the last one to report would win."""
-    batteries = [name for layout in catalog.LAYOUTS.values() for name in layout
-                 if name.endswith('battery')]
+    batteries = [
+        name
+        for layout in catalog.LAYOUTS.values()
+        for name in layout
+        if name.endswith('battery')
+    ]
 
     assert len(set(batteries)) == len(batteries)
 
@@ -52,10 +56,10 @@ def test_a_tempest_observation(payload):
     packet, dialect, guesses = packet_of(payload('weatherflow/obs_st'))
 
     assert dialect.units == protocols.METRICWX
-    assert packet['outTemp'] == 22.37          # index 7
-    assert packet['outHumidity'] == 50.26      # index 8
-    assert packet['pressure'] == 1017.57       # index 6, station pressure
-    assert packet['windSpeed'] == 0.22         # index 2, m/s
+    assert packet['outTemp'] == 22.37  # index 7
+    assert packet['outHumidity'] == 50.26  # index 8
+    assert packet['pressure'] == 1017.57  # index 6, station pressure
+    assert packet['windSpeed'] == 0.22  # index 2, m/s
     assert packet['windGust'] == 0.27
     assert packet['windLull'] == 0.18
     assert packet['windDir'] == 144.0
@@ -89,7 +93,7 @@ def test_a_sky_observation(payload):
     assert packet['windDir'] == 187.0
     assert packet['sky_batt'] == 3.12
     assert packet['radiation'] == 130.0
-    assert packet['dayRain'] is None           # the reference sends null here
+    assert packet['dayRain'] is None  # the reference sends null here
 
 
 def test_the_report_interval_arrives_in_seconds(payload):
@@ -177,9 +181,11 @@ def test_a_station_is_its_hub_and_not_its_sensors(payload):
 def test_a_longer_array_than_the_layout_is_not_guessed_at():
     """WeatherFlow has appended readings before. A position nobody has named is a
     number, not a reading."""
-    text = ('{"serial_number":"ST-1","type":"obs_st","hub_sn":"HB-1",'
-            '"obs":[[1588948614,0.18,0.22,0.27,144,6,1017.57,22.37,50.26,328,0.03,'
-            '3,0.0,0,0,0,2.410,1,99999]]}')
+    text = (
+        '{"serial_number":"ST-1","type":"obs_st","hub_sn":"HB-1",'
+        '"obs":[[1588948614,0.18,0.22,0.27,144,6,1017.57,22.37,50.26,328,0.03,'
+        '3,0.0,0,0,0,2.410,1,99999]]}'
+    )
     packet, _, guesses = packet_of(text)
 
     assert packet['outTemp'] == 22.37
@@ -190,9 +196,11 @@ def test_a_longer_array_than_the_layout_is_not_guessed_at():
 def test_the_most_recent_observation_in_a_batch_wins():
     """A device that has been out of touch sends several at once. Handing WeeWX an
     older one as though it had just been measured would be worse than dropping it."""
-    text = ('{"serial_number":"ST-1","type":"obs_st","hub_sn":"HB-1","obs":['
-            '[1588948614,0,0,0,0,6,1000.0,10.0,50,0,0,0,0,0,0,0,2.4,1],'
-            '[1588948674,0,0,0,0,6,1017.57,22.37,50.26,0,0,0,0,0,0,0,2.4,1]]}')
+    text = (
+        '{"serial_number":"ST-1","type":"obs_st","hub_sn":"HB-1","obs":['
+        '[1588948614,0,0,0,0,6,1000.0,10.0,50,0,0,0,0,0,0,0,2.4,1],'
+        '[1588948674,0,0,0,0,6,1017.57,22.37,50.26,0,0,0,0,0,0,0,2.4,1]]}'
+    )
     packet, _, _ = packet_of(text)
 
     assert packet['outTemp'] == 22.37

@@ -30,7 +30,7 @@ import pytest
 pytest.importorskip('weewx', reason="WeeWX is not installed")
 pytest.mark.skipif(not os.path.isdir('/proc/self/fd'), reason="needs /proc")
 
-from ultimatepush.driver import UltimatePushDriver      # noqa: E402
+from ultimatepush.driver import UltimatePushDriver  # noqa: E402
 
 BODY = 'PASSKEY=AAAA&stationtype=GW2000A_V3.1.5&tempf=59.7&humidity=91'
 
@@ -49,8 +49,13 @@ def driver(tmp_path):
     if not os.path.isdir('/proc/self/fd'):
         pytest.skip("needs /proc")
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='', socket_timeout=2,
-        console_file=str(tmp_path / 'c.txt'), override_file=str(tmp_path / 'w.conf'))
+        port=0,
+        address='127.0.0.1',
+        report_file='',
+        socket_timeout=2,
+        console_file=str(tmp_path / 'c.txt'),
+        override_file=str(tmp_path / 'w.conf'),
+    )
     yield made
     made.closePort()
 
@@ -107,10 +112,10 @@ def test_a_connection_that_is_opened_and_never_used_is_let_go(driver):
     quiet = socket.create_connection(('127.0.0.1', port))
     try:
         settle(0.3)
-        assert threading.active_count() > threads      # it is being held
+        assert threading.active_count() > threads  # it is being held
         # socket_timeout is 2 seconds for this driver.
         settle(3.0)
-        assert threading.active_count() == threads     # and then let go
+        assert threading.active_count() == threads  # and then let go
     finally:
         quiet.close()
 
@@ -119,8 +124,9 @@ def test_the_answer_closes_the_connection(driver):
     """HTTP/1.0, so there is no keep-alive and the handler thread ends. This is the
     whole reason the tests above pass, and it lives in a file this driver does not
     own: weewx.listener, bundled here until the core carries it."""
-    connection = http.client.HTTPConnection('127.0.0.1', driver.listener.ports[0],
-                                            timeout=5)
+    connection = http.client.HTTPConnection(
+        '127.0.0.1', driver.listener.ports[0], timeout=5
+    )
     try:
         connection.request('POST', '/', BODY)
         response = connection.getresponse()
@@ -137,9 +143,14 @@ def test_the_web_interface_leaves_nothing_behind(tmp_path):
         pytest.skip("needs /proc")
     token = 'a-token-long-enough'
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='', socket_timeout=2,
-        console_file=str(tmp_path / 'c.txt'), override_file=str(tmp_path / 'w.conf'),
-        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': token})
+        port=0,
+        address='127.0.0.1',
+        report_file='',
+        socket_timeout=2,
+        console_file=str(tmp_path / 'c.txt'),
+        override_file=str(tmp_path / 'w.conf'),
+        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': token},
+    )
     try:
         port = made.listener.ports[1]
 
@@ -172,8 +183,12 @@ def test_shutting_down_takes_the_threads_with_it(tmp_path):
     settle()
     before = threading.active_count()
     made = UltimatePushDriver(
-        port=0, address='127.0.0.1', report_file='',
-        console_file=str(tmp_path / 'c.txt'), override_file=str(tmp_path / 'w.conf'))
+        port=0,
+        address='127.0.0.1',
+        report_file='',
+        console_file=str(tmp_path / 'c.txt'),
+        override_file=str(tmp_path / 'w.conf'),
+    )
     upload(made.listener.ports[0])
     made.closePort()
     settle()

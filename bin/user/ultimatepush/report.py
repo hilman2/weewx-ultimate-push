@@ -55,7 +55,7 @@ def write(payload, guesses, waiting, path=DEFAULT_PATH, protocol='unknown'):
         protocol (str): Which protocol the upload was read as.
 
     Returns:
-        str: The path written, or None when there was nowhere to write or the write
+        str | None: The path written, or None when there was nowhere to write or the write
         failed. A report is a convenience, so a failure here is not an error.
     """
     lines = infer.report(guesses)

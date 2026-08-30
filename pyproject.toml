@@ -1,0 +1,35 @@
+# Tool configuration only. This is not a package: the driver is installed with
+# `weectl extension install`, which reads install.py, and the release zip carries
+# neither this file nor anything else from the repository root.
+
+[tool.black]
+line-length = 88
+target-version = ['py37']
+
+# The catalogs are written with single quotes, and so is everything around them.
+# Normalising them would rewrite 10,788 strings for no reading anyone would notice.
+skip-string-normalization = true
+
+# bin/user/listener.py is a byte-for-byte copy of weewx/listener.py, and
+# tests/test_shim.py compares the two by digest. Formatting it would break that
+# comparison, which is the only thing that keeps the copy honest.
+extend-exclude = 'bin/user/listener\.py'
+
+[tool.mypy]
+files = ['bin/user/ultimatepush', 'tools', 'install.py']
+
+# No python_version here. Current mypy refuses anything below 3.10, and the floor this
+# project has to clear is 3.7, which is WeeWX's. Syntax is vermin's job in the CI; this
+# is only about whether the types agree.
+
+# The code carries no annotations: WeeWX puts its types in Google docstrings, which
+# PyCharm reads and mypy does not. Without this, mypy sees 269 untyped functions and
+# checks none of their bodies.
+check_untyped_defs = true
+
+# WeeWX is not installed in the job that runs this, and it is not on PyPI in a form
+# that would typecheck anyway.
+ignore_missing_imports = true
+
+# The listener is somebody else's file. See the note under [tool.black].
+exclude = 'bin/user/listener\.py'
