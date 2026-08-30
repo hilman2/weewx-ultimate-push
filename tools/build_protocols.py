@@ -31,18 +31,18 @@ sys.path.insert(0, os.path.join(HERE, 'bin', 'user'))
 
 # The address, port and path the examples are written with. Fixed, so that a page
 # reads the same wherever it was built.
-ADDRESS = '192.168.1.50'
+ADDRESS = '1.2.3.4'
 PORT = '8000'
-PATH = '/E0rbpxexKCsb/report'
-IDENT = 'up-84746199'
-PASSWORD = 'Qq6V-CmxMLUY'
+PATH = '/abcdefg12345/report'
+IDENT = 'up-abcde123'
+PASSWORD = 'abcdefg12345'
 
 INTERFACE = """> **There is a web interface for all of this.** It is on by default, and the driver
 > prints its address when WeeWX starts:
 >
 > ```
 > INFO user.ultimatepush.driver: The web interface is at
-> http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
+> http://1.2.3.4:8080/?token=abcdefg12345
 > ```
 >
 > Everything on this page can be done there instead, and one thing is much easier:
@@ -66,7 +66,7 @@ Leave the console's own Weather Underground or Ecowitt.net upload switched on if
 use it. *Customized* is a separate upload and does not replace the others.""",
         'wrong': """Nothing arrives at all: the console is on a different network
 segment, or the port is closed. `Upload Interval` seconds after saving, the log should
-show something. If it shows nothing, try `curl -d 'PASSKEY=test' http://192.168.1.50:8000/`
+show something. If it shows nothing, try `curl -d 'PASSKEY=test' http://1.2.3.4:8000/`
 from another machine to prove the port is open.
 
 Uploads arrive but are refused: the driver does not know this console yet. It appears
@@ -186,7 +186,6 @@ def minimal(protocol):
         lines.append('    protocols = %s' % protocol.name)
     lines += ['', '    [[stations]]', '        [[[garden]]]']
     if protocol.secret_kind == 'path':
-        lines.append('            passkey = 3178AB6B42A759F51A5A4AD72E37F8DE')
         lines.append('            path = %s' % PATH)
     elif protocol.secret_kind == 'password':
         lines.append('            id = %s' % IDENT)
@@ -206,10 +205,29 @@ def _example_identity(protocol):
         str: An identity of the right shape.
     """
     return {
-        'weatherflow': 'HB-00013030',
+        'weatherflow': 'HB-000abcde',
         'acurite': '246F28AABBCC',
         'lacrosse': '001D0A712233',
     }.get(protocol.name, 'the-identity-from-the-log')
+
+
+# What the smallest configuration leaves out, and why. Keyed by what the hardware can
+# be given, which is what decides whether anything has to be looked up first.
+ABOUT_MINIMAL = {
+    'path': "The path is the whole of it, and nothing in it has to be looked up"
+    " first. You choose the path and type it into the console. The console names"
+    " itself in its first upload, that name is written down, and every upload after"
+    " it has to match, so a second console pointed at the same path is turned away."
+    " Make the path with `python -m user.ultimatepush --secret` and put it between"
+    " two slashes.",
+    'password': "Both are yours to choose and neither has to be looked up first."
+    " Make each with `python -m user.ultimatepush --secret`. The ID names the station"
+    " and the password is checked on every upload it sends.",
+    None: "The identity is the hardware's own and cannot be chosen, so this line"
+    " cannot be written until the station has uploaded once. The log prints it the"
+    " first time, ready to copy, and until then the station shows in the web"
+    " interface as one waiting to be let in.",
+}
 
 
 def console(protocol):
@@ -335,6 +353,8 @@ def page(protocol):
         '```ini',
         minimal(protocol),
         '```',
+        '',
+        wrap(ABOUT_MINIMAL[protocol.secret_kind]),
         '',
     ]
     lines += console(protocol)

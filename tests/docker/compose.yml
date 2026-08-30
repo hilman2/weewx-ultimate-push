@@ -1,0 +1,82 @@
+# Running the tests, and the checkers, against a stated WeeWX.
+#
+#     docker compose -f tests/docker/compose.yml run --rm tests
+#     docker compose -f tests/docker/compose.yml run --rm checks
+#
+# The source is mounted rather than copied, so a change is picked up without
+# rebuilding. Only the installed packages come from the image.
+
+services:
+  tests:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile
+      args:
+        PYTHON: "3.12"
+        WEEWX: "5.5.0"
+    volumes:
+      - ../..:/src:ro
+    # The suite writes nowhere but tmp_path, which pytest puts under /tmp.
+    tmpfs:
+      - /tmp
+
+  # The oldest Python the driver has to run on, which is what WeeWX still supports.
+  tests-oldest:
+    extends: tests
+    build:
+      args:
+        PYTHON: "3.8"
+
+  checks:
+    extends: tests
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo '--- black'
+        black --check bin tools tests install.py
+        echo '--- mypy'
+        # Its cache cannot go beside the source, which is mounted read-only.
+        mypy --cache-dir=/tmp/mypy
+        echo '--- docstring types'
+        python tools/check_docstring_types.py \
+          bin/user/ultimatepush/*.py bin/user/ultimatepush/*/*.py \
+          tools/*.py install.py
+        echo '--- vermin'
+        vermin --target=3.7 --violations bin install.py
+
+  # The same run, saying what it is doing while it does it: one line per test, and
+  # anything the driver logs instead of being swallowed.
+  watch:
+    extends: tests
+    command:
+      - python
+      - -m
+      - pytest
+      - tests
+      - -v
+      - -s
+      - --log-cli-level=INFO
+      - --timeout=60
+
+  # The generated pages. Writes into docs/, so the source is mounted read-write
+  # here and nowhere else.
+  build-docs:
+    extends: tests
+    volumes: !override
+      - ../..:/src
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        python tools/build_protocols.py
+        python tools/build_drivers.py
+        python tools/build_reference.py
+        python tools/build_hardware.py
+
+  # A shell in the same environment, for when something needs looking at.
+  shell:
+    extends: tests
+    entrypoint: ["/bin/bash"]
+    stdin_open: true
+    tty: true

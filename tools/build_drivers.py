@@ -42,7 +42,7 @@ INTERFACE = """> **There is a web interface for all of this.** It is on by defau
 >
 > ```
 > INFO user.ultimatepush.driver: The web interface is at
-> http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
+> http://1.2.3.4:8080/?token=abcdefg12345
 > ```
 >
 > Everything on this page can be done there instead, and one thing is much easier:

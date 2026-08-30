@@ -11,7 +11,7 @@ by hand.
 >
 > ```
 > INFO user.ultimatepush.driver: The web interface is at
-> http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
+> http://1.2.3.4:8080/?token=abcdefg12345
 > ```
 >
 > Everything on this page can be done there instead, and one thing is much easier:
@@ -42,18 +42,22 @@ generally
 
     [[stations]]
         [[[garden]]]
-            id = up-84746199
-            password = Qq6V-CmxMLUY
+            id = up-abcde123
+            password = abcdefg12345
 ```
+
+Both are yours to choose and neither has to be looked up first. Make each with `python
+-m user.ultimatepush --secret`. The ID names the station and the password is checked on
+every upload it sends.
 
 ## What to put into the console
 
 | | |
 |---|---|
-| Server | `192.168.1.50` |
+| Server | `1.2.3.4` |
 | Port | `8000` |
-| ID | `up-84746199` |
-| PASSWORD | `Qq6V-CmxMLUY` |
+| ID | `up-abcde123` |
+| PASSWORD | `abcdefg12345` |
 
 ## What else it takes
 

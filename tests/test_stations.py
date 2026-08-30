@@ -945,3 +945,173 @@ def test_a_station_in_weewx_conf_can_carry_its_own_password(tmp_path):
         assert made.stations['up-south'].password == 'south-secret'
     finally:
         made.closePort()
+
+
+# ---- a path is enough, and the console is pinned to it -----------------------
+
+
+ECOWITT = 'PASSKEY=%s&stationtype=GW1000B&tempf=59.9&humidity=61&dateutc=now'
+
+
+def by_path(tmp_path, **options):
+    """A driver with one station set up by its path alone.
+
+    Args:
+        tmp_path (pathlib.Path): Where its files go.
+        **options: Extra options for the station section.
+
+    Returns:
+        UltimatePushDriver: The driver.
+    """
+    section = {'path': '/secret/report'}
+    section.update(options)
+    return UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        report_file='',
+        console_file=str(tmp_path / 'c.txt'),
+        override_file=str(tmp_path / 'w.conf'),
+        stations={'garden': section},
+    )
+
+
+def pulled(driver, seconds=4):
+    """One loop packet, or None if the driver kept none.
+
+    On a thread, because genLoopPackets waits for ever when the upload was refused,
+    and an upload being refused is what half of these tests are about.
+
+    Args:
+        driver (UltimatePushDriver): The driver to pull from.
+        seconds (float): How long to wait.
+
+    Returns:
+        dict | None: The packet, or None.
+    """
+    import threading
+
+    got = []
+    loop = driver.genLoopPackets()
+    reader = threading.Thread(target=lambda: got.append(next(loop)), daemon=True)
+    reader.start()
+    reader.join(seconds)
+    return got[0] if got else None
+
+
+def post_and_pull(driver, body):
+    """Send one upload and return the packet it became, or None if it was refused.
+
+    Args:
+        driver (UltimatePushDriver): The driver.
+        body (str): The upload.
+
+    Returns:
+        dict | None: The packet, or None.
+    """
+    post(driver, '/secret/report', body)
+    return pulled(driver)
+
+
+def test_a_station_can_be_set_up_with_nothing_but_a_path(tmp_path):
+    """Nobody knows a console's PASSKEY before it has uploaded once.
+
+    Requiring it made a station impossible to set up in advance, which is the whole
+    point of choosing a path for it.
+    """
+    made = by_path(tmp_path)
+    try:
+        assert 'path:/secret/report' in made.stations
+        assert made.stations['path:/secret/report'].path == '/secret/report'
+    finally:
+        made.closePort()
+
+
+def test_the_console_is_learned_from_its_first_upload(tmp_path):
+    made = by_path(tmp_path)
+    try:
+        packet = post_and_pull(made, ECOWITT % 'AAAA1111')
+
+        assert packet is not None and packet['outTemp'] == 59.9
+        assert made.overrides.learned()['path:/secret/report'] == 'AAAA1111'
+    finally:
+        made.closePort()
+
+
+def test_a_second_console_on_the_same_path_is_refused(tmp_path):
+    """The point of learning it.
+
+    A path is a secret, but a secret can be repeated. Once this station has said
+    what it is, an upload to its path saying anything else is somebody else's
+    console, and two consoles in one column cannot be untangled afterwards.
+    """
+    made = by_path(tmp_path)
+    try:
+        assert post_and_pull(made, ECOWITT % 'AAAA1111') is not None
+
+        assert (
+            post_and_pull(made, ECOWITT % 'BBBB2222') is None
+        ), "the second console was recorded as the first"
+        assert made.overrides.learned()['path:/secret/report'] == 'AAAA1111'
+    finally:
+        made.closePort()
+
+
+def test_the_same_console_goes_on_being_accepted(tmp_path):
+    made = by_path(tmp_path)
+    try:
+        assert post_and_pull(made, ECOWITT % 'AAAA1111') is not None
+        packet = post_and_pull(made, ECOWITT % 'AAAA1111')
+
+        assert packet is not None and packet['outTemp'] == 59.9
+    finally:
+        made.closePort()
+
+
+def test_what_was_learned_survives_a_restart(tmp_path):
+    """Written down rather than held in memory, or a restart would let anybody in."""
+    first = by_path(tmp_path)
+    try:
+        post_and_pull(first, ECOWITT % 'AAAA1111')
+    finally:
+        first.closePort()
+
+    again = by_path(tmp_path)
+    try:
+        assert again.overrides.learned()['path:/secret/report'] == 'AAAA1111'
+    finally:
+        again.closePort()
+
+
+def test_a_station_with_neither_path_nor_identity_is_refused(tmp_path):
+    with pytest.raises(ValueError, match="needs a 'path' of its own"):
+        UltimatePushDriver(
+            port=0,
+            address='127.0.0.1',
+            report_file='',
+            console_file=str(tmp_path / 'c.txt'),
+            override_file=str(tmp_path / 'w.conf'),
+            stations={'garden': {'role': 'main'}},
+        )
+
+
+def test_a_secret_can_be_made_without_inventing_one(tmp_path):
+    """A secret somebody thinks up is the weak one.
+
+    Ten characters from `secrets` is about sixty bits, which is more than the rate
+    limiter needs to cover. The alphabet leaves out the characters that are read
+    wrong off a screen, because most of these are typed into a phone.
+    """
+    from ultimatepush.__main__ import SECRET_ALPHABET, SECRET_LENGTH, make_secret
+
+    made = {make_secret() for _ in range(200)}
+
+    assert len(made) == 200, "two of two hundred came out the same"
+    assert {len(one) for one in made} == {SECRET_LENGTH}
+    assert set(''.join(made)) <= set(SECRET_ALPHABET)
+    # The pairs that are read wrong off a screen: of each, at most one is in the
+    # alphabet, so there is nothing to confuse it with.
+    for pair in ('l1', 'O0', 'I1', 'B8', 'S5', 'Z2'):
+        assert len(set(pair) & set(SECRET_ALPHABET)) <= 1, pair
+    assert len(make_secret(20)) == 20
+    # Nothing shorter than is worth having, whatever is asked for.
+    assert len(make_secret(2)) == 8

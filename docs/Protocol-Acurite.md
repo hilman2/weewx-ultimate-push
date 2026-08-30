@@ -11,7 +11,7 @@ by hand.
 >
 > ```
 > INFO user.ultimatepush.driver: The web interface is at
-> http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
+> http://1.2.3.4:8080/?token=abcdefg12345
 > ```
 >
 > Everything on this page can be done there instead, and one thing is much easier:
@@ -43,15 +43,19 @@ smartHUB and Access bridges, with a 5-in-1, towers, Pro sensors and the 899 rain
             id = 246F28AABBCC
 ```
 
+The identity is the hardware's own and cannot be chosen, so this line cannot be written
+until the station has uploaded once. The log prints it the first time, ready to copy,
+and until then the station shows in the web interface as one waiting to be let in.
+
 ## What else it takes
 
 A bridge cannot be told where to post. It goes to Chaney's servers, over plain HTTP on
 port 80, and there is no setting for it.
 
-So hubapi.myacurite.com has to resolve to 192.168.1.50 on your network. With dnsmasq:
+So hubapi.myacurite.com has to resolve to 1.2.3.4 on your network. With dnsmasq:
 
 ```
-address=/hubapi.myacurite.com/192.168.1.50
+address=/hubapi.myacurite.com/1.2.3.4
 ```
 
 Most routers can do the same under a name like 'local DNS'. A hosts file on this machine

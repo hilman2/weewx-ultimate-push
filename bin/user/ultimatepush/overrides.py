@@ -143,6 +143,36 @@ class Store:
         """
         return dict(self.station(ident).get('field_map_extensions', {}))
 
+    def learned(self):
+        """The identity each station was seen to send, by station.
+
+        Returns:
+            dict: Station identity as it is set up, to whatever the console called
+            itself in its first upload. Empty for an installation where nothing has
+            been heard yet.
+        """
+        return dict(self.settings.get('learned', {}))
+
+    def set_learned(self, ident, seen):
+        """Remember what a station called itself, the first time it said.
+
+        Written once per station and never changed: what makes it worth keeping is
+        that every later upload can be compared against it.
+
+        Args:
+            ident (str): The station, as it was set up.
+            seen (str): What the console sent to name itself.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        with self.lock:
+            held = self.settings.setdefault('learned', {})
+            if held.get(ident) == seen:
+                return True, self.path
+            held[ident] = seen
+            return self._save()
+
     def hardware(self):
         """The hosted drivers this file records.
 
@@ -389,7 +419,11 @@ class Store:
             return self._save()
 
     def forget_station(self, ident):
-        """Take a station out of this file.
+        """Take a station out of this file, and what was learned about it.
+
+        What it was seen to call itself goes with it. A path that is set up again
+        would otherwise inherit the console that used to be on it, and the console
+        that is actually there would be refused for a reason nothing shows.
 
         Args:
             ident (str): The station's identity.
@@ -402,6 +436,7 @@ class Store:
             if ident not in stations:
                 return False, "This file does not have that station."
             del stations[ident]
+            self.settings.get('learned', {}).pop(ident, None)
             return self._save()
 
     def set_field(self, ident, raw, field):

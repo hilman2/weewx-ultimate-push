@@ -9,6 +9,10 @@ Run this before wiring anything up, or when a sensor is missing from the reports
 
     python -m user.ultimatepush --port 8000
 
+It also makes a secret, for the places in the configuration that want one:
+
+    python -m user.ultimatepush --secret
+
 It waits for one upload, works out which protocol sent it, then prints what arrived,
 what the driver could not place, the commands that would give the readings somewhere
 to live, and which of those fields already hold somebody else's history. Nothing is
@@ -20,8 +24,16 @@ hardware expects, so a console will not decide the upload failed and stop.
 
 import argparse
 import logging
+import secrets
 import sys
 import time
+
+# How long a secret this makes. Sixty bits or so, which is more than enough against
+# somebody guessing over the network: an address that gets it wrong ten times in five
+# minutes stops being answered at all. Short enough to read off a screen and type into
+# a phone, which is where most of these have to go.
+SECRET_LENGTH = 10
+SECRET_ALPHABET = 'abcdefghijkmnopqrstuvwxyz23456789'
 
 from . import VERSION, columns, infer, protocols, server, transport
 from .mapping import Mapper
@@ -39,6 +51,23 @@ except ImportError:
     from user.listener import HTTPListener
 
 
+def make_secret(length=SECRET_LENGTH):
+    """A secret to put in the configuration, made where nobody has to invent one.
+
+    From `secrets`, so it is not something a person thought of. The alphabet leaves
+    out the characters that are read wrong off a screen, because most of these have
+    to be typed into a phone: no l or 1, no O or 0.
+
+    Args:
+        length (int): How many characters. Ten is about sixty bits.
+
+    Returns:
+        str: The secret.
+    """
+    length = max(int(length), 8)
+    return ''.join(secrets.choice(SECRET_ALPHABET) for _ in range(length))
+
+
 def main(argv=None):
     """Run the diagnostic command.
 
@@ -51,6 +80,15 @@ def main(argv=None):
     """
     parser = argparse.ArgumentParser(
         prog='python -m user.ultimatepush', description=__doc__
+    )
+    parser.add_argument(
+        '--secret',
+        nargs='?',
+        const=SECRET_LENGTH,
+        type=int,
+        metavar='LENGTH',
+        help="Print a secret to put in the configuration and nothing else. "
+        "Default length %d." % SECRET_LENGTH,
     )
     parser.add_argument('--port', default=8000, help="Port to listen on. Default 8000.")
     parser.add_argument('--address', default='', help="Address to bind to.")
@@ -92,6 +130,10 @@ def main(argv=None):
         "in the log at startup too, but this saves looking.",
     )
     args = parser.parse_args(argv)
+
+    if args.secret is not None:
+        print(make_secret(args.secret))
+        return 0
 
     if args.url:
         return _say_url(args.config)

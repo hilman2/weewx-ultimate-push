@@ -66,7 +66,7 @@ An empty 200 means no protocol claimed the upload. See below.
 ## Nothing recognised the upload
 
 ```
-WARNING user.ultimatepush.driver: A request from 192.168.1.42 to /data/report/ matched
+WARNING user.ultimatepush.driver: A request from 1.2.3.6 to /data/report/ matched
 none of the protocols this driver is listening for (ecowitt, ambient, acurite,
 lacrosse, wunderground). Nothing in it says which protocol it is, so reading it would
 mean guessing which catalog its field names belong to.
@@ -357,7 +357,7 @@ Check that the identity in the settings file is the one the console sends. The
 interface takes it from the upload, so this only happens to a station written by hand.
 
 ```
-WARNING user.ultimatepush.driver: An ecowitt upload from 192.168.1.51 names station
+WARNING user.ultimatepush.driver: An ecowitt upload from 1.2.3.5 names station
 '9A2B...', which is not one of this driver's consoles.
 ```
 

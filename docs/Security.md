@@ -13,6 +13,9 @@ given one of its own, along with the `ID` that names it, and both are shown once
 can be typed into the console. Uploads that do not present it are refused, and the
 comparison is constant time.
 
+Make one with `python -m user.ultimatepush --secret`, which is ten characters from
+`secrets` rather than something a person thought of.
+
 A password for every console that has none of its own goes in the driver section:
 
 ```ini
@@ -37,7 +40,7 @@ So the port has to be narrowed instead. Use as many of these as fit.
 
 ```ini
 [UltimatePush]
-    address = 192.168.1.10
+    address = 1.2.3.8
 ```
 
 Only that interface accepts anything. Behind a reverse proxy, `localhost` means the
@@ -81,7 +84,7 @@ Accepted as query parameter `token`, header `X-Auth-Token`, or a bearer token in
 ## Only from known addresses
 
 ```ini
-    allowed_hosts = 192.168.1.42, 192.168.1.43
+    allowed_hosts = 1.2.3.6, 1.2.3.7
 ```
 
 Anything else gets a 403. Behind a proxy this sees the proxy unless `trust_proxy` is
@@ -141,5 +144,5 @@ be answered with a 404 and its readings dropped, silently as far as it is concer
 The log says so:
 
 ```
-WARNING weewx.listener: Rejected a request from 192.168.1.42: bad or missing token
+WARNING weewx.listener: Rejected a request from 1.2.3.6: bad or missing token
 ```

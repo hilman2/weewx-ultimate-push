@@ -18,7 +18,7 @@ driver logs its address when WeeWX starts:
 
 ```
 INFO user.ultimatepush.driver: The web interface is at
-http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
+http://1.2.3.4:8080/?token=abcdefg12345
 ```
 
 ## Setting a station up

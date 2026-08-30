@@ -9,7 +9,7 @@ each one is delivering.
 >
 > ```
 > INFO user.ultimatepush.driver: The web interface is at
-> http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
+> http://1.2.3.4:8080/?token=abcdefg12345
 > ```
 >
 > Everything on this page can be done there instead, and one thing is much easier:
@@ -45,8 +45,7 @@ Start from one station.
 
     [[stations]]
         [[[garden]]]
-            passkey = 3178AB6B42A759F51A5A4AD72E37F8DE
-            path = /E0rbpxexKCsb/report
+            path = /abcdefg12345/report
 ```
 
 Add a second by adding a subsection. It needs `role` and `channel`, because a file has
@@ -55,33 +54,32 @@ no defaults to offer you the way the interface does.
 ```ini
     [[stations]]
         [[[garden]]]
-            passkey = 3178AB6B42A759F51A5A4AD72E37F8DE
-            path = /E0rbpxexKCsb/report
+            path = /abcdefg12345/report
 
         [[[roof]]]
-            passkey = 9A2B4C6D8E0F1A3B5C7D9E1F2A4B6C8D
+            path = /hijklmn67890/report
             role = extra
             channel = 4
 ```
 
 Stations of different kinds sit in the same list. Their sections differ only in what
 names them: a path for an Ecowitt console, an `id` and a `password` for a Weather
-Underground one, a serial number for a hub.
+Underground one, a serial number for a hub. Only the last of those has to be looked up,
+because it is the hardware's own and the log prints it after the first upload.
 
 ```ini
     [[stations]]
         [[[garden]]]
-            passkey = 3178AB6B42A759F51A5A4AD72E37F8DE
-            path = /E0rbpxexKCsb/report
+            path = /abcdefg12345/report
 
         [[[shed]]]
-            id = up-84746199
-            password = Qq6V-CmxMLUY
+            id = up-abcde123
+            password = abcdefg12345
             role = extra
             channel = 2
 
         [[[tempest]]]
-            id = HB-00013030
+            id = HB-000abcde
             role = extra
             channel = 3
 ```
@@ -153,7 +151,7 @@ field. It is the last word: it beats the role and it beats who got there first.
 
 ```ini
         [[[roof]]]
-            passkey = 9A2B4C6D8E0F1A3B5C7D9E1F2A4B6C8D
+            path = /hijklmn67890/report
             role = extra
             channel = 4
             [[[[field_map_extensions]]]]

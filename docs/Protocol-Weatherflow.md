@@ -11,7 +11,7 @@ by hand.
 >
 > ```
 > INFO user.ultimatepush.driver: The web interface is at
-> http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
+> http://1.2.3.4:8080/?token=abcdefg12345
 > ```
 >
 > Everything on this page can be done there instead, and one thing is much easier:
@@ -41,8 +41,12 @@ Tempest, and the AIR, SKY and hub that came before it
 
     [[stations]]
         [[[garden]]]
-            id = HB-00013030
+            id = HB-000abcde
 ```
+
+The identity is the hardware's own and cannot be chosen, so this line cannot be written
+until the station has uploaded once. The log prints it the first time, ready to copy,
+and until then the station shows in the web interface as one waiting to be let in.
 
 ## What else it takes
 

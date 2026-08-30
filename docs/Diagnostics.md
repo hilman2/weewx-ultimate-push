@@ -63,7 +63,7 @@ the protocol in the driver and read the log instead.
 **Which protocol it was, and which catalog read it.**
 
 ```
-POST / from 192.168.1.42, 762 bytes
+POST / from 1.2.3.6, 762 bytes
   Ecowitt, read with the 'ecowitt' catalog
 ```
 

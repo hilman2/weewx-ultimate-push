@@ -40,8 +40,8 @@ enter into its app:
 | | |
 |---|---|
 | Protocol Type | Ecowitt |
-| Server IP / Hostname | 192.168.1.50 |
-| Path | `/E0rbpxexKCsb/report` |
+| Server IP / Hostname | 1.2.3.4 |
+| Path | `/abcdefg12345/report` |
 | Port | 8000 |
 
 For a Weather Underground console it makes an `ID` and a `PASSWORD` instead, because
@@ -49,10 +49,10 @@ that console cannot be told a path:
 
 | | |
 |---|---|
-| Server | 192.168.1.50 |
+| Server | 1.2.3.4 |
 | Port | 8000 |
-| ID | `up-84746199` |
-| PASSWORD | `Qq6V-CmxMLUY` |
+| ID | `up-abcde123` |
+| PASSWORD | `abcdefg12345` |
 
 Nothing is shown until the station has a name, because the name is what produces the
 path or the ID. From the first upload the driver knows which station sent it. The same
@@ -68,24 +68,29 @@ Anything the interface can do, you can write yourself. A station you put in this
 belongs to the file: the interface shows it and will not change it, so the two can never
 disagree about it.
 
-An Ecowitt or Ambient console, with a path of your choosing:
+An Ecowitt or Ambient console. The path is all it needs, and you choose it:
 
 ```ini
 [UltimatePush]
     [[stations]]
         [[[garden]]]
-            passkey = 3178AB6B42A759F51A5A4AD72E37F8DE
-            path = /a8f3c1e0/report
+            path = /abcdefg12345/report
 ```
 
-A Weather Underground console, with the ID and password you will type into it:
+Nothing has to be looked up first. The console names itself in its first upload, and
+that name is written down: every upload after it has to match, so a second console
+pointed at the same path is turned away. Make the path with
+`python -m user.ultimatepush --secret`.
+
+A Weather Underground console, with the ID and password you will type into it. Both
+are yours to choose; make each with `python -m user.ultimatepush --secret`:
 
 ```ini
 [UltimatePush]
     [[stations]]
         [[[garden]]]
-            id = my-garden
-            password = pick-something-long
+            id = up-abcde123
+            password = abcdefg12345
 ```
 
 A WeatherFlow hub, an Acurite bridge or a LaCrosse gateway. You cannot make up what
@@ -162,11 +167,11 @@ By hand it is written out, because a file has nothing to fill in for you:
     [[stations]]
 
         [[[garden]]]
-            passkey = 3178AB6B42A759F51A5A4AD72E37F8DE
-            path = /a8f3c1e0/report
+            passkey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+            path = /abcdefg12345/report
 
         [[[roof]]]
-            passkey = 9A2B4C6D8E0F1A3B5C7D9E1F2A4B6C8D
+            passkey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
             role = extra
             channel = 4
 ```
@@ -204,7 +209,7 @@ reading, with a selector saying where it goes and what that costs. By hand it is
 
 ```ini
 [[[roof]]]
-    passkey = 9A2B4C6D8E0F1A3B5C7D9E1F2A4B6C8D
+    passkey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
     role = extra
     channel = 4
     [[[[field_map_extensions]]]]
@@ -286,9 +291,9 @@ Ownership is recorded in `ultimate-push-web.conf`:
 
 ```ini
 [columns]
-    outTemp = path:/E0rbpxexKCsb/report
-    extraTemp1 = path:/g0nTdxurjQd8/report
-    soilMoist1 = path:/g0nTdxurjQd8/report
+    outTemp = path:/abcdefg12345/report
+    extraTemp1 = path:/hijklmn67890/report
+    soilMoist1 = path:/hijklmn67890/report
 ```
 
 Because it is recorded rather than learned again at each startup, an extra station is
@@ -352,13 +357,13 @@ change it, field map included.
     [[stations]]
 
         [[[garden]]]
-            passkey = 3178AB6B42A759F51A5A4AD72E37F8DE
-            path = /a8f3c1e0/report
+            passkey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+            path = /abcdefg12345/report
             [[[[field_map_extensions]]]]
                 tf_ch1 = soilTemp1          # spike in the raised bed
 
         [[[roof]]]
-            passkey = 9A2B4C6D8E0F1A3B5C7D9E1F2A4B6C8D
+            passkey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
             role = extra
             channel = 4
 ```
@@ -367,11 +372,17 @@ change it, field map included.
 
 What the console sends to identify itself: a PASSKEY for Ecowitt and Ambient hardware,
 an ID for Weather Underground, a serial number for WeatherFlow, a MAC address for the
-two bridges. One of the two is required. No default.
+two bridges.
+
+Required only for a station with no `path`. For hardware whose path you choose, leave
+it out: nobody knows a console's PASSKEY before it has uploaded once, and the driver
+learns it from the first upload and holds the station to it afterwards. No default.
 
 #### path
 
 An upload path belonging to this station, which is both its identity and its secret.
+A station needs this or an identity above, and this is the one you can choose before
+the console has ever uploaded. Make one with `python -m user.ultimatepush --secret`.
 Default is none.
 
 #### role
@@ -409,8 +420,8 @@ The driver answers only to stations it knows. Anything else is refused and shown
 web interface with its readings, so that it can be identified before it is accepted.
 
 ```
-WARNING user.ultimatepush.driver: An ecowitt upload from 192.168.1.51 names station
-'9A2B4C6D8E0F1A3B5C7D9E1F2A4B6C8D', which is not one of this driver's consoles.
+WARNING user.ultimatepush.driver: An ecowitt upload from 1.2.3.5 names station
+'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', which is not one of this driver's consoles.
 ```
 
 The reason is the same as everywhere else here: two sensors in one column cannot be
@@ -440,5 +451,5 @@ the first time it adopts a console:
 
 ```
 INFO user.ultimatepush.driver: To keep it independent of anything stored, put it in
-weewx.conf: 'passkey = 3178AB6B42A759F51A5A4AD72E37F8DE' under [UltimatePush].
+weewx.conf: 'passkey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' under [UltimatePush].
 ```

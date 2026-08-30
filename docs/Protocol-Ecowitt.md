@@ -11,7 +11,7 @@ by hand.
 >
 > ```
 > INFO user.ultimatepush.driver: The web interface is at
-> http://192.168.1.50:8080/?token=kJ7mQx2vRt9w
+> http://1.2.3.4:8080/?token=abcdefg12345
 > ```
 >
 > Everything on this page can be done there instead, and one thing is much easier:
@@ -41,17 +41,22 @@ and their relatives
 
     [[stations]]
         [[[garden]]]
-            passkey = 3178AB6B42A759F51A5A4AD72E37F8DE
-            path = /E0rbpxexKCsb/report
+            path = /abcdefg12345/report
 ```
+
+The path is the whole of it, and nothing in it has to be looked up first. You choose the
+path and type it into the console. The console names itself in its first upload, that
+name is written down, and every upload after it has to match, so a second console
+pointed at the same path is turned away. Make the path with `python -m user.ultimatepush
+--secret` and put it between two slashes.
 
 ## What to put into the console
 
 | | |
 |---|---|
 | Protocol Type | `Ecowitt` |
-| Server IP / Hostname | `192.168.1.50` |
-| Path | `/E0rbpxexKCsb/report` |
+| Server IP / Hostname | `1.2.3.4` |
+| Path | `/abcdefg12345/report` |
 | Port | `8000` |
 | Upload Interval | `60` |
 
@@ -86,8 +91,8 @@ it. *Customized* is a separate upload and does not replace the others.
 
 Nothing arrives at all: the console is on a different network segment, or the port is
 closed. `Upload Interval` seconds after saving, the log should show something. If it
-shows nothing, try `curl -d 'PASSKEY=test' http://192.168.1.50:8000/` from another
-machine to prove the port is open.
+shows nothing, try `curl -d 'PASSKEY=test' http://1.2.3.4:8000/` from another machine to
+prove the port is open.
 
 Uploads arrive but are refused: the driver does not know this console yet. It appears in
 the web interface as a station waiting to be let in.

@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+**A path is enough to set a station up.** Setting one up by hand asked for the
+`passkey` its console sends, which nobody knows before that console has uploaded. So
+the documented way of doing it could not be followed, and the one thing a path is for,
+naming a station before it exists, did not work outside the web interface.
+
+Now the path is the whole of it. The console names itself in its first upload, that
+name is written down, and every upload after it has to match. A second console pointed
+at the same path is turned away, whether it is a different make or the identical model
+next to it, because what is compared is what the console sends and every console sends
+its own. Taking a station out takes what was learned with it, so a path set up again
+starts clean.
+
+The comment in `web_create` had claimed this behaviour for some time. There was no code
+for it: a path match skipped the identity check entirely.
+
+**A secret can be made rather than invented.** `python -m user.ultimatepush --secret`
+prints ten characters from `secrets`, leaving out the ones that are read wrong off a
+screen. Every place in the documentation that asks for a path, a password or a token now
+says to use it.
+
+**The examples cannot be mistaken for somebody's settings.** Addresses are `1.2.3.4`
+and secrets are `abcdefg12345`, rather than values that look like they were copied off
+a working installation.
+
+**The tests run in Docker, against a stated WeeWX.** `tests/docker/` builds WeeWX 5.5.0
+on the Python versions the driver has to clear, and runs as a normal user, because two
+tests make a file unwritable and root can write to anything. `pytest-timeout` is set, so
+a test that hangs fails and says where instead of the whole run being killed. There is a
+service that runs the same suite with live output, and one that runs the four checkers.
+
 **The documentation no longer describes an earlier version of this driver.** It began
 as an Ecowitt driver, became one for six push protocols, and then learned to run the
 drivers WeeWX ships. Several pages were still written for one of those stages.

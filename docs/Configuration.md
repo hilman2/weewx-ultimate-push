@@ -19,7 +19,7 @@ All settings are in one section of `weewx.conf`.
     protocols = auto
 
     # Accept this path only. Anything else receives a 404.
-    path = /a8f3c1e0/report
+    path = /abcdefg12345/report
 
     # What to do with a field the driver does not know yet.
     infer_unknown = series
@@ -215,9 +215,9 @@ Required only when there is more than one console, or to keep a station's identi
 [UltimatePush]
     [[stations]]
         [[[garden]]]
-            passkey = 3178AB6B42A759F51A5A4AD72E37F8DE
+            passkey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
         [[[roof]]]
-            passkey = 9A2B4C6D8E0F1A3B5C7D9E1F2A4B6C8D
+            passkey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
             role = extra
             channel = 4
 ```
@@ -320,14 +320,14 @@ the only secret most consoles can carry.
     driver = user.ultimatepush.driver
     address = localhost
     port = 8000
-    path = /a8f3c1e0/report
+    path = /abcdefg12345/report
     trust_proxy = true
 ```
 
 nginx:
 
 ```nginx
-location /a8f3c1e0/report {
+location /abcdefg12345/report {
     proxy_pass http://127.0.0.1:8000;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 }
@@ -343,7 +343,7 @@ weather.example.com {
 }
 ```
 
-Set the console's server to `weather.example.com`, port 443, path `/a8f3c1e0/report`.
+Set the console's server to `weather.example.com`, port 443, path `/abcdefg12345/report`.
 
 ### Alongside a web server on the same machine
 
@@ -372,9 +372,9 @@ port of its own.
 
     [[stations]]
         [[[garden]]]
-            passkey = 34A1B2C3D4E5F60718293A4B5C6D7E8F
+            passkey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
         [[[roof]]]
-            passkey = HB-00013030
+            passkey = HB-000abcde
 ```
 
 A hub is identified by its serial number, which goes in `passkey` like any other

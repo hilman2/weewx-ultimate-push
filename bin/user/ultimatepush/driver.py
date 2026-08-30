@@ -698,13 +698,20 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             return {}
         stations = {}
         for name, options in configured.items():
+            path = str(options.get('path', '')).strip()
             ident = options.get('passkey') or options.get('id')
+            if not ident and path:
+                # A path is enough. Nobody knows a console's PASSKEY before it has
+                # uploaded once, so requiring it here made a station impossible to
+                # set up in advance, which is the whole point of choosing a path.
+                # What the console calls itself is learned from its first upload and
+                # pinned; see _pin_identity.
+                ident = 'path:' + path.rstrip('/')
             if not ident:
                 raise ValueError(
-                    "Station '%s' has no 'passkey' or 'id'. It is whichever of the "
-                    "two the console sends first in every upload: a PASSKEY for "
-                    "Ecowitt and Ambient hardware, an ID for Weather Underground."
-                    % name
+                    "Station '%s' needs a 'path' of its own, or the 'passkey' or "
+                    "'id' its console sends. A path is the one you can choose "
+                    "before the console has ever uploaded." % name
                 )
             channel = options.get('channel')
             station = Station(
@@ -722,7 +729,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                     "Station '%s' has role '%s'. It is one of %s."
                     % (name, station.role, ', '.join(roles.ROLES))
                 )
-            station.path = str(options.get('path', '')).strip() or None
+            station.path = path or None
             # A secret of this station's own, for hardware that carries one. The
             # interface gives one to every Weather Underground console it sets up,
             # and everything the interface does has to be writable here too.
@@ -1348,6 +1355,15 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 or self.web_stations.get(by_path)
                 or self.default_station
             )
+            if not self._pin_identity(by_path, protocol, raw):
+                self._record_refused(
+                    request,
+                    protocol,
+                    protocol.station_of(raw),
+                    "a different console than the one this path belongs to",
+                    raw,
+                )
+                return None, None, None, None
         else:
             # Which console this is, and whether it presents the right password, are
             # asked of the upload as it arrived. A protocol that unpacks its payload
@@ -1428,6 +1444,59 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         if station.name:
             packet['station'] = station.name
         return packet
+
+    def _pin_identity(self, ident, protocol, raw):
+        """Whether this upload is from the console the path belongs to.
+
+        A path is a secret and is enough on its own to set a station up, which is
+        what makes setting one up possible at all: nobody knows a console's PASSKEY
+        before it has uploaded once.
+
+        The first upload on that path says what the console calls itself, and that
+        is written down. Every upload after it has to agree. So a second console
+        pointed at the same path, whether by mistake or by somebody who learned the
+        path, is turned away rather than mixed into the first one's columns.
+
+        A protocol whose payload names nothing is left alone: there is nothing to
+        pin, and the path is the whole of the answer.
+
+        Args:
+            ident (str): The station, as it was set up.
+            protocol (type[protocols.Protocol]): The protocol that claimed it.
+            raw (dict): The raw name/value pairs.
+
+        Returns:
+            bool: Whether the upload may be kept.
+        """
+        seen = protocol.station_of(raw)
+        if not seen:
+            return True
+        known = self.overrides.learned().get(ident)
+        if known is None:
+            ok, message = self.overrides.set_learned(ident, seen)
+            if not ok:
+                # Worth saying and not worth refusing over: the upload is the first
+                # one and there is nothing yet to disagree with.
+                log.warning("Cannot record what '%s' calls itself: %s", ident, message)
+            else:
+                log.info(
+                    "Station '%s' calls itself '%s'. Uploads to its path that say "
+                    "anything else will be turned away from now on.",
+                    self._name_of(ident),
+                    seen,
+                )
+            return True
+        if known == seen:
+            return True
+        log.warning(
+            "An upload to the path belonging to '%s' says it is from '%s', and "
+            "that path belongs to '%s'. Ignoring it: two consoles on one path "
+            "would mix two sensors into one column.",
+            self._name_of(ident),
+            seen,
+            known,
+        )
+        return False
 
     def _held_back_now(self):
         """Whether an extra station's readings are being held rather than written.
@@ -2971,9 +3040,11 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         path = password = None
         if protocol.secret_kind == 'path':
             path = '/%s/report' % secrets.token_urlsafe(9)
-            # The identity is the path until the console says otherwise. The first
-            # upload brings a PASSKEY with it and the station is recorded under that
-            # instead, because that is what every later upload carries.
+            # The path is the identity. What the console calls itself is learned from
+            # its first upload and pinned to this station, so that a second console
+            # on the same path is refused; see _pin_identity. It is not used as the
+            # identity, because nobody knows it before that first upload and a
+            # station has to be nameable before it exists.
             ident = 'path:' + path
         else:
             # The ID is what every upload carries, so it is the identity from the
