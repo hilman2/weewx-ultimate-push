@@ -35,6 +35,7 @@ SIDEBAR = """* [Home](Home)
 * [Hardware](Hardware)
 * [Web interface](Web-interface)
 * [Stations](Stations)
+* [Several stations](Several-stations)
 * [Hosted hardware](Hosted-hardware)
 * [Database columns](Database-columns)
 * [Configuration](Configuration)
@@ -42,6 +43,31 @@ SIDEBAR = """* [Home](Home)
 * [Troubleshooting](Troubleshooting)
 * [Keeping strangers out](Security)
 * [Reporting a new sensor](New-sensors)
+
+### One page per protocol
+
+* [Acurite](Protocol-Acurite)
+* [Ambient](Protocol-Ambient)
+* [Ecowitt](Protocol-Ecowitt)
+* [Lacrosse](Protocol-Lacrosse)
+* [Weatherflow](Protocol-Weatherflow)
+* [Wunderground](Protocol-Wunderground)
+
+### One page per driver this machine can read
+
+* [AcuRite](Driver-AcuRite)
+* [CC3000](Driver-CC3000)
+* [FineOffsetUSB](Driver-FineOffsetUSB)
+* [Simulator](Driver-Simulator)
+* [TE923](Driver-TE923)
+* [Ultimeter](Driver-Ultimeter)
+* [Vantage](Driver-Vantage)
+* [WMR100](Driver-WMR100)
+* [WMR300](Driver-WMR300)
+* [WMR9x8](Driver-WMR9x8)
+* [WS1](Driver-WS1)
+* [WS23xx](Driver-WS23xx)
+* [WS28xx](Driver-WS28xx)
 
 ### How it works
 

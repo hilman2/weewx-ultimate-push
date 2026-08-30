@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+**A page for every protocol and every driver, for setting one up by hand.** Twenty
+pages: the smallest configuration that works, everything the console has to be told,
+every option that is only that one's, what is worth knowing before starting, and what to
+check when nothing arrives. A driver page also says how to find the thing that cannot be
+guessed, which is usually which serial device the console is on.
+
+The driver pages are generated from the drivers installed on the machine that builds
+them, through the same reader the web interface builds its form from. So a page states
+the options of the version somebody actually has, with the explanations that driver's
+own author wrote, and cannot describe a release nobody is running.
+
+**Several stations** covers what those pages leave off: growing the file from one
+station to several of different kinds, saying which reading comes from which station,
+and where to look to see what each is delivering.
+
+Every one of them carries a note near the top saying the web interface can do the same
+thing, how to find its address, and that placing readings is much easier there.
+
 **Configuration.md says which options belong to which protocol.** Six protocols share
 one section, so the option list did not tell somebody with a Tempest which of the
 thirteen were theirs. One table now does: whether the protocol is in `protocols = auto`,

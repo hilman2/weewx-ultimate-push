@@ -16,6 +16,7 @@ for understanding the machine behind it. **Development** is for changing it.
 - **[Hardware](Hardware.md)** — every device, and what it takes to reach it
 - **[Web interface](Web-interface.md)** — see what a station sends, and place a field without a restart
 - **[Stations](Stations.md)** — setting one up, roles, and column ownership
+- **[Several stations](Several-stations.md)** — growing the file, and saying which reading comes from which station
 - **[Hosted hardware](Hosted-hardware.md)** — a Vantage or a USB console beside the stations that upload
 - **[Database columns](Database-columns.md)** — which columns a station needs, and how to add them
 - **[Configuration](Configuration.md)** — every option, with worked examples
@@ -23,6 +24,35 @@ for understanding the machine behind it. **Development** is for changing it.
 - **[Troubleshooting](Troubleshooting.md)** — symptoms and what they mean
 - **[Keeping strangers out](Security.md)** — path, token, addresses, TLS
 - **[Reporting a new sensor](New-sensors.md)** — exactly what to send
+
+## One page per protocol
+
+Setting each kind up by hand, with everything that is only its own.
+
+- **[Acurite](Protocol-Acurite.md)**
+- **[Ambient](Protocol-Ambient.md)**
+- **[Ecowitt](Protocol-Ecowitt.md)**
+- **[Lacrosse](Protocol-Lacrosse.md)**
+- **[Weatherflow](Protocol-Weatherflow.md)**
+- **[Wunderground](Protocol-Wunderground.md)**
+
+## One page per driver this machine can read
+
+Generated from the drivers installed here, so they cannot describe a version nobody has.
+
+- **[AcuRite](Driver-AcuRite.md)**
+- **[CC3000](Driver-CC3000.md)**
+- **[FineOffsetUSB](Driver-FineOffsetUSB.md)**
+- **[Simulator](Driver-Simulator.md)**
+- **[TE923](Driver-TE923.md)**
+- **[Ultimeter](Driver-Ultimeter.md)**
+- **[Vantage](Driver-Vantage.md)**
+- **[WMR100](Driver-WMR100.md)**
+- **[WMR300](Driver-WMR300.md)**
+- **[WMR9x8](Driver-WMR9x8.md)**
+- **[WS1](Driver-WS1.md)**
+- **[WS23xx](Driver-WS23xx.md)**
+- **[WS28xx](Driver-WS28xx.md)**
 
 ## How it works
 

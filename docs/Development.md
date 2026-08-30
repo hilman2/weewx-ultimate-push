@@ -47,6 +47,8 @@ CI runs both, across Python 3.8 to 3.13, plus a vermin check against 3.7.
 | `tools/import_ambient.py` | generates the Ambient catalog |
 | `tools/build_reference.py` | generates `docs/Sensors.md` |
 | `tools/build_hardware.py` | generates `docs/Hardware.md` |
+| `tools/build_protocols.py` | generates `docs/Protocol-*.md`, one per protocol |
+| `tools/build_drivers.py` | generates `docs/Driver-*.md`, one per WeeWX driver installed here |
 | `tools/check_against_ecowitt.py` | holds the channel counts against Ecowitt's cloud API |
 | `tools/check_docstring_types.py` | holds the docstring types against the signatures |
 | `tools/publish_wiki.py` | copies `docs/` into the wiki |

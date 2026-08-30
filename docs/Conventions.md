@@ -93,8 +93,17 @@ mechanism that does it.
 Facts move down that table, never up. An installation page does not explain how an
 upload is recognised; it links to the page that does.
 
-State a fact on one page only. Where a second page needs it, link. `docs/Sensors.md` and
-`docs/Hardware.md` are generated and are never edited by hand.
+State a fact on one page only. Where a second page needs it, link.
+
+Four sets of pages are generated and are never edited by hand. What is written about
+them lives in the tool that writes them, so that the page and the code cannot drift.
+
+| Pages | Written by | From |
+|---|---|---|
+| `Sensors.md` | `tools/build_reference.py` | the catalogs |
+| `Hardware.md` | `tools/build_hardware.py` | the catalogs, plus prose in the tool |
+| `Protocol-*.md` | `tools/build_protocols.py` | the protocol classes, plus prose in the tool |
+| `Driver-*.md` | `tools/build_drivers.py` | the WeeWX drivers installed on the machine that runs it |
 
 ## Commits and pull requests
 
