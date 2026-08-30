@@ -4,7 +4,7 @@
 
 If it is switched on, most of this page is a browser tab instead: what each station
 sends, the last twenty raw uploads, which columns are missing, and which of them already
-hold readings. See [Web interface](Web-interface).
+hold readings. See [Web interface](Web-interface.md).
 
 The rest of this page is what to do without it, or before WeeWX is running at all.
 
@@ -18,7 +18,7 @@ cat /var/tmp/weewx-ultimate-push-report.txt
 
 That file appears the first time a station sends something the driver cannot handle.
 It says which protocol it was, and holds the raw upload with everything that names the
-station replaced. See [Reporting a new sensor](New-sensors).
+station replaced. See [Reporting a new sensor](New-sensors.md).
 
 ## Everything else
 

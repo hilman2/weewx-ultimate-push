@@ -124,7 +124,7 @@ WARNING user.ultimatepush.mapping: 'tf_ch1' is not being written, because driver
 disagree about where it goes.
 ```
 
-Name it in `field_map_extensions`. See [Field map](Field-map).
+Name it in `field_map_extensions`. See [Field map](Field-map.md).
 
 **3. Was it unknown?**
 
@@ -132,12 +132,12 @@ Name it in `field_map_extensions`. See [Field map](Field-map).
 INFO user.ultimatepush.mapping: No idea what 'newfield_ch1' is. Left out.
 ```
 
-See [Reporting a new sensor](New-sensors).
+See [Reporting a new sensor](New-sensors.md).
 
 **4. Does it have a column?**
 
 A field without a column appears as a current value and is gone at the next archive
-record. See [Database columns](Database-columns).
+record. See [Database columns](Database-columns.md).
 
 **5. Does the skin show that field?**
 
@@ -149,11 +149,29 @@ appear however well it is stored.
 Almost all of this hardware sends rain as running counters: `dailyrainin`,
 `hourlyrainin`, `eventrainin` and their equivalents. It never sends the amount that
 fell since the last upload, which is what WeeWX calls `rain` and what every rain total
-is built from.
+is built from. `StdWXCalculate` turns one into the other, and the installer sets it up,
+so a fresh install needs nothing. See [Installation](Installation.md#rain).
 
-`StdDelta` turns one into the other. The installer sets it up, so a fresh install
-needs nothing. See **No rain is recorded** below for the two protocols the default
-does not suit.
+Two protocols the default does not suit. The driver says so at startup:
+
+```
+WARNING user.ultimatepush.driver: StdWXCalculate differences 'dayRain' to get the
+rain, and LaCrosse LW30x sends totalRain instead. Rain from LaCrosse LW30x will not be
+recorded until 'input' names a counter it sends.
+```
+
+| Protocol | `input` |
+|---|---|
+| Ecowitt, Ambient, Weather Underground, Acurite | `dayRain` |
+| LaCrosse | `totalRain` |
+| WeatherFlow | none needed; it already sends `rain` |
+
+```ini
+[StdWXCalculate]
+    [[Delta]]
+        [[[rain]]]
+            input = dayRain
+```
 
 The counter resets at midnight. WeeWX notices and logs `'rain' counter reset
 detected`, then skips that one interval rather than recording a day's worth of rain
@@ -228,31 +246,6 @@ Include:
 
 <https://github.com/hilman2/weewx-ultimate-push/issues>
 
-
-## No rain is recorded
-
-None of this hardware sends the rain since the last upload. It sends running counters,
-and `StdWXCalculate` has to difference one. The driver says so at startup when the
-setting does not suit what you have:
-
-```
-WARNING user.ultimatepush.driver: StdWXCalculate differences 'dayRain' to get the
-rain, and LaCrosse LW30x sends totalRain instead. Rain from LaCrosse LW30x will not be
-recorded until 'input' names a counter it sends.
-```
-
-| Protocol | `input` |
-|---|---|
-| Ecowitt, Ambient, Weather Underground, Acurite | `dayRain` |
-| LaCrosse | `totalRain` |
-| WeatherFlow | none needed; it already sends `rain` |
-
-```ini
-[StdWXCalculate]
-    [[Delta]]
-        [[[rain]]]
-            input = dayRain
-```
 
 ## The wind is out by a factor of 3.6
 

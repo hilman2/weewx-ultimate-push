@@ -54,7 +54,9 @@ every interface.
 
 #### path
 
-Accept uploads on this path only. Any other path receives a 404. Default is every path.
+Accept uploads on this path only. Any other path receives a 404. Leave it unset if you
+have Weather Underground, Acurite or LaCrosse hardware, whose path is fixed in the
+firmware. Default is every path.
 
 #### token
 
@@ -97,9 +99,11 @@ The driver module. Set to `user.ultimatepush.driver`. Required. No default.
 
 #### protocols
 
-Which protocols to listen for. `auto` is every protocol that arrives over HTTP. Name
-them explicitly to add WeatherFlow, which requires a second socket, or to settle an
-upload that identifies nothing. Default is `auto`. See [Protocols](Protocols.md).
+Which protocols to listen for, as a comma-separated list. `auto` is every protocol that
+arrives over HTTP, which costs nothing: an upload is recognised by its content rather
+than by the port it arrived on. Name them explicitly to add WeatherFlow, which requires
+a second socket, or to settle an upload that identifies nothing. Default is `auto`. See
+[Protocols](Protocols.md).
 
 #### model
 
@@ -183,35 +187,13 @@ Required only when there is more than one console, or to keep a station's identi
             channel = 4
 ```
 
-## The file the web interface writes
+## What the web interface does not write here
 
-Settings made in the web interface are kept in `ultimate-push-web.conf`, beside the
-console list, in the same format as `weewx.conf`. They are read on the next upload,
-without a restart. Anything set in `weewx.conf` takes precedence and is never written
-there.
-
-The file holds three kinds of entry:
-
-```ini
-[stations]
-    [[path:/E0rbpxexKCsb/report]]
-        path = /E0rbpxexKCsb/report
-        protocol = ecowitt
-        name = garden
-        role = main
-
-[columns]
-    outTemp = path:/E0rbpxexKCsb/report
-    extraTemp1 = path:/g0nTdxurjQd8/report
-```
-
-`[stations]` holds the stations the interface set up or accepted, keyed by identity.
-`[columns]` records which station fills which archive column, so that ownership
-survives a restart. Both are described in [Stations](Stations.md).
-
-Editing the file by hand works and is read on the next upload, but the interface
-rewrites the whole file the next time something changes in it, and comments added by
-hand do not survive that.
+Settings made in the web interface never reach `weewx.conf`. They go to
+`ultimate-push-web.conf`, beside the console list, and are read on the next upload
+without a restart. Anything set in `weewx.conf` takes precedence over them, so a station
+or a placement you write here stays yours. What that other file holds is in
+[Web interface](Web-interface.md#where-the-settings-are-written).
 
 ## The console's clock
 
@@ -337,26 +319,13 @@ costs nothing.
 
 ## Configuring the console
 
-### Ecowitt
+What to type into each app is in [Installation](Installation.md).
 
-In **WS View Plus**: *Weather Services*, then page through to *Customized*.
-
-| Field | Value |
-|---|---|
-| Protocol Type | **Ecowitt** |
-| Server IP / Hostname | the machine running WeeWX |
-| Path | what you set as `path`, or `/` |
-| Port | what you set as `port` |
-| Upload Interval | 60 seconds is ample; 16 is the minimum |
-
-The same console also speaks Weather Underground, which is read as well but carries
-fewer fields. Nothing outside the Weather Underground field list reaches WeeWX that
-way, which on a current station means most of the sensors. Use Ecowitt unless something
-prevents it.
-
-### Everything else
-
-See [Installation](Installation.md) for Ambient, WeatherFlow, Acurite and LaCrosse.
+One choice is worth making deliberately. An Ecowitt console speaks Weather Underground
+as well, and this driver reads both, but the Weather Underground field list is the
+shorter one by far. Nothing outside it reaches WeeWX that way, which on a current
+station means most of the sensors. Set the console to Ecowitt unless something prevents
+it.
 
 ## Checking the configuration
 

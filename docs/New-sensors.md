@@ -42,7 +42,7 @@ with it. The PASSKEY, which identifies the station to Ecowitt, is already replac
 
 It is only written when something cannot be placed, so its absence means the driver
 understood everything. If a reading is still missing from your reports, the cause is
-elsewhere: see [Troubleshooting](Troubleshooting).
+elsewhere: see [Troubleshooting](Troubleshooting.md).
 
 The path can be changed, or the whole thing switched off:
 
@@ -62,7 +62,7 @@ To look at a station before it is wired up, or to capture more than one upload:
 python -m user.ultimatepush --port 8001
 ```
 
-Point the console at that port for one upload. See [Diagnostics](Diagnostics).
+Point the console at that port for one upload. See [Diagnostics](Diagnostics.md).
 
 ## When more than the payload is needed
 

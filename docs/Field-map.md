@@ -9,7 +9,7 @@ station  ──►  protocol   ──►  raw field  ──►  WeeWX field  ─
 
 The protocol is determined first, because the same raw name means different things in
 different catalogs. `UV` is an index in one and microwatts per square
-centimetre in another. See [Protocols](Protocols) for how an upload is recognised, and
+centimetre in another. See [Protocols](Protocols.md) for how an upload is recognised, and
 check the log line that says which catalog was used before reading anything below as a
 bug.
 
@@ -39,7 +39,7 @@ decision made in front of what it costs. See [Stations](Stations.md).
 
 ## 2. The catalog
 
-One per protocol. The Ecowitt one has 532 raw fields; see [Sensors](Sensors) for the
+One per protocol. The Ecowitt one has 532 raw fields; see [Sensors](Sensors.md) for the
 full list, or ask the driver:
 
 ```
@@ -50,7 +50,7 @@ from ultimatepush.catalogs import ecowitt; print(ecowitt.FIELDS['tf_ch1'])"
 ## 3. Inference
 
 A field in neither of the above is examined rather than dropped. See
-[Unknown fields](Unknown-fields).
+[Unknown fields](Unknown-fields.md).
 
 ## Fields that wait for you
 
@@ -140,4 +140,4 @@ catalog.
 python -m user.ultimatepush --port 8001
 ```
 
-Prints every reading with the field it went to. See [Diagnostics](Diagnostics).
+Prints every reading with the field it went to. See [Diagnostics](Diagnostics.md).

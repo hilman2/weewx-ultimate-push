@@ -4,7 +4,7 @@
 
 - WeeWX 5.0 or later
 - Python 3.7 or later
-- Hardware that pushes its readings. See [Protocols](Protocols) for the six protocols
+- Hardware that pushes its readings. See [Protocols](Protocols.md) for the six protocols
   supported.
 
 There are no other requirements: no pip packages and no compiler.
@@ -12,7 +12,7 @@ There are no other requirements: no pip packages and no compiler.
 ## Install
 
 ```
-weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push-0.13.0.zip
+weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push.zip
 sudo systemctl restart weewx
 ```
 
@@ -63,7 +63,7 @@ thing and uploads that do not present it are refused.
 
 A Fine Offset console under *Weather logger* or *HP1001* firmware speaks the metric
 dialect of this protocol. It is recognised on its own; read the wind note in
-[Protocols](Protocols) before trusting the wind speed.
+[Protocols](Protocols.md) before trusting the wind speed.
 
 ### WeatherFlow
 
@@ -89,7 +89,7 @@ the machine running WeeWX:
 | LaCrosse LW301, LW302 | `box.weatherdirect.com` |
 
 How is up to your network. A `dnsmasq` entry, a rewrite on the router, or an entry in
-the DNS server the bridge uses. See [Hardware](Hardware).
+the DNS server the bridge uses. See [Hardware](Hardware.md).
 
 Both bridges post to port 80, so WeeWX has to listen there, which needs root. Running
 WeeWX as root is not a good trade. Put a reverse proxy in front instead, or redirect the
@@ -130,14 +130,14 @@ Then, on the first upload, which catalog it was read with:
 INFO user.ultimatepush.driver: Reading ecowitt uploads with the 'ecowitt' catalog, 532 fields.
 ```
 
-Followed by any fields waiting for a decision. See [Field map](Field-map).
+Followed by any fields waiting for a decision. See [Field map](Field-map.md).
 
 ## Set the station up
 
 Open the address the log reported. If nothing has uploaded yet, the page asks for a name
 and the hardware type, and displays the settings to enter into the console. With a
 station already recording, a second one is set up the same way and becomes an extra
-sensor without being asked. See [Stations](Stations).
+sensor without being asked. See [Stations](Stations.md).
 
 ## Rain
 
@@ -148,6 +148,8 @@ suits four of the six protocols. WeatherFlow requires none of this. LaCrosse req
 the protocols you enabled.
 
 ## Upgrade
+
+The install command again. It always fetches the newest release:
 
 ```
 weectl extension install https://github.com/hilman2/weewx-ultimate-push/releases/latest/download/weewx-ultimate-push.zip

@@ -15,7 +15,19 @@ continues leafwetness_ch, e.g. leafWet1
 ```
 
 Taken automatically, unless the family's placement is a convention rather than a
-reading. Those wait for you. See [Field map](Field-map).
+reading. Those wait for you, and the log gives the line to add:
+
+```
+INFO user.ultimatepush.mapping: New channel 'temp9f' would go to 'extraTemp9'.
+Which sensor that is, and whether that field is free, only you know. Add
+'temp9f = extraTemp9' under [[field_map_extensions]] to accept it.
+```
+
+Knowing where a channel belongs is not the same as knowing the field is free. A new
+WN34 channel would go to `extraTemp`, where a sensor configured two years ago may
+already have history, and two series in one column cannot be separated afterwards.
+A family with nowhere else to be placed, such as a laser rangefinder's depth or a
+lightning count, is taken without asking. See [Field map](Field-map.md).
 
 ## Guessed
 
@@ -71,7 +83,7 @@ worth a look before the reading lands in a column.
 INFO user.ultimatepush.mapping: No idea what 'wizzlefrob' is. Left out.
 ```
 
-Please report it. See [Reporting a new sensor](New-sensors).
+Please report it. See [Reporting a new sensor](New-sensors.md).
 
 ## The setting
 

@@ -93,7 +93,7 @@ or not, until those tries fall out of the window.
 
 It is still plain HTTP, so the token travels in clear and ends up in the browser
 history. Bind it to `localhost` and use an SSH tunnel, or put TLS in front, unless the
-network is one you trust. See [Web interface](Web-interface).
+network is one you trust. See [Web interface](Web-interface.md).
 
 ## What none of this does
 
@@ -108,7 +108,7 @@ posting a plausible temperature. The defence is that they have to know it.
 
 **Protecting a station from a second one.** That is a different problem, and it has
 its own answer: the driver answers only to consoles it knows about. See
-[Stations](Stations).
+[Stations](Stations.md).
 
 ## A limit worth keeping
 

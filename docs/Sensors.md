@@ -1,7 +1,7 @@
 # Sensor reference
 
 Every raw field the Ecowitt catalog knows, grouped by the sensor that sends it.
-The other five protocols have catalogs of their own; see [Protocols](Protocols).
+The other five protocols have catalogs of their own; see [Protocols](Protocols.md).
 
 Generated from the catalog by `tools/build_reference.py`. Do not edit by hand.
 
@@ -9,7 +9,7 @@ Generated from the catalog by `tools/build_reference.py`. Do not edit by hand.
 - **WeeWX field** is where the reading is stored.
 - **Waits** means the field is not written until it is named in
   `field_map_extensions`, because where it belongs is not something the hardware
-  says. See [Field map](Field-map).
+  says. See [Field map](Field-map.md).
 
 Channel counts are Ecowitt's own, from the compatibility table for its consoles and
 gateways. A console older than the sensor may support fewer.
