@@ -78,7 +78,10 @@ None. Everything that applies to this protocol applies to all of them, and is in
 rtl_433 is a separate program and none of it is part of this driver. Install it, and
 have it send here:
 
-```bash sudo apt install rtl-433 rtl_433 -C si -F syslog:127.0.0.1:1433 ```
+```bash
+sudo apt install rtl-433
+rtl_433 -C si -F syslog:127.0.0.1:1433
+```
 
 `-C si` asks it to convert what it can itself, which costs nothing and means one less
 thing that can be wrong. `-F syslog:` is how it sends: one datagram per message, which
@@ -87,12 +90,19 @@ is why nothing has to start or supervise it.
 Leave it running with a unit of its own rather than starting it by hand. Put this in
 `/etc/systemd/system/rtl_433.service`:
 
-```ini [Unit] Description=rtl_433 After=network.target
+```ini
+[Unit]
+Description=rtl_433
+After=network.target
 
-[Service] ExecStart=/usr/bin/rtl_433 -C si -F syslog:127.0.0.1:1433 Restart=always
+[Service]
+ExecStart=/usr/bin/rtl_433 -C si -F syslog:127.0.0.1:1433
+Restart=always
 User=nobody
 
-[Install] WantedBy=multi-user.target ```
+[Install]
+WantedBy=multi-user.target
+```
 
 then `sudo systemctl enable --now rtl_433`. The receiver is a USB device and belongs to
 root until a udev rule says otherwise; rtl-433's package installs one.

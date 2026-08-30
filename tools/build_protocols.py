@@ -254,13 +254,29 @@ def wrap(paragraph):
 def keep_paragraphs(text):
     """Wrap a written block without running its paragraphs together.
 
+    A fenced block is left exactly as written. Wrapping one folds a command somebody
+    is meant to paste into a single line, and a systemd unit into something that is
+    not a systemd unit.
+
     Args:
         text (str): One of the WRITTEN blocks.
 
     Returns:
         str: The same, wrapped.
     """
-    return '\n\n'.join(wrap(part) for part in text.strip().split('\n\n'))
+    out = []
+    fenced = False
+    for part in text.strip().split('\n\n'):
+        # A fence opens and closes on its own line and a block may hold blank lines,
+        # so which side of a fence a part is on has to be carried from one part to
+        # the next rather than worked out from the part by itself.
+        if fenced or part.lstrip().startswith('```'):
+            out.append(part)
+            if part.count('```') % 2:
+                fenced = not fenced
+            continue
+        out.append(wrap(part))
+    return '\n\n'.join(out)
 
 
 def minimal(protocol):
