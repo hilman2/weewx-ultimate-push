@@ -83,6 +83,7 @@ port. See [Web interface](https://github.com/hilman2/weewx-ultimate-push/wiki/We
 | Protocol | Hardware | How it arrives |
 |---|---|---|
 | Ecowitt | GW1000/1100/1200/2000/3000, HP2551, HP2561, WS3800/3900/3910, WN1980, and the Froggit and Misol rebadges | POST, to a path of your choosing |
+| Ecowitt gateway API | the same hardware as the row above | asked on TCP 45000, on a schedule, with nothing set on the console |
 | Weather Underground | Fine Offset Observer, Ambient WS-1000, Sainlogic, Misol, any console set to protocol *Wunderground*, Meteobridge, most weather software | GET, `/weatherstation/updateweatherstation.php` |
 | Ambient Weather | WS-2902, WS-5000, WS-1965, and the rest of the range with *Custom* upload in awnet | POST or GET, to a path of your choosing |
 | WeatherFlow | Tempest, and the AIR and SKY before it | UDP broadcast on port 50222 |
@@ -176,15 +177,19 @@ answered because it knows which address it asked.
             channel = 3
 ```
 
-Two so far, and both are air quality sensors because that is what tends to be sold
-with a local API and no way to point it anywhere.
-
 | `purpleair` | PurpleAir PA-II, PA-II-SD, PA-I |
 |---|---|
 | `airlink` | Davis AirLink |
+| `ecowitt_gateway` | Ecowitt GW1000, GW1100, GW1200, GW2000, GW3000, WH2650, WN1900 |
 
-No sensor yet? `python -m user.ultimatepush --fake-purpleair` and
-`--fake-airlink` answer like one each.
+The first two are air quality sensors, which is what tends to be sold with a local
+API and no way to point it anywhere. The third is a weather station that can be
+pointed and does not have to be: an Ecowitt gateway answers its own protocol on port
+45000 whether or not its *Customized* upload is on, so both can run and nothing has
+to be set on the console to use this one.
+
+No sensor yet? `python -m user.ultimatepush --fake-purpleair`, `--fake-airlink` and
+`--fake-gw1000` answer like one each.
 
 See [Sensors this driver asks](https://github.com/hilman2/weewx-ultimate-push/wiki/Polled-sources).
 

@@ -109,6 +109,16 @@ def main(argv=None):
         "can be tried without owning one. Default port 8082.",
     )
     parser.add_argument(
+        '--fake-gw1000',
+        nargs='?',
+        const=45000,
+        type=int,
+        metavar='PORT',
+        help="Answer like an Ecowitt gateway's own API on this port, so that a "
+        "polled source can be tried without owning one. Default port 45000, which "
+        "is the one the hardware uses.",
+    )
+    parser.add_argument(
         '--fake-rtl433',
         nargs='?',
         const=1433,
@@ -176,6 +186,11 @@ def main(argv=None):
             what='airlink',
             at='/v1/current_conditions',
         )
+
+    if args.fake_gw1000 is not None:
+        from .simulate import gw1000_serve
+
+        return gw1000_serve(args.fake_gw1000)
 
     if args.fake_rtl433 is not None:
         from .simulate import send_rtl433

@@ -5,6 +5,11 @@ because it was never meant to send anything: it sits on your network and answers
 whoever asks. A PurpleAir is like this, and so is a Davis AirLink, and so is most of
 what is sold as having a local API.
 
+An Ecowitt gateway is here for the other reason. It can be pointed at a server, and
+this driver reads it that way too; it also answers a protocol of its own, and reading
+it that way means nothing has to be set on the console at all. See
+[Ecowitt gateway API](Protocol-Ecowitt-gateway.md).
+
 So the driver asks. Every so often it fetches the sensor's own answer, reads it the
 same way it reads an upload, and records it. From there nothing is different: the
 same field map, the same channels, the same rule about which station owns which
@@ -77,6 +82,7 @@ long for anything on your own network.
 |---|---|---|
 | `purpleair` | PurpleAir PA-II, PA-II-SD and PA-I | [PurpleAir](Protocol-Purpleair.md) |
 | `airlink` | Davis AirLink | [Davis AirLink](Protocol-Airlink.md) |
+| `ecowitt_gateway` | Ecowitt GW1000, GW1100, GW1200, GW2000, GW3000, WH2650, WN1900 | [Ecowitt gateway API](Protocol-Ecowitt-gateway.md) |
 
 Adding another is a catalog and a protocol class, both small, and the asking is
 already written. See [New sensors](New-sensors.md).
@@ -97,7 +103,12 @@ python -m user.ultimatepush --fake-purpleair
 python -m user.ultimatepush --fake-airlink
 ```
 
-They answer on ports 8081 and 8082, with readings that move. Point a source at
+```bash
+python -m user.ultimatepush --fake-gw1000
+```
+
+The first two answer on ports 8081 and 8082 and the gateway on 45000, which is the
+port the real hardware uses. All three send readings that move. Point a source at
 `127.0.0.1:8081` and the whole of this page can be walked through before the real
 sensor arrives.
 
@@ -116,6 +127,10 @@ The temperature and humidity are the reason for `role = extra`. On a PurpleAir t
 thermometer is inside the housing beside electronics that are warm and reads several
 degrees above the air outside. As an extra station it goes to `extraTemp3` rather
 than `outTemp`, where nothing mistakes it for the air temperature.
+
+None of that applies to a gateway. It is the weather station, so it is the main one
+and its temperature is the outdoor temperature; leave `role` out. The example blocks
+on this page are an air quality sensor's, and the gateway's own page has its own.
 
 ## When it stops recording
 
