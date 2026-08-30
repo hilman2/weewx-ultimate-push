@@ -41,6 +41,7 @@ Setting each kind up by hand, with everything that is only its own.
 - **[Ambient](Protocol-Ambient.md)**
 - **[Ecowitt](Protocol-Ecowitt.md)**
 - **[Ecowitt gateway API](Protocol-Ecowitt-gateway.md)** — the same hardware asked rather than pointed, with nothing set on the console
+- **[Home Assistant](Protocol-Homeassistant.md)** — anything Home Assistant can read
 - **[Lacrosse](Protocol-Lacrosse.md)**
 - **[PurpleAir](Protocol-Purpleair.md)**
 - **[rtl_433](Protocol-Rtl433.md)** — cheap radio sensors, with an RTL-SDR stick
@@ -94,6 +95,7 @@ Generated from the drivers installed here, so they cannot describe a version nob
 | I have a second console | [Several stations](Several-stations.md) |
 | I have an air quality sensor | [Sensors this driver asks](Polled-sources.md) |
 | I have cheap 433 MHz sensors | [rtl_433](Protocol-Rtl433.md) |
+| My sensor is already in Home Assistant | [Home Assistant](Protocol-Homeassistant.md) |
 | My station is on a cable, not the network | [Hosted hardware](Hosted-hardware.md) |
 | A reading vanishes at the archive interval | [Database columns](Database-columns.md) |
 | This port is on the internet | [Keeping strangers out](Security.md) |

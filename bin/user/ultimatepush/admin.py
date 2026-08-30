@@ -481,8 +481,19 @@ class Site:
                 role=body.get('role') or None,
                 channel=body.get('channel') or None,
                 name=body.get('name') or None,
+                token=body.get('token') or None,
+                entities=body.get('entities') or None,
             )
             return _json({'ok': ok, 'message': message})
+        if route == 'polling/find':
+            return _json(
+                self.driver.web_discover_polled(
+                    body.get('protocol', ''),
+                    address=body.get('address') or None,
+                    url=body.get('url') or None,
+                    token=body.get('token') or None,
+                )
+            )
         if route == 'polling/remove':
             ok, message = self.driver.web_remove_polled(body.get('name', ''))
             return _json({'ok': ok, 'message': message})

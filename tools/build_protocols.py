@@ -33,6 +33,22 @@ sys.path.insert(0, os.path.join(HERE, 'bin', 'user'))
 # reads the same wherever it was built.
 ADDRESS = '1.2.3.4'
 PORT = '8000'
+# Where a polled source's example points, and what its block is called, for the two
+# that are not an air quality sensor on port 80. The example has to be a block
+# somebody can copy, and one pointed at the wrong port is not that.
+FETCH_ADDRESS = {'homeassistant': '1.2.3.4:8123'}
+
+# The polled protocols whose readings are a main station's rather than an extra
+# sensor's. Said rather than worked out: the obvious guess is that anything with a
+# rain counter is the weather station, and that is wrong for Home Assistant, which
+# has one because an integration reporting rain reports a total, and is still most
+# often a room sensor standing beside somebody's weather station.
+IS_THE_STATION = {'ecowitt_gateway'}
+
+# What the block is called, where 'air' is wrong. It is the station's name, so it has
+# to read like the readings in it: a Home Assistant block whose example entities are
+# sensor.garden_temperature cannot be called 'air'.
+FETCH_BLOCK = {'homeassistant': 'garden', 'ecowitt_gateway': 'garden'}
 PATH = '/abcdefg12345/report'
 IDENT = 'up-abcde123'
 PASSWORD = 'abcdefg12345'
@@ -149,6 +165,83 @@ same model and a different id: that is what a battery change does.
 The temperature is right and the rain is nonsense. Nearly every one of these gauges
 sends the total since its battery went in, and WeeWX has to be told to difference
 it. That is `[StdWXCalculate]` and the driver says so at startup if it is not set.""",
+    },
+    'homeassistant': {
+        'good': """Home Assistant is not hardware. It is the other program on your
+network that already talks to the thermometer in the bedroom, the soil probe in the
+raised bed and the sensor inside the boiler, and it will tell this driver what any of
+them is reading. So the answer to "can WeeWX read my Aqara" is now: if Home Assistant
+can, this can.
+
+**Make a token first.** In Home Assistant, click your name at the bottom of the
+sidebar, open the *Security* tab, scroll to *Long-lived access tokens* and create one.
+It is shown once. Copy it into the `token` line before you close the dialog, because
+there is no way to see it again and the only fix is to make another.
+
+That token can do everything your user account can do, including turning things off.
+Keep it the way you would keep the password. It goes in `weewx.conf`, which is
+readable by whoever can read that file, or in the settings file the web interface
+writes, which is the same. This driver never prints it: not in a log line, not on the
+page that shows what arrived, not in an error message. If you would rather it could
+do less, make the token under a Home Assistant user of its own with only the areas you
+want it to see.
+
+**One block is one device, not one Home Assistant.** Home Assistant groups its sensors
+into devices, and that grouping is exactly what this driver needs: the thermometer on
+the balcony is one station and the one in the living room is another, so one of them
+fills the outdoor temperature and the other lands in a column of its own. Set up a
+second block against the same address for the second device. There is no cost to it.
+
+**Say which sensors, and in what order.** `entities` names them, and the order is not
+decoration. The first temperature in the list is the temperature; a second one on the
+same device arrives under a name of its own and waits in the web interface for you to
+say which column it should have. So put the one you mean first.
+
+The web interface does the whole of this for you: type the address, paste the token,
+press *Find the sensors*, and it lists what is there grouped by device with the first
+one ticked.
+
+**Readings that are not readings are left out.** Home Assistant says `unavailable`
+when it cannot reach a sensor and `unknown` before it has heard from one, and neither
+of those is zero. A sensor whose battery has gone is worse, because Home Assistant
+keeps returning the last number it had, for ever: left alone that would write one
+afternoon's temperature into your database sixty times an hour. So a reading older
+than `stale` seconds is not recorded. That is twice the interval unless you say
+otherwise, which is right for a sensor that reports on a schedule and too short for
+one that reports only when the reading changes. A soil probe that sends every fifteen
+minutes wants `stale = 2000` or so.
+
+**The units are Home Assistant's and the columns are WeeWX's.** Whatever it sends,
+whether Fahrenheit or Kelvin, miles an hour or knots, inches of mercury or
+hectopascals, is converted before it is recorded. Nothing has to match.
+
+No Home Assistant to hand? `python -m user.ultimatepush --fake-homeassistant` answers
+like one, with two devices and three sensors that are not reporting a number.""",
+        'wrong': """Nothing is recorded and the log says the token was refused: the
+token is wrong, or it was revoked, or it belongs to a user that has been deleted. Make
+a new one. It is said once and then the driver stays quiet, so look at the start of the
+log rather than the end.
+
+One sensor is missing and the rest are fine. Either Home Assistant is saying
+`unavailable` or `unknown` for it, or its last reading is older than `stale` allows.
+Open the sensor in Home Assistant: it says at the top when it was last updated. If
+that is minutes ago and the sensor is working normally, raise `stale`.
+
+A sensor was recording and stopped, and Home Assistant still shows it. Its entity was
+renamed. Home Assistant does that when you rename the device it belongs to, and the
+old name then belongs to nothing; the log says which one it could not read.
+
+Two sensors of the same kind and only one is recorded. That is deliberate. The first
+of each kind fills the column, and the second arrives under a name of its own; the web
+interface lists it and gives it a column when you say where it goes.
+
+The device has no name and the station is called nothing. Rendering the list of
+devices needs an administrator's token, and reading the sensors does not. Nothing else
+is affected, and a token made under an administrator account fixes it.
+
+The temperature is right and the rain is nonsense. Nearly every rain sensor reports
+the total so far, and WeeWX has to be told to difference it. That is `[StdWXCalculate]`
+and the driver says so at startup if it is not set.""",
     },
     'purpleair': {
         'good': """Give the sensor a fixed address in your router, under whatever the
@@ -394,13 +487,19 @@ def minimal(protocol):
         # columns of their own. A gateway's are the main ones, and telling somebody
         # to write role = extra would send their outdoor temperature to extraTemp3
         # and leave outTemp empty.
-        beside_the_station = protocol.rain_counter is None
+        beside_the_station = protocol.name not in IS_THE_STATION
         lines += [
             '',
             '    [[polling]]',
-            '        [[[%s]]]' % ('air' if beside_the_station else 'garden'),
-            '            address = %s' % ADDRESS,
+            '        [[[%s]]]' % FETCH_BLOCK.get(protocol.name, 'air'),
+            '            address = %s' % FETCH_ADDRESS.get(protocol.name, ADDRESS),
             '            protocol = %s' % protocol.name,
+        ]
+        # What this one protocol cannot do without. A block missing the line that
+        # says which sensors to read is a block nobody can copy.
+        for key, value in protocol.fetch_settings:
+            lines.append('            %s = %s' % (key, value))
+        lines += [
             '            interval = 60',
         ]
         if beside_the_station:
@@ -458,6 +557,8 @@ ABOUT_MINIMAL = {
     # written down.
     # A receiver hears everything nearby, so the first thing it hears is as likely
     # to be next door's as your own, and nothing it hears is adopted.
+    'chosen-extra': "`role = extra` puts the readings in columns of their own,"
+    " which is what you want for anything that is not your main weather station.",
     'overheard': "The identity is what the sensor puts on the air and cannot be"
     " chosen, so this line cannot be written until it has been heard once. The log"
     " prints it, ready to copy. Nothing is adopted here, not even the first sensor"
@@ -472,6 +573,14 @@ ABOUT_MINIMAL = {
     # The same, for one whose readings would fight with the weather station's.
     'fetch-extra': "`role = extra` puts its readings in columns of their own, which"
     " is what you want for a sensor whose thermometer is inside its own housing.",
+    # Same again, for one that answers with more than it was asked about and has to
+    # be told which part of it is the station. It gets a sentence of its own about
+    # role, because what is behind one of its entities is not stated anywhere: a
+    # PurpleAir is an air quality sensor and this could be a soil probe.
+    'chosen': "There is nothing to identify and nothing to wait for: the driver knows"
+    " what answered because it knows what it asked. What it does have to be told is"
+    " which sensors to read and what to authenticate itself with, which is the two"
+    " lines above that no other polled source has.",
 }
 
 
@@ -485,9 +594,10 @@ def _about_minimal(protocol):
         str: One paragraph.
     """
     if protocol.fetched:
-        said = ABOUT_MINIMAL['fetch']
-        if protocol.rain_counter is None:
-            said += ' ' + ABOUT_MINIMAL['fetch-extra']
+        kind = 'chosen' if protocol.discovers else 'fetch'
+        said = ABOUT_MINIMAL[kind]
+        if protocol.name not in IS_THE_STATION:
+            said += ' ' + ABOUT_MINIMAL[kind + '-extra']
         return said
     if protocol.overhears:
         return ABOUT_MINIMAL['overheard']
@@ -550,6 +660,16 @@ def own_options(protocol):
                 "it. Default is `50222`.",
             ),
         ],
+        'homeassistant': [
+            (
+                'stale',
+                "How old a reading may be, in seconds, before it stops counting as "
+                "a reading. Twice the interval by default. A sensor whose battery "
+                "has gone keeps returning its last value for ever, and without this "
+                "that value would be recorded as though it were fresh. Raise it for "
+                "a sensor that reports only when its reading changes.",
+            ),
+        ],
     }.get(protocol.name)
     if not mine:
         return [
@@ -561,13 +681,20 @@ def own_options(protocol):
             ),
             '',
         ]
+    # Where an option goes depends on what kind of protocol it is. A polled
+    # source's options are its own block's, because a source is its own station and
+    # everything about it is written in one place.
+    where = (
+        'go in the `[[polling]]` block that sets the source up'
+        if protocol.fetched
+        else 'go in the `[UltimatePush]` section'
+    )
     lines = [
         '## Options of its own',
         '',
         wrap(
-            'These belong to this protocol alone and go in the `[UltimatePush]`'
-            ' section. Everything else that applies is in'
-            ' [Configuration](Configuration.md#driver-options).'
+            'These belong to this protocol alone and %s. Everything else that'
+            ' applies is in [Configuration](Configuration.md#driver-options).' % where
         ),
         '',
     ]
@@ -609,7 +736,14 @@ def page(protocol):
     lines = [
         '# %s' % protocol.label,
         '',
-        wrap('Setting up %s hardware by hand, in `weewx.conf`.' % protocol.label),
+        wrap(
+            # Not every protocol is a make of hardware. One that reads whatever
+            # another program on the network has is a source, and calling it
+            # hardware on its own page is the first thing a reader would query.
+            'Setting up %s by hand, in `weewx.conf`.' % protocol.label
+            if protocol.discovers
+            else 'Setting up %s hardware by hand, in `weewx.conf`.' % protocol.label
+        ),
         '',
         wrap(
             'Generated by `tools/build_protocols.py`. What each protocol needs is'

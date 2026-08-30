@@ -127,6 +127,15 @@ def main(argv=None):
         help="Send what rtl_433 sends to this port, so that radio sensors can be "
         "tried without a receiver. Default port 1433.",
     )
+    parser.add_argument(
+        '--fake-homeassistant',
+        nargs='?',
+        const=8123,
+        type=int,
+        metavar='PORT',
+        help="Answer like Home Assistant's REST API on this port, so that a polled "
+        "source can be tried without one. Default port 8123, which is its own.",
+    )
     parser.add_argument('--port', default=8000, help="Port to listen on. Default 8000.")
     parser.add_argument('--address', default='', help="Address to bind to.")
     parser.add_argument('--path', help="Accept this path only.")
@@ -196,6 +205,11 @@ def main(argv=None):
         from .simulate import send_rtl433
 
         return send_rtl433(args.fake_rtl433)
+
+    if args.fake_homeassistant is not None:
+        from .simulate import serve_homeassistant
+
+        return serve_homeassistant(args.fake_homeassistant)
 
     if args.url:
         return _say_url(args.config)
