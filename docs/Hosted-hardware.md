@@ -19,8 +19,9 @@ How it is put together is in [Architecture](Architecture.md#hosted-drivers).
 
 ## Adding one in the web interface
 
-Setting up a wired station is the same flow as setting up any other, on the **Setup**
-tab. The list there is every kind of station, in three groups by what you have to do:
+Setting up a wired station is the same flow as setting up any other: **Add**, above
+the station list. The list there is every kind of station, in three groups by what
+you have to do:
 
 - **You point it at this machine** — Ecowitt, Ambient and Weather Underground consoles.
   You type an address into the app that configures the console.
@@ -38,11 +39,11 @@ you have to take out again. On success it starts at once. There is no restart.
 
 What you set up there is kept in `ultimate-push-web.conf`, beside the console list, not
 in `weewx.conf`. WeeWX is running from that file, it is often not writable, and it is
-your file with your comments in it. The tab shows the block to paste into `weewx.conf`
+your file with your comments in it. The form shows the block to paste into `weewx.conf`
 if you would rather keep it there, which is also what `weectl device` needs in order to
 find the station.
 
-Afterwards it is a station like any other and is managed on the **Stations** tab, beside
+Afterwards it is a station like any other and is managed under **Stations**, beside
 the consoles that upload. **Save and reopen** there closes the driver and opens it again
 with the new settings, which is what it takes for a serial port to become a different
 serial port. If it will not open, nothing changes and the one that was running still is.

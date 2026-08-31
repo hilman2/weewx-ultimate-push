@@ -56,8 +56,8 @@ that console cannot be told a path:
 
 Nothing is shown until the station has a name, because the name is what produces the
 path or the ID. From the first upload the driver knows which station sent it. The same
-settings stay on the **Stations** tab afterwards, for a console that has to be set up
-again a year later.
+settings stay on that station's **Console** tab afterwards, for a console that has to
+be set up again a year later.
 
 For hardware this machine reads rather than waits for, the form is that driver's own.
 See [Hosted hardware](Hosted-hardware.md).
@@ -203,8 +203,8 @@ from that moment on.
 
 **Where one particular reading goes.** For a single sensor rather than a whole station.
 The soil probe on channel 1 of the second console has nowhere of its own to go, and you
-want it in `soilMoist3`. In the web interface that is the **Fields** tab, one row per
-reading, with a selector saying where it goes and what that costs. By hand it is
+want it in `soilMoist3`. In the web interface that is the station's **Readings** tab,
+one row per reading, with a selector saying where it goes and what that costs. By hand it is
 `field_map_extensions` under that station:
 
 ```ini
@@ -227,7 +227,7 @@ by the wrong one, you take it away from that station and the next one to send th
 reading gets it. See [Column ownership](#column-ownership) below.
 
 A placement you made yourself beats the other two, always. If a reading is not where you
-expect it, the **Fields** tab shows which of the three put it there.
+expect it, the **Readings** tab shows which of the three put it there.
 
 ## Roles
 
@@ -300,7 +300,7 @@ Because it is recorded rather than learned again at each startup, an extra stati
 held back only once — until the main station's first upload, ever. After that a restart
 costs no readings.
 
-The **Stations** tab lists the columns each station fills. The checklist reports
+A station's **Console** tab lists the columns it fills. The checklist reports
 readings that were dropped, which station sent them, and which station holds the column:
 
 ```
@@ -319,8 +319,8 @@ effect.
 
 A station holds its columns until it is told otherwise, which is correct while a
 console is merely offline and wrong once a sensor has been removed for good. **Give
-them up** on the Stations tab releases them, and the next station to send one of those
-readings takes it. What is already in the archive is not changed.
+them up** on that station's **Console** tab releases them, and the next station to
+send one of those readings takes it. What is already in the archive is not changed.
 
 Changing a station's role or channel releases its columns as well, because it writes
 different columns from then on. Removing a station releases them.

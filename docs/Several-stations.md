@@ -190,7 +190,7 @@ the `[columns]` section of that file.
 
 Four ways, in the order they are useful.
 
-**The web interface, Fields tab.** Every station, every reading it sends, and where
+**The web interface, field map.** Every station, every reading it sends, and where
 each one goes. This is the only view that answers "which station fills `outTemp`"
 directly.
 

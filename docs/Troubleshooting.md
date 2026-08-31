@@ -274,8 +274,8 @@ cannot be separated afterwards: UV, barometer, dayRain, ...
 ```
 
 The checklist lists them, with the station that holds each column. To keep a reading,
-give it a field of its own on the Fields tab and add the column if the database has
-none. See [Stations](Stations.md).
+give it a field of its own on that station's Readings tab and add the column if the
+database has none. See [Stations](Stations.md).
 
 ## A station on a cable records nothing
 

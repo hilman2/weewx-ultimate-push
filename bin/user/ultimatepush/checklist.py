@@ -158,7 +158,7 @@ def _hardware(driver, found):
             'Put the path into the console',
             False,
             "%d station(s) are set up here and have not uploaded yet. Each one has a "
-            "path of its own, on the Stations tab. Leave this page open: it notices "
+            "path of its own, on its Console tab. Leave this page open: it notices "
             "the first upload by itself." % len(waiting),
             protocols=protocols,
             created=waiting,
@@ -319,7 +319,7 @@ def _placements(driver, found):
         '%d field(s) are waiting for you' % len(pending),
         False,
         "Drivers disagree about where these belong, and the wrong choice mixes two "
-        "sensors into one column for good. Nothing is guessed. The Fields tab has "
+        "sensors into one column for good. Nothing is guessed. The field map has "
         "them, with what each column already holds.",
         fields=pending,
     )
@@ -388,7 +388,7 @@ def _sharing(driver, found):
         "A column takes one answer, so these are dropped rather than written over "
         "somebody else's readings. That is the right outcome when the column really "
         "is the other station's. When it is not, give this one a field of its own on "
-        "the Fields tab, and add the column if the database has none.",
+        "the field map, and add the column if the database has none.",
         fields=[
             {'field': r['field'], 'stations': [r['station']], 'owner': r['owner']}
             for r in sorted(turned_away, key=lambda r: (r['station'], r['field']))
@@ -421,7 +421,7 @@ def _columns(driver, found):
         "They appear in reports as current conditions and are gone at the next "
         "archive interval. Adding a column changes the table definition and not "
         "its rows, so it is quick, and there is still no undo without a "
-        "database first. The Database columns tab has the commands.",
+        "database first. A station's Columns tab has the commands.",
         fields=[m['field'] for m in missing],
     )
 

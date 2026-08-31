@@ -81,9 +81,23 @@ also omits the information that matters most: whether the column is already in u
 The interface shows, for each raw field, what arrived, its last value, where it would be
 written, whether a column exists, and how many earlier values that column holds.
 
+## Moving around it
+
+The top bar has three views. **Stations** is where the work is done, one station at a
+time. **Field map** puts every station's readings on one page. **Checklist** is what is
+still in the way, with a count beside it.
+
+A strip under the top bar repeats that count on every view. A station that is uploading
+happily looks healthy on its own page, and the reason none of it is being recorded can
+be a console two entries down the list being turned away.
+
+Stations is a list on the left and one station on the right. Everything under that
+station's tabs is about the station you picked, so a tab means the same thing wherever
+you reached it from.
+
 ## The checklist
 
-![The setup checklist, with six stations on five protocols](img/01-setup.png)
+![The checklist, with what is still outstanding](img/01-setup.png)
 
 Until a station is recording properly, the page opens on a checklist of what still
 stands in the way. It has no step numbers and no fixed order: it determines what is
@@ -101,18 +115,16 @@ true each time it is loaded.
 Once everything is resolved the checklist stops asking and remains as a status page. A
 console that appears a year later puts its step back at the top.
 
-## The tabs
-
-### Setup
+### Setting up a station
 
 ![Setting up a station](img/04-add-station.png)
 
-The checklist above, and the form for setting up a station. One form for every kind of
-station, grouped by what you have to do: point the console at this machine, let this
-machine read a driver, or change something on the network and wait for the station to
-turn up. Selecting a role is part of that form: the first station is the main station,
-and every station after it is offered as an extra sensor. See [Stations](Stations.md)
-and [Hosted hardware](Hosted-hardware.md).
+**Add** above the station list opens the form here. One form for every kind of station,
+grouped by what you have to do: point the console at this machine, let this machine read
+a driver, or change something on the network and wait for the station to turn up.
+Selecting a role is part of that form: the first station is the main station, and every
+station after it is offered as an extra sensor. See [Stations](Stations.md) and
+[Hosted hardware](Hosted-hardware.md).
 
 A console this driver can hand something to is named first, and the settings to type
 into it appear once it has been. What it is given differs by hardware: an upload path,
@@ -130,34 +142,42 @@ not there is a message rather than an entry to take out again, and it starts at 
 without a restart. A protocol this driver is not listening for is listed too, greyed,
 with what switching it on takes.
 
-### Stations
+## Stations
 
-![The stations tab](img/02-stations.png)
+![The station list and one station's readings](img/02-stations.png)
 
-Every station the driver knows, including stations set up but never heard from, and
-stations declared in `weewx.conf`. Each entry is collapsed and opens to show:
+The list on the left holds every station the driver knows, in the order you meet them:
 
-- The console settings for that station, with its own upload path. The checklist shows
-  these once and then stops; a console that has to be set up again a year later needs
-  them again.
-- Which archive columns the station fills, and a button to release them.
-- The station's name, role and channel, and a button to remove it.
+- **Being refused.** A console uploading into nothing because the driver does not know
+  it. Selecting it shows what it last sent, which is what tells your own new console
+  apart from a stranger's, and the buttons to let it in or dismiss it.
+- **Recording.** Stations that are being written to the archive, with what each is for,
+  how many readings it sends, and when it was last heard.
+- **Set up, not heard yet.** Named here and still silent. Its console settings are on
+  its Console tab.
+
+Selecting a station keeps the tab you were on, so two stations' raw uploads can be
+compared without going back through the same tab each time.
+
+### Console
+
+The console settings for that station, with its own upload path. The checklist shows
+these once and then stops; a console that has to be set up again a year later needs
+them again. Also the station's name, role and channel, which archive columns it fills
+with a button to release them, and a button to remove it.
 
 A station this driver reads rather than waits for shows its driver's settings here
-instead of console settings, with buttons to reopen it, make it the archive station, or
-remove it. See [Hosted hardware](Hosted-hardware.md).
+instead, with buttons to reopen it, make it the archive station, or remove it. See
+[Hosted hardware](Hosted-hardware.md).
 
 Stations declared in `weewx.conf` are shown but not editable, and say so. The console
 adopted as the first one ever heard is shown but has no settings to change, because it
 is named in no file.
 
-### Fields
+### Readings
 
-![The fields tab](img/03-fields.png)
-
-Every station at once, one block each, collapsible. Not one page per station: the
-question is not what a given station sends, it is which station fills `outTemp`, and
-that answer is spread across two pages if each station has its own.
+Every raw field this station has sent, its last value, where it is written, and whether
+a column exists for it.
 
 The selector in each row offers the WeeWX fields that measure the same thing first,
 then everything else, then `nowhere`, then a field of your own. Numbered families run
@@ -176,18 +196,27 @@ on the next upload.
 
 ### Raw uploads
 
-The last twenty uploads per station, newest first, with a copy button. Anything that
-names the station is redacted, so they are safe to attach to an issue. This replaces
-enabling `log_raw` and watching the log.
+The last twenty uploads from this station, newest first, with a copy button. Anything
+that names the station is redacted, so they are safe to attach to an issue. This
+replaces enabling `log_raw` and watching the log.
 
-### Database columns
+### Columns
 
-![The database columns tab](img/06-columns.png)
+![Which readings have no column yet](img/06-columns.png)
 
-Which readings have nowhere to be written, with the `weectl database add-column`
-commands, and the same check the Fields tab uses. The archive table is also checked for
-what it already holds. That check is one pass over the table, so it runs when the page
-is first opened rather than on every load.
+Which of this station's readings have nowhere to be written, with the `weectl database
+add-column` commands. The archive table is also checked for what it already holds. That
+check is one pass over the table, so it runs when you first open the tab rather than on
+every load.
+
+## The field map
+
+![Every station's readings on one page](img/03-fields.png)
+
+Every station at once, one block each, collapsible. The same rows as a station's
+Readings tab, for the question a single station cannot answer: not what a given station
+sends, but which station fills `outTemp`. With a station per page that answer is spread
+over two pages, neither of which shows the collision that matters.
 
 ## Where the settings are written
 

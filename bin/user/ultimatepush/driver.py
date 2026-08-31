@@ -1763,8 +1763,8 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
             "%d reading(s) from station '%s' are not being written, because %s "
             "already fill(s) those columns and two sensors in one column cannot be "
             "separated afterwards: %s. Give them fields of their own under "
-            "[[field_map_extensions]], or take the column away from its owner on the "
-            "Fields tab.",
+            "[[field_map_extensions]], or take the column away from its owner on "
+            "the field map.",
             len(dropped),
             who,
             ' and '.join(others) or 'another station',
@@ -2242,7 +2242,7 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
                 ever heard, which is named in no file.
 
         Returns:
-            dict: The station, as the Stations tab needs it.
+            dict: The station, as the station list needs it.
         """
         row = heard.get(ident) or {}
         # A station this driver reads speaks no protocol. The activity log notes its

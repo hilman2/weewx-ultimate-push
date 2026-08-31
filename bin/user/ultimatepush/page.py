@@ -30,77 +30,172 @@ PAGE = """<!doctype html>
      not asked for /favicon.ico, and that request would arrive without the token and
      be counted against the address by the doorman. An arrow leaving a line: readings
      going up from the console to this machine, which is the whole of what this is. -->
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3.5' fill='%238a4b2a'/><path d='M8 3 11.8 7.2H9.4v3.4H6.6V7.2H4.2z' fill='%23fbfaf8'/><rect x='4.2' y='11.7' width='7.6' height='1.5' rx='.75' fill='%23fbfaf8'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3.5' fill='%231a5fb4'/><path d='M8 3 11.8 7.2H9.4v3.4H6.6V7.2H4.2z' fill='%23ffffff'/><rect x='4.2' y='11.7' width='7.6' height='1.5' rx='.75' fill='%23ffffff'/></svg>">
 <style>
 :root {
-  --bg: #fbfaf8; --panel: #fff; --line: #e2ded8; --ink: #24211d;
-  --dim: #6d675f; --accent: #8a4b2a; --ok: #2f6b3a; --warn: #8a6a12; --bad: #93301f;
-  --code: #f3f0ec;
+  --bg: #f4f5f7; --panel: #fff; --line: #dcdfe4; --soft: #e9ebef; --sink: #f8f9fa;
+  --ink: #14181d; --ink2: #3d454f; --dim: #6b7480;
+  --accent: #1a5fb4; --accent-soft: #eaf1fb; --accent-line: #b9d2f0;
+  --ok: #1f7a43; --ok-soft: #e9f4ed; --ok-line: #b7ddc6;
+  --warn: #8a5a00; --warn-soft: #fbf1de; --warn-line: #e8d09a;
+  --bad: #b3261e; --bad-soft: #fbeceb; --bad-line: #eec2be;
+  --code: #f1f3f5;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #17181a; --panel: #1e1f22; --line: #33353a; --ink: #e6e3de;
-    --dim: #97938c; --accent: #d99872; --ok: #7fbb8c; --warn: #d7b45c; --bad: #e08d7c;
-    --code: #24262a;
+    --bg: #15171a; --panel: #1c1f23; --line: #333840; --soft: #292d33; --sink: #202429;
+    --ink: #e6e8ea; --ink2: #b9bfc7; --dim: #8b939d;
+    --accent: #6ba3e8; --accent-soft: #1b2b3f; --accent-line: #2f4a6b;
+    --ok: #6cbf84; --ok-soft: #17281c; --ok-line: #2c4a35;
+    --warn: #d9b45f; --warn-soft: #2a2312; --warn-line: #4d4021;
+    --bad: #e8897c; --bad-soft: #2d1a18; --bad-line: #58302c;
+    --code: #22262b;
   }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink);
-  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh; display: flex; flex-direction: column; }
 code, pre, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12.5px; }
+
+/* The top bar carries what is true of the whole driver: which view you are in, and
+   how it is doing. Nothing about one station belongs here. */
+header { background: var(--panel); border-bottom: 1px solid var(--line); height: 52px;
+  display: flex; align-items: stretch; gap: 22px; padding: 0 18px; }
+header .brand { display: flex; align-items: center; gap: 9px; }
+header h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: -.01em;
+  white-space: nowrap; }
+header .ver { color: var(--dim); font-size: 12px; }
+header .meta { color: var(--dim); font-size: 12.5px; display: flex; align-items: center;
+  gap: 16px; margin-left: auto; min-width: 0; }
+header .meta span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+header .meta .answers { min-width: 0; }
+header .meta b { color: var(--ink2); font-weight: 400;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+nav.views { display: flex; gap: 2px; }
+nav.views button { background: none; border: 0; padding: 0 13px; color: var(--ink2);
+  cursor: pointer; font: inherit; font-size: 13.5px; display: flex; align-items: center;
+  gap: 7px; box-shadow: inset 0 -2px 0 transparent; }
+nav.views button:hover { color: var(--ink); }
+nav.views button.on { color: var(--accent); font-weight: 500;
+  box-shadow: inset 0 -2px 0 var(--accent); }
+.count { min-width: 19px; height: 18px; padding: 0 6px; border-radius: 9px;
+  background: var(--warn); color: #fff; font-size: 11px; font-weight: 600;
+  display: none; align-items: center; justify-content: center; }
+.count.on { display: flex; }
+
+/* What is wrong across the whole driver, in one line, above everything. The
+   checklist behind it is where the sentences and the buttons are; this is only the
+   part that has to be visible from a station page you happen to be on. */
+#alert { display: none; align-items: center; gap: 11px; padding: 11px 18px;
+  background: var(--warn-soft); border-bottom: 1px solid var(--warn-line);
   font-size: 13px; }
-header { border-bottom: 1px solid var(--line); padding: 14px 20px;
-  display: flex; gap: 20px; align-items: baseline; flex-wrap: wrap; }
-header h1 { font-size: 16px; margin: 0; font-weight: 600; }
-header .meta { color: var(--dim); font-size: 13px; }
-main { display: grid; grid-template-columns: 300px 1fr; gap: 0; min-height: calc(100vh - 55px); }
-@media (max-width: 800px) { main { grid-template-columns: 1fr; } }
-aside { border-right: 1px solid var(--line); padding: 14px; }
-@media (max-width: 800px) { aside { border-right: 0; border-bottom: 1px solid var(--line); } }
-section { padding: 18px 20px; min-width: 0; }
-h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
-  color: var(--dim); margin: 18px 0 8px; font-weight: 600; }
-h2:first-child { margin-top: 0; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 7px;
-  padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
-.card:hover { border-color: var(--accent); }
-.card.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
-.card .id { font-weight: 600; word-break: break-all; }
-.card .sub { color: var(--dim); font-size: 12px; margin-top: 2px; }
-.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
-.tabs button { background: none; border: 0; border-bottom: 2px solid transparent;
-  padding: 8px 12px; color: var(--dim); cursor: pointer; font: inherit; }
-.tabs button.on { color: var(--ink); border-bottom-color: var(--accent); }
-table { border-collapse: collapse; width: 100%; }
-th, td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line);
+#alert.on { display: flex; }
+#alert.bad { background: var(--bad-soft); border-bottom-color: var(--bad-line); }
+#alert b { font-weight: 600; }
+#alert .act { margin-left: auto; flex: none; }
+
+main { display: grid; grid-template-columns: 304px 1fr; flex-grow: 1; min-height: 0; }
+@media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+aside { border-right: 1px solid var(--line); background: var(--panel);
+  padding: 12px 12px 18px; min-width: 0; }
+@media (max-width: 860px) { aside { border-right: 0; border-bottom: 1px solid var(--line); } }
+section { padding: 0; min-width: 0; background: var(--panel); }
+.side-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.side-head h2 { margin: 0; flex: 1; font-size: 14px; font-weight: 600;
+  text-transform: none; letter-spacing: 0; color: var(--ink); }
+#find { margin-bottom: 12px; background: var(--sink); }
+h2 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--dim); margin: 14px 0 6px; font-weight: 600; }
+
+/* One station, in the list on the left. The badge says what it is; the line under
+   the name says how it is doing, because those are two different questions and the
+   second one changes every fifteen seconds. */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+  padding: 9px 11px; margin-bottom: 6px; cursor: pointer; }
+.card:hover { border-color: var(--accent-line); }
+.card.on { border-color: var(--accent); background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent); }
+.card .top { display: flex; align-items: center; gap: 8px; }
+.card .id { font-weight: 600; font-size: 13.5px; flex: 1; min-width: 0;
+  overflow-wrap: anywhere; }
+.card .sub { color: var(--dim); font-size: 12px; margin-top: 3px;
+  overflow-wrap: anywhere; }
+.card .sub.warn { color: var(--warn); }
+.card.refused { border-color: var(--bad-line); background: var(--bad-soft); }
+.card.quiet { background: var(--sink); }
+.tag { height: 18px; padding: 0 6px; border-radius: 3px; background: var(--soft);
+  color: var(--ink2); font-size: 10.5px; font-weight: 600; letter-spacing: .04em;
+  display: flex; align-items: center; flex: none; }
+.tag.main { background: var(--accent-soft); color: var(--accent); }
+
+/* The detail side: who this station is, then what you want to know about it. The
+   header stays put while the tabs under it change. */
+.dhead { padding: 16px 22px 0; }
+.dhead .name { display: flex; align-items: center; gap: 9px; }
+.dhead .name b { font-size: 18px; font-weight: 600; letter-spacing: -.015em;
+  overflow-wrap: anywhere; }
+.dhead .name b.mono { font-size: 14px; font-weight: 500; letter-spacing: 0; }
+.card .id.mono { font-size: 12px; font-weight: 500; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.dhead .about { color: var(--dim); font-size: 12.5px; margin-top: 3px;
+  display: flex; flex-wrap: wrap; gap: 9px; }
+.dhead .about .mono { color: var(--ink2); }
+.dhead .acts { margin-left: auto; display: flex; gap: 7px; flex: none; }
+.tabs { display: flex; gap: 2px; margin-top: 13px; padding: 0 22px;
+  border-bottom: 1px solid var(--line); }
+.tabs button { background: none; border: 0; padding: 0 12px; height: 36px;
+  color: var(--ink2); cursor: pointer; font: inherit; font-size: 13.5px;
+  display: flex; align-items: center; gap: 7px; box-shadow: inset 0 -2px 0 transparent; }
+.tabs button:hover { color: var(--ink); }
+.tabs button.on { color: var(--accent); font-weight: 500;
+  box-shadow: inset 0 -2px 0 var(--accent); }
+.tabs .count { background: var(--warn); }
+#body { padding: 18px 22px 26px; min-width: 0; }
+
+table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+/* The chooser fills its cell. Left to itself it takes 240px in a column twice that
+   wide, and the option it is showing reads 'dayRain \u2014 new colu'. */
+td select { max-width: none; }
+th.raw { width: 15%; } th.value { width: 8%; } th.goes { width: 23%; }
+th.group { width: 12%; } th.state { width: 20%; } th.why { width: 22%; }
+th, td { text-align: left; padding: 9px 14px 9px 0; border-bottom: 1px solid var(--soft);
   vertical-align: top; }
-th { color: var(--dim); font-weight: 600; font-size: 12px; text-transform: uppercase;
-  letter-spacing: .04em; }
-input[type=text] { background: var(--bg); color: var(--ink); border: 1px solid var(--line);
-  border-radius: 5px; padding: 4px 7px; font: inherit; font-size: 13px; width: 100%;
-  max-width: 220px; }
+th { color: var(--dim); font-weight: 600; font-size: 11.5px; text-transform: uppercase;
+  letter-spacing: .05em; border-bottom-color: var(--line); padding-bottom: 7px; }
+tbody tr:hover { background: var(--sink); }
+input[type=text] { background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 4px; padding: 6px 9px; font: inherit; font-size: 13px; width: 100%;
+  max-width: 240px; }
 input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-button.act { background: var(--panel); color: var(--ink); border: 1px solid var(--line);
-  border-radius: 5px; padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer; }
-button.act:hover { border-color: var(--accent); }
-pre { background: var(--code); border: 1px solid var(--line); border-radius: 6px;
+button.act { background: var(--panel); color: var(--ink2); border: 1px solid var(--line);
+  border-radius: 4px; padding: 0 11px; height: 30px; font: inherit; font-size: 12.5px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+button.act:hover { border-color: var(--accent-line); color: var(--ink); }
+button.act.primary { background: var(--accent); border-color: var(--accent); color: #fff;
+  font-weight: 500; }
+button.act.primary:hover { background: var(--accent); color: #fff; filter: brightness(1.08); }
+pre { background: var(--code); border: 1px solid var(--line); border-radius: 4px;
   padding: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
 .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
 .dim { color: var(--dim); }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.note { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--warn);
-  border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; font-size: 13px; }
-.note.bad { border-left-color: var(--bad); }
+.note { background: var(--warn-soft); border: 1px solid var(--warn-line);
+  border-radius: 4px; padding: 10px 12px; margin-bottom: 14px; font-size: 13px; }
+.note.bad { background: var(--bad-soft); border-color: var(--bad-line); }
 .upload { margin-bottom: 12px; }
 .upload .head { display: flex; justify-content: space-between; gap: 10px;
   font-size: 12px; color: var(--dim); margin-bottom: 4px; }
-.setup { max-width: 46rem; }
-.step { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px;
+.setup { max-width: 52rem; }
+.step { border: 1px solid var(--line); border-radius: 4px; margin-bottom: 8px;
   background: var(--panel); }
 .step > .head { display: flex; gap: 10px; align-items: baseline; padding: 12px 14px; }
 .step .mark { font-weight: 700; width: 1.4rem; flex: none; }
 .step.done .mark { color: var(--ok); }
 .step.todo .mark { color: var(--warn); }
+.step.todo { border-color: var(--warn-line); }
 .step.done > .head { color: var(--dim); }
 .step .what { font-weight: 600; }
 .step .body { padding: 0 14px 14px 38px; }
@@ -109,33 +204,36 @@ pre { background: var(--code); border: 1px solid var(--line); border-radius: 6px
 .step > .head.shut:hover .caret { color: var(--accent); }
 .step > .head .caret { color: var(--dim); width: 12px; flex: none; }
 .pick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-.pick button { background: var(--bg); color: var(--ink); border: 1px solid var(--line);
-  border-radius: 6px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
-.pick button.on { border-color: var(--accent); background: var(--panel);
-  box-shadow: inset 0 -2px 0 var(--accent); }
+.pick button { background: var(--panel); color: var(--ink2); border: 1px solid var(--line);
+  border-radius: 4px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.pick button.on { border-color: var(--accent); color: var(--accent); font-weight: 500;
+  background: var(--accent-soft); }
 .settings { border-collapse: collapse; margin-bottom: 10px; }
-.settings td { border: 0; padding: 3px 14px 3px 0; }
-.settings td:first-child { color: var(--dim); white-space: nowrap; }
+.settings td, .settings th { border: 0; padding: 3px 14px 3px 0; text-transform: none;
+  letter-spacing: 0; font-size: 13px; }
+.settings td:first-child, .settings th { color: var(--dim); white-space: nowrap;
+  font-weight: 400; }
 .settings td:last-child { font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-weight: 600; }
-select { background: var(--bg); color: var(--ink); border: 1px solid var(--line);
-  border-radius: 5px; padding: 4px 6px; font: inherit; font-size: 13px;
-  max-width: 220px; width: 100%; }
+  font-weight: 600; font-size: 12.5px; }
+select { background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 4px; padding: 5px 7px; font: inherit; font-size: 12.5px;
+  max-width: 240px; width: 100%; }
 select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .taken { color: var(--warn); font-size: 12px; }
 .askentities { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
 .askentities label { display: flex; gap: 6px; align-items: baseline; }
 .newcol { font-size: 12px; margin-top: 4px; }
-.newcol code { background: var(--code); padding: 2px 5px; border-radius: 4px; }
-.add { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
-.knock { width: 100%; border-collapse: collapse; margin: 8px 0 2px; font-size: 12px; }
+.newcol code { background: var(--code); padding: 2px 5px; border-radius: 3px; }
+.add { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+.knock { width: 100%; max-width: 30rem; border-collapse: collapse;
+  margin: 8px 0 2px; font-size: 12px; }
 .knock td { padding: 2px 8px 2px 0; border: 0; }
 .knock td:nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; }
 .knock td:nth-child(3) { color: var(--dim); width: 42%; }
 .made { border-left: 3px solid var(--ok); padding-left: 12px; margin: 12px 0 18px; }
 .block { margin-bottom: 22px; }
 .fold { cursor: pointer; display: flex; gap: 8px; align-items: baseline;
-  padding: 7px 0; border-bottom: 1px solid var(--line); user-select: none; }
+  padding: 8px 0; border-bottom: 1px solid var(--line); user-select: none; }
 .fold:hover .caret { color: var(--accent); }
 .caret { color: var(--dim); width: 12px; }
 .fold .dim { font-size: 12px; }
@@ -147,33 +245,42 @@ button.act[disabled]:hover { border-color: var(--line); }
 .waiting { color: var(--dim); font-size: 13px; }
 .waiting b { color: var(--warn); }
 #flash { position: fixed; right: 16px; bottom: 16px; background: var(--panel);
-  border: 1px solid var(--line); border-radius: 7px; padding: 9px 14px; font-size: 13px;
+  border: 1px solid var(--line); border-radius: 4px; padding: 9px 14px; font-size: 13px;
   box-shadow: 0 6px 20px rgba(0,0,0,.13); display: none; max-width: 380px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>weewx-ultimate-push</h1>
+  <div class="brand">
+    <svg width="19" height="19" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3.5" fill="var(--accent)"/><path d="M8 3 11.8 7.2H9.4v3.4H6.6V7.2H4.2z" fill="#fff"/><rect x="4.2" y="11.7" width="7.6" height="1.5" rx=".75" fill="#fff"/></svg>
+    <h1>weewx-ultimate-push</h1>
+    <span class="ver" id="ver"></span>
+  </div>
+  <nav class="views">
+    <button data-view="stations" class="on">Stations</button>
+    <button data-view="fields">Field map</button>
+    <button data-view="setup">Checklist<span class="count" id="opencount"></span></button>
+  </nav>
   <span class="meta" id="meta">loading</span>
 </header>
+<div id="alert"></div>
 <main>
   <aside>
-    <div id="door"></div>
-    <h2>Stations</h2>
-    <div id="stations"></div>
-    <div class="add">
-      <button class="act" id="addstation">Add a station</button>
+    <div class="side-head">
+      <h2>Stations</h2>
+      <button class="act primary" id="addstation">Add</button>
     </div>
-    <h2>Waiting to be let in</h2>
-    <div id="waiting"><div class="dim" style="font-size:13px">Nothing refused.</div></div>
+    <input type="text" id="find" placeholder="Filter by name or ident">
+    <div id="stations"></div>
+    <div id="door"></div>
   </aside>
   <section>
-    <div class="tabs">
-      <button data-tab="setup">Setup</button>
-      <button data-tab="stations">Stations</button>
-      <button data-tab="fields" class="on">Fields</button>
+    <div class="dhead" id="dhead"></div>
+    <div class="tabs" id="subtabs">
+      <button data-tab="console">Console</button>
+      <button data-tab="readings" class="on">Readings</button>
       <button data-tab="raw">Raw uploads</button>
-      <button data-tab="columns">Database columns</button>
+      <button data-tab="columns">Columns</button>
     </div>
     <div id="body"><p class="dim">Loading.</p></div>
   </section>
@@ -191,16 +298,24 @@ var TOKEN = new URLSearchParams(location.search).get('token') || '';
 var BASE = location.pathname.replace(/[^/]*\\.[^/]*$/, '');
 if (BASE.charAt(BASE.length - 1) !== '/') BASE += '/';
 
-var chosen = null, tab = 'fields', state = null, detail = null;
+/* The two axes the page navigates on. The view is what the page is about, and
+   the tab is what you want to know about the station you picked. Keeping them apart
+   is the whole of this layout: every tab is about `chosen` and nothing else, so a
+   tab can never mean something different depending on which view you came from. */
+var chosen = null, view = 'stations', subtab = 'readings', state = null;
+/* What has been typed into the filter over the station list. Held here rather than
+   read off the input, because the list is redrawn every fifteen seconds and would
+   otherwise come back unfiltered under whoever was typing. */
+var finding = '';
 var fieldsView = null, folded = {}, adding = false;
 var setup = null, picked = null, watching = null, candidates = null;
 /* Every station this driver knows, including the ones that have never uploaded.
-   Read for the Stations tab, and for the one question the setup form cannot answer
+   Read for the station list, and for the one question the setup form cannot answer
    on its own: whether there is already a main station to be moved aside. */
 var stationList = null;
 /* A main station about to be taken over, while the page explains what that does.
    Held here rather than in the DOM so that a redraw does not lose the question. */
-var pending = null, editing = null, pendingDraw = false, unfolded = {};
+var pending = null, editing = null, pendingDraw = false;
 /* The options a driver's author ruled off as rarely needing attention start
    folded, which is what ruling them off meant. */
 folded.driverrest = true;
@@ -209,6 +324,16 @@ folded.driverrest = true;
    found. Held here rather than in the DOM because looking redraws the page, and a
    redraw would otherwise empty the two fields that were used to look. */
 var asked = { what: '', address: '', token: '', found: null, chosen: {}, device: '' };
+
+/* The same word everywhere something is being fetched. A page that says one thing
+   in one place and another somewhere else reads like two different waits. */
+var LOADING = '<p class="dim">Loading.</p>';
+/* Which draw is the current one. Every view here is drawn from a fetch, and picking
+   a second station while the first one's readings are still in flight used to let
+   the first answer land on the second station's page: the header said one station
+   and the table under it was another's. Each draw takes a number, and an answer
+   carrying an old one is answering a question nobody is asking any more. */
+var drawn = 0;
 
 function busy() {
   /* Somebody is in the middle of something on this page. A redraw would empty the
@@ -269,13 +394,36 @@ function copy(text, what) {
 function loadState() {
   return api('state').then(function (s) {
     state = s;
-    document.getElementById('meta').textContent =
-      'version ' + s.version + ' \\u00b7 up ' + Math.round(s.uptime / 60) + ' min' +
-      ' \\u00b7 listening on ' + s.ports.join(', ') +
-      ' \\u00b7 ' + s.protocols.join(', ');
+    document.getElementById('ver').textContent = s.version;
+    /* Labelled, because 'ecowitt, ambient' on its own reads like a list of stations
+       rather than of what this listener will answer to. */
+    document.getElementById('meta').innerHTML =
+      '<span>up <b>' + Math.round(s.uptime / 60) + ' min</b></span>' +
+      '<span>ports <b>' + esc(s.ports.join(', ')) + '</b></span>' +
+      '<span class="answers" title="' + esc(s.protocols.join(', ')) +
+        '">answers <b>' + esc(s.protocols.join(', ')) + '</b></span>';
+    keepOrDrop();
     drawDoor(s.door);
     drawSidebar();
   });
+}
+
+function keepOrDrop() {
+  /* Whether the station the detail side is showing still exists. Letting one in
+     keeps its identity, so that move is safe; taking one out does not, and what was
+     a station page would go on standing there saying nothing has arrived from it. */
+  if (!chosen) return;
+  var known = state.stations.filter(function (s) { return s.ident === chosen; });
+  var knocking = state.waiting.filter(function (w) { return w.ident === chosen; });
+  var quiet = (stationList ? stationList.stations : []).filter(function (s) {
+    return s.ident === chosen;
+  });
+  if (known.length || knocking.length || quiet.length) return;
+  /* A station set up here and never heard from is in stationList and nowhere else.
+     While that list is being read again there is no telling one of those from one
+     that has been taken out, so nothing is dropped until it is back. */
+  if (!stationList) return;
+  chosen = state.stations.length ? state.stations[0].ident : null;
 }
 
 function drawDoor(door) {
@@ -290,6 +438,7 @@ function drawDoor(door) {
     }).join('<br>') + '</div>';
 }
 
+
 function waitingCards() {
   /* Stations that are set up and have not been heard from. They are in no other
      list here, because every other list is built from what has arrived, and a
@@ -299,14 +448,14 @@ function waitingCards() {
   var heard = {};
   state.stations.forEach(function (s) { heard[s.ident] = true; });
   return stationList.stations.filter(function (s) {
-    return !heard[s.ident] && !s.adopted;
+    return !heard[s.ident] && !s.adopted && matches(s);
   }).map(function (s) {
-    return '<div class="card" data-goto="stations">' +
-      '<div class="id">' + esc(s.name || s.ident) + '</div>' +
+    return '<div class="card quiet' + (shown(s.ident) ? ' on' : '') +
+      '" data-ident="' + esc(s.ident) + '">' +
+      '<div class="top"><span class="id">' + esc(s.name || s.ident) + '</span>' +
+      stationTag(s) + '</div>' +
       '<div class="sub">' + esc(s.station_type || s.protocol || 'kind unknown') +
-      (s.role === 'extra' ? ' \\u00b7 extra ' + (s.channel || '?')
-                          : ' \\u00b7 main station') + '</div>' +
-      '<div class="sub warn">' + (s.station_type
+      '</div><div class="sub warn">' + (s.station_type
         ? 'Nothing read from it yet.'
         : 'Waiting for its first upload.') + '</div></div>';
   }).join('');
@@ -333,60 +482,99 @@ function movedPicker(ident) {
     '<button class="act" data-moved="' + esc(ident) + '">Move it here</button>';
 }
 
+
+function matches(s) {
+  /* The filter reads what is on the card: the name somebody gave the station and the
+     identity its hardware sends. Not the protocol, because filtering two Ecowitts by
+     'ecowitt' leaves two Ecowitts. */
+  if (!finding) return true;
+  var needle = finding.toLowerCase();
+  return String(s.name || '').toLowerCase().indexOf(needle) >= 0 ||
+    String(s.ident || '').toLowerCase().indexOf(needle) >= 0;
+}
+
+function stationTitle(s) {
+  /* Named, or not named yet. Every station arrives unnamed, because what a console
+     sends as its identity is a PASSKEY or a serial, and until somebody names it that
+     string is all there is to call it by. Set as code, because that is what it is. */
+  return s.name
+    ? '<b>' + esc(s.name) + '</b>'
+    : '<b class="mono">' + esc(s.ident) + '</b>';
+}
+
+function stationTag(s) {
+  return s.role === 'extra'
+    ? '<span class="tag">EXTRA ' + (s.channel || '?') + '</span>'
+    : '<span class="tag main">MAIN</span>';
+}
+
+function shown(ident) {
+  /* Whether this station is the one on the right. The pick is kept while you look at
+     the field map or the checklist, so that coming back lands where you left, but
+     marking a card there would say the page is about that station when it is not. */
+  return view === 'stations' && ident === chosen;
+}
+
+function refusedRow(ident) {
+  /* Whether this identity is one being turned away rather than one recording. The
+     two are different enough that they cannot share a detail page: one has readings
+     and columns, the other has a decision. */
+  if (!state) return null;
+  return state.waiting.filter(function (w) { return w.ident === ident; })[0] || null;
+}
+
+function recordingCards() {
+  return state.stations.filter(matches).map(function (s) {
+    return '<div class="card' + (shown(s.ident) ? ' on' : '') +
+      '" data-ident="' + esc(s.ident) + '">' +
+      '<div class="top"><span class="id' + (s.name ? '' : ' mono') +
+      '" title="' + esc(s.ident) + '">' + esc(s.name || s.ident) + '</span>' +
+      stationTag(s) + '</div>' +
+      '<div class="sub">' + esc(s.protocol || '?') +
+      (s.dialect && s.dialect !== s.protocol ? ' \\u00b7 ' + esc(s.dialect) : '') +
+      ' \\u00b7 ' + s.field_count + ' fields \\u00b7 ' + ago(s.last_seen) + '</div>' +
+      (s.undecided_count ? '<div class="sub warn">' + s.undecided_count +
+        ' waiting for a placement</div>' : '') +
+      (s.held_back ? '<div class="sub warn">Nothing recorded: waiting for the main ' +
+        'station, which has not uploaded since this driver started.</div>' : '') +
+      '</div>';
+  }).join('');
+}
+
+function refusedCards() {
+  /* The card says who and how often, and nothing else. What somebody needs to decide
+     whether to let it in is its readings, and those are too much for a column this
+     wide: clicking the card opens them beside it. */
+  return state.waiting.filter(matches).map(function (w) {
+    return '<div class="card refused' + (shown(w.ident) ? ' on' : '') +
+      '" data-ident="' + esc(w.ident) + '">' +
+      '<div class="top"><span class="id mono" title="' + esc(w.ident) + '">' +
+      esc(w.ident) + '</span></div>' +
+      '<div class="sub">' + esc(w.protocol || '?') + ' from ' + esc(w.client) +
+      '</div><div class="sub">' + w.uploads + ' turned away \\u00b7 ' +
+      ago(w.last_seen) + '</div></div>';
+  }).join('');
+}
+
 function drawSidebar() {
+  /* One list, in the order somebody meets these: what is working, what is knocking,
+     what has been set up and is still silent. They were three places before, two of
+     them off this list entirely, and a console being refused could sit unnoticed
+     under a tab nobody had opened. */
   var box = document.getElementById('stations');
-  var waiting = waitingCards();
-  if (!state.stations.length) {
-    box.innerHTML = waiting || '<div class="dim" style="font-size:13px">Nothing has ' +
-      'uploaded yet.</div>';
-  } else {
-    box.innerHTML = waiting + state.stations.map(function (s) {
-      return '<div class="card' + (s.ident === chosen ? ' on' : '') +
-        '" data-ident="' + esc(s.ident) + '">' +
-        '<div class="id">' + esc(s.name || s.ident) + '</div>' +
-        '<div class="sub">' + esc(s.protocol || '?') +
-        (s.dialect && s.dialect !== s.protocol ? ' \\u00b7 ' + esc(s.dialect) : '') +
-        (s.role === 'extra' ? ' \\u00b7 extra ' + (s.channel || '?')
-                            : ' \\u00b7 main station') +
-        ' \\u00b7 ' + s.field_count + ' fields \\u00b7 ' + ago(s.last_seen) +
-        '</div>' +
-        (s.undecided_count ? '<div class="sub warn">' + s.undecided_count +
-          ' waiting for a placement</div>' : '') +
-        (s.held_back ? '<div class="sub warn">Nothing recorded: waiting for the main ' +
-          'station, which has not uploaded since this driver started.</div>' : '') +
-        '</div>';
-    }).join('');
+  var recording = recordingCards();
+  var refused = refusedCards();
+  var silent = waitingCards();
+  var html = (refused ? '<h2>Being refused</h2>' + refused : '') +
+    (recording ? '<h2>Recording</h2>' + recording : '') +
+    (silent ? '<h2>Set up, not heard yet</h2>' + silent : '');
+  if (!html) {
+    html = '<p class="dim" style="font-size:13px">' + (finding
+      ? 'Nothing here matches that.'
+      : 'Nothing has uploaded yet. The checklist says what to put into the ' +
+        'console.') + '</p>';
   }
-  var waiting = document.getElementById('waiting');
-  if (!state.waiting.length) {
-    waiting.innerHTML = '<div class="dim" style="font-size:13px">Nothing refused.</div>';
-  } else {
-    waiting.innerHTML = state.waiting.map(function (w, i) {
-      /* The readings, because the decision is whether to let this into your
-         database, and an address cannot tell your own new console from a
-         stranger's. Nine degrees and ninety per cent can. */
-      var sample = w.sample || {};
-      var rows = (sample.readings || []).map(function (r) {
-        return '<tr><td class="mono">' + esc(r.raw) + '</td><td>' + esc(r.value) +
-          '</td><td>' + (r.field ? '\u2192 ' + esc(r.field) : '') + '</td></tr>';
-      }).join('');
-      return '<div class="card"><div class="id">' + esc(w.ident) + '</div>' +
-        '<div class="sub">' + esc(w.protocol || '?') + ' from ' + esc(w.client) +
-        ' \u00b7 ' + w.uploads + ' seen \u00b7 ' + ago(w.last_seen) + '</div>' +
-        (rows ? '<table class="knock">' + rows + '</table>'
-              : '<div class="dim" style="font-size:12px;margin-top:6px">' +
-                'Nothing readable in it.</div>') +
-        '<div class="row" style="margin-top:8px">' +
-        '<input type="text" placeholder="name it" data-name="' + esc(w.ident) + '">' +
-        '<button class="act" data-accept="' + esc(w.ident) + '">Let in</button>' +
-        '<button class="act" data-knock="' + i + '">All of it</button></div>' +
-        '<div id="knockraw' + i + '" style="display:none">' +
-        '<div class="row" style="margin-top:8px;justify-content:flex-end">' +
-        '<button class="act" data-knockcopy="' + i + '">Copy</button></div>' +
-        '<pre id="knocktext' + i + '">' + esc(sample.text || '') + '</pre></div>' +
-        '</div>';
-    }).join('');
-  }
+  box.innerHTML = html;
 }
 
 function loadCandidates() {
@@ -427,17 +615,46 @@ function loadSetup(then) {
   return api('setup').then(function (s) {
     var was = setup && setup.next;
     setup = s;
-    document.querySelector('[data-tab="setup"]').textContent =
-      s.done ? 'Setup' : 'Setup \u00b7 ' + s.steps.filter(function (x) {
-        return !x.done && !x.optional; }).length;
+    drawAlert();
     /* The first visit lands on what there is to do, not on an empty field table. */
-    if (!s.done && was === undefined) tab = 'setup';
+    if (!s.done && was === undefined) view = 'setup';
     /* Something arrived while we were waiting. Show it, once the page is not in
        the middle of being used. */
     if (was && was !== s.next) pendingDraw = true;
     if (pendingDraw && !busy()) { pendingDraw = false; drawSidebar(); draw(); }
     if (then) then();
   });
+}
+
+function drawAlert() {
+  /* The one line of the checklist that has to be readable from anywhere, because a
+     station page can look entirely healthy while the reason nothing is recorded sits
+     two views away. Only the count and the titles: the sentences and the buttons stay
+     on the checklist, so there is one place to keep them right.
+
+     Being refused is the loud one. The rest are decisions somebody has not made yet;
+     that one is a console uploading into nothing, every minute, until somebody says
+     whether it is theirs. */
+  var box = document.getElementById('alert');
+  var count = document.getElementById('opencount');
+  var open = setup ? setup.steps.filter(function (s) {
+    return !s.done && !s.optional;
+  }) : [];
+  count.textContent = open.length;
+  count.classList.toggle('on', open.length > 0);
+  if (!open.length) { box.className = ''; box.innerHTML = ''; return; }
+  var loud = open.filter(function (s) { return s.id === 'refused'; }).length;
+  box.className = loud ? 'on bad' : 'on';
+  box.innerHTML = '<b>' + open.length +
+    (open.length === 1 ? ' check is outstanding.' : ' checks are outstanding.') +
+    '</b><span>' + esc(open.map(function (s) { return s.title; }).join(' \\u00b7 ')) +
+    '</span><button class="act" data-view="setup">Open the checklist</button>';
+}
+
+function settle(mine, box, html) {
+  /* Put an answer on the page, unless the page has moved on. See `drawn`. */
+  if (mine !== drawn) return;
+  box.innerHTML = html;
 }
 
 function stepFor(id) {
@@ -667,7 +884,7 @@ function settingsTable(one) {
 
 function createdBody(made) {
   /* What to type into the console, right here, for a station that has just been
-     set up. The Stations tab keeps this for good and is where somebody comes back
+     set up. The Console tab keeps this for good and is where somebody comes back
      to it a year later; this is the one moment it is also needed on this page,
      because naming a station is what gives it the path, and being told to go and
      look somewhere else for the thing you just asked for reads as nothing having
@@ -679,7 +896,7 @@ function createdBody(made) {
       (m.settings ? settingsTable(m.settings) : '') +
       '<p class="dim">The path is what tells this station apart from the others, ' +
       'so it is a secret: anybody who can post to it can write into this ' +
-      'station’s columns. It is on the Stations tab too, for when the console ' +
+      'station’s columns. It is on its Console tab too, for when the console ' +
       'has to be set up again.</p>';
   }).join('') +
     '<p class="waiting"><b>Waiting for the first upload.</b> This page notices by ' +
@@ -996,34 +1213,51 @@ function watch() {
 
 function choose(ident) {
   chosen = ident;
+  editing = null;
+  /* Picking a station is not picking what to know about it. Somebody comparing the
+     raw uploads of two consoles would otherwise be put back on Readings for every
+     station they click. The one tab that cannot survive the move is Readings on a
+     station being refused, which has none; markNav settles that. */
+  if (view !== 'stations') view = 'stations';
   drawSidebar();
   draw();
 }
 
 function draw() {
   var box = document.getElementById('body');
-  if (tab === 'setup') return drawSetup(box);
-  if (tab === 'stations') return drawStations(box);
-  if (tab === 'fields') {
-    box.innerHTML = '<p class="dim">Loading.</p>';
-    return drawFields(box);
-  }
-  if (!chosen) {
-    box.innerHTML = '<p class="dim">Pick a station.</p>';
-    return;
-  }
-  box.innerHTML = '<p class="dim">Loading.</p>';
-  if (tab === 'raw') return drawRaw(box);
-  return drawColumns(box);
+  drawn += 1;
+  drawHead();
+  markNav();
+  if (view === 'setup') return drawSetup(box);
+  if (view === 'fields') { box.innerHTML = LOADING; return drawFields(box); }
+  return drawStations(box);
 }
 
 function show(which) {
+  /* Leaving the checklist abandons a half-filled add form, which is what clicking
+     away from it means. */
   if (which !== 'setup') adding = false;
-  tab = which;
-  document.querySelectorAll('.tabs button').forEach(function (b) {
-    b.classList.toggle('on', b.dataset.tab === tab);
-  });
+  view = which;
   draw();
+}
+
+function showTab(which) {
+  subtab = which;
+  draw();
+}
+
+function markNav() {
+  document.querySelectorAll('nav.views button').forEach(function (b) {
+    b.classList.toggle('on', b.dataset.view === view);
+  });
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.classList.toggle('on', b.dataset.tab === subtab);
+  });
+  /* The tabs are about one station that is recording. A station being refused has no
+     readings, no uploads kept and no columns, and offering the tabs for it would be
+     four ways to reach the same empty page. */
+  document.getElementById('subtabs').style.display =
+    view === 'stations' && chosen && !refusedRow(chosen) ? 'flex' : 'none';
 }
 
 function hasColumn(name) {
@@ -1123,6 +1357,28 @@ function fieldRow(s, f) {
     '<td class="dim">' + esc(f.why || '') + '</td></tr>';
 }
 
+
+function readingsTable(s) {
+  return '<table><thead><tr><th class="raw">Raw field</th>' +
+    '<th class="value">Last value</th><th class="goes">WeeWX field</th>' +
+    '<th class="group">Group</th><th class="state">Column</th>' +
+    '<th class="why">How</th></tr></thead>' +
+    '<tbody>' + s.rows.map(function (f) { return fieldRow(s, f); }).join('') +
+    '</tbody></table>';
+}
+
+function roleSwap(s) {
+  return '<div class="add" style="margin:0 0 16px">' +
+    '<button class="act" data-role="' + (s.role === 'main' ? 'extra' : 'main') +
+    '" data-ident="' + esc(s.ident) + '">Make it ' +
+    (s.role === 'main' ? 'an extra sensor' : 'the main station') +
+    '</button><span class="dim" style="font-size:12px">' + (s.role === 'main'
+      ? 'Its readings would move off outTemp and the rest, onto a channel of ' +
+        'their own.'
+      : 'Its readings would move onto outTemp and the rest, which is what a ' +
+        'WeeWX report reads.') + '</span></div>';
+}
+
 function stationFields(s, several) {
   var open = !folded[s.ident];
   var role = s.role === 'extra'
@@ -1130,70 +1386,172 @@ function stationFields(s, several) {
     : 'the main station';
   var head = '<div class="fold" data-fold="' + esc(s.ident) + '">' +
     '<span class="caret">' + (open ? '\\u25be' : '\\u25b8') + '</span>' +
-    '<b>' + esc(s.name || s.ident) + '</b>' +
+    stationTitle(s) +
     '<span class="dim">' + esc(s.protocol || '?') + ' \\u00b7 ' + role +
     ' \\u00b7 ' + s.rows.length + ' fields</span></div>';
   if (!open) return '<div class="block">' + head + '</div>';
-
-  var swap = '';
-  if (several && !s.declared) {
-    swap = '<div class="add"><button class="act" data-role="' +
-      (s.role === 'main' ? 'extra' : 'main') + '" data-ident="' + esc(s.ident) +
-      '">Make it ' + (s.role === 'main' ? 'an extra sensor'
-                                            : 'the main station') +
-      '</button></div>';
-  }
-  return '<div class="block">' + head + swap +
-    '<table><thead><tr><th>Raw field</th><th>Last value</th><th>WeeWX field</th>' +
-    '<th>Group</th><th>Column</th><th>How</th></tr></thead><tbody>' +
-    s.rows.map(function (f) { return fieldRow(s, f); }).join('') +
-    '</tbody></table></div>';
+  return '<div class="block">' + head +
+    (several && !s.declared ? roleSwap(s) : '') + readingsTable(s) + '</div>';
 }
 
 /* ---------------------------------------------------------------- stations */
 
+
+function drawHead() {
+  /* Who this page is about, above the tabs, so that it stays put while they change.
+     The two views that are not about one station say what they are about instead:
+     an empty header over a full page reads like something failed to load. */
+  var box = document.getElementById('dhead');
+  if (view === 'setup') {
+    box.innerHTML = '<div class="name"><b>Checklist</b></div><div class="about">' +
+      'What still stands between this driver and a station that records ' +
+      'everything.</div>';
+    return;
+  }
+  if (view === 'fields') {
+    box.innerHTML = '<div class="name"><b>Field map</b></div><div class="about">' +
+      'Every reading of every station, and which column it fills. The question is ' +
+      'not what one station sends, it is who fills outTemp.</div>';
+    return;
+  }
+  if (!chosen) { box.innerHTML = ''; return; }
+  var turned = refusedRow(chosen);
+  if (turned) {
+    box.innerHTML = '<div class="name"><b class="mono">' + esc(turned.ident) +
+      '</b><span class="tag">REFUSED</span></div><div class="about">' +
+      '<span>' + esc(turned.protocol || 'protocol unknown') + '</span>' +
+      '<span class="mono">' + esc(turned.client) + '</span>' +
+      '<span>' + turned.uploads + ' uploads turned away</span>' +
+      '<span>last ' + ago(turned.last_seen) + '</span></div>';
+    return;
+  }
+  var s = state.stations.filter(function (x) { return x.ident === chosen; })[0];
+  if (!s) {
+    /* Set up here and still silent. It has a name and a path and nothing else, so
+       the header says the name and the tabs go to the Console tab that holds the
+       path. */
+    var quiet = (stationList ? stationList.stations : []).filter(function (x) {
+      return x.ident === chosen;
+    })[0];
+    box.innerHTML = quiet
+      ? '<div class="name"><b>' + esc(quiet.name || quiet.ident) + '</b>' +
+        stationTag(quiet) + '</div><div class="about"><span>' +
+        esc(quiet.station_type || quiet.protocol || 'kind unknown') +
+        '</span><span>never heard from</span></div>'
+      : '';
+    return;
+  }
+  box.innerHTML = '<div class="name">' + stationTitle(s) + stationTag(s) +
+    '<span class="acts"><button class="act" data-tab="console">Console ' +
+    'settings</button></span></div>' +
+    '<div class="about">' + (s.name
+      ? '<span class="mono">' + esc(s.ident) + '</span>' : '') +
+    '<span>' + esc(s.protocol || '?') +
+    (s.dialect && s.dialect !== s.protocol ? ' \\u00b7 ' + esc(s.dialect) : '') +
+    '</span><span>' + s.field_count + ' readings</span>' +
+    '<span>last upload ' + ago(s.last_seen) + '</span>' +
+    (s.undecided_count
+      ? '<span class="warn">' + s.undecided_count + ' waiting for a placement</span>'
+      : '') + '</div>';
+}
+
 function drawStations(box) {
+  /* The second axis. Everything under here is about `chosen` and nothing else, which
+     is what makes the tabs mean one thing: before this, two of the five tabs read
+     the station on the left and three ignored it. */
+  if (!chosen) {
+    box.innerHTML = state && state.stations.length
+      ? '<p class="dim">Pick a station on the left.</p>'
+      : '<p class="dim">Nothing has uploaded yet. The checklist says what to put ' +
+        'into the console.</p>';
+    return;
+  }
+  if (refusedRow(chosen)) return drawRefused(box);
+  box.innerHTML = LOADING;
+  if (subtab === 'console') return drawConsole(box);
+  if (subtab === 'raw') return drawRaw(box);
+  if (subtab === 'columns') return drawColumns(box);
+  return drawReadings(box);
+}
+
+function drawRefused(box) {
+  /* The decision, with what it takes to make it. An address cannot tell your own new
+     console from a stranger's; nine degrees and ninety per cent can, so the readings
+     are the page rather than a thing to unfold. */
+  var w = refusedRow(chosen);
+  var sample = w.sample || {};
+  var rows = (sample.readings || []).map(function (r) {
+    return '<tr><td class="mono">' + esc(r.raw) + '</td><td>' + esc(r.value) +
+      '</td><td class="dim">' + (r.field ? '\\u2192 ' + esc(r.field) : '') +
+      '</td></tr>';
+  }).join('');
+  box.innerHTML = '<div class="setup">' +
+    '<div class="note bad">This driver answers to the consoles it knows. A second ' +
+    'one numbering its channels from one would otherwise write into the same ' +
+    'columns, and afterwards neither could be recovered. Let it in if it is ' +
+    'yours.</div>' +
+    (rows
+      ? '<h2>What it last sent</h2><table class="knock"><tbody>' + rows +
+        '</tbody></table>'
+      : '<p class="dim">Nothing readable in what it sent.</p>') +
+    '<div class="add"><input type="text" placeholder="name it" data-name="' +
+    esc(w.ident) + '">' +
+    '<button class="act primary" data-accept="' + esc(w.ident) + '">Let it in' +
+    '</button>' +
+    '<button class="act" data-notmine="' + esc(w.ident) + '">Not mine</button>' +
+    '<button class="act" data-knock="0">Show the upload</button></div>' +
+    movedPicker(w.ident) +
+    '<div id="knockraw0" style="display:none">' +
+    '<div class="row" style="margin-top:8px;justify-content:flex-end">' +
+    '<button class="act" data-knockcopy="0">Copy</button></div>' +
+    '<pre id="knocktext0">' + esc(sample.text || '') + '</pre></div></div>';
+}
+
+function drawConsole(box) {
+  /* What to put into the console, and what this station is called. Shown every time
+     rather than once: the checklist stops mentioning it as soon as the station is
+     heard, and a console reset a year later needs it again. */
+  var mine = drawn;
   loadStations().then(function (d) {
-    if (!d.ok) { box.innerHTML = '<p class="bad">' + esc(d.error || '') + '</p>'; return; }
-    box.innerHTML = '<div class="setup">' +
+    if (!d.ok) {
+      settle(mine, box, '<p class="bad">' + esc(d.error || '') + '</p>');
+      return;
+    }
+    var s = d.stations.filter(function (x) { return x.ident === chosen; })[0];
+    if (!s) {
+      settle(mine, box, '<p class="dim">This station has uploaded, but the settings ' +
+        'file has no record of it. The checklist can give it a name.</p>');
+      return;
+    }
+    settle(mine, box, '<div class="setup">' +
       (pending && pending.what === 'edit' ? confirmBox() : '') +
-      d.stations.map(stationCard).join('') +
-      '<p class="dim">One station is the main station. Its readings go to ' +
-      'outTemp, ' +
+      stationBody(s, editing === s.ident) +
+      '<p class="dim">One station is the main station. Its readings go to outTemp, ' +
       'barometer and the rest, which is what a WeeWX report reads. Every other ' +
       'station is a sensor beside it: temperature and humidity go to a channel of ' +
       'their own, and what has nowhere to go is dropped rather than written over ' +
       'the main station\\u2019s.</p>' +
-      '<p class="dim">Changed here, kept in ' + esc(d.settings_file) + '.</p></div>';
+      '<p class="dim">Changed here, kept in ' + esc(d.settings_file) + '.</p></div>');
   });
 }
 
-function stationCard(s) {
-  /* Shut, until somebody wants this one. A list of stations is a list to find
-     something in, and five consoles' worth of console settings unrolled at
-     once is not a list any more. */
-  var open = !!unfolded[s.ident];
-  var what = s.role === 'extra'
-    ? 'extra sensor on channel ' + (s.channel || '?')
-    : (s.is_main ? 'the main station' : 'main, and not the one that writes');
-  /* A station this driver reads has no protocol and sends no uploads: it is asked,
-     and what it has instead of a count is whether it is answering. */
-  var wired = !!s.station_type;
-  var seen = s.heard
-    ? (wired ? 'read ' + ago(s.last_seen)
-             : s.uploads + (s.uploads === 1 ? ' upload ' : ' uploads ') +
-               '\\u00b7 ' + ago(s.last_seen))
-    : (wired ? 'nothing read yet' : 'never heard from');
-  return '<div class="step ' + (s.is_main ? 'done' : 'todo') + '">' +
-    '<div class="head shut" data-open="' + esc(s.ident) + '">' +
-    '<span class="mark">' + (s.is_main ? '\\u2605' : '\\u25cb') +
-    '</span><span class="caret">' + (open ? '\\u25be' : '\\u25b8') +
-    '</span><span class="what">' + esc(s.name || s.ident) + '</span>' +
-    '<span class="dim">' + esc(s.station_type || s.protocol || 'kind unknown') +
-    ' \\u00b7 ' + esc(what) + ' \\u00b7 ' + esc(seen) + '</span></div>' +
-    (open ? '<div class="body">' + stationBody(s, editing === s.ident) +
-            '</div>' : '') +
-    '</div>';
+function drawReadings(box) {
+  /* One station's readings. The same rows the field map draws, without the fold: on
+     a page that is already about this station, a heading with its name on it and a
+     triangle to collapse it is furniture. */
+  var mine = drawn;
+  Promise.all([api('fields'), loadCandidates()]).then(function (both) {
+    var d = both[0];
+    if (!d.ok) { settle(mine, box, '<p class="bad">' + esc(d.error) + '</p>'); return; }
+    fieldsView = d;
+    var s = d.stations.filter(function (x) { return x.ident === chosen; })[0];
+    if (!s) {
+      settle(mine, box, '<p class="dim">Nothing has arrived from this station yet. ' +
+        'The Console tab has the path to put into it.</p>');
+      return;
+    }
+    settle(mine, box, (s.declared ? '' : roleSwap(s)) + readingsTable(s));
+  });
 }
 
 function stationBody(s, open) {
@@ -1218,7 +1576,7 @@ function stationBody(s, open) {
     return html + '<p class="dim">' + (s.heard
       ? 'The first console this driver ever heard, adopted so that it would record ' +
         'rather than be turned away. It is named in no file, which is why there is ' +
-        'nothing here to change: what it wants is a name, and the Setup tab gives ' +
+        'nothing here to change: what it wants is a name, and the checklist gives ' +
         'it one.'
       : 'weewx.conf names this console with \\u2018passkey\\u2019, and nothing has ' +
         'been heard from it yet. It counts as the main station until something else ' +
@@ -1285,26 +1643,31 @@ function drawFields(box) {
   /* Every station at once. The question is not "what does this station send", it is
      "who fills outTemp", and with two stations that answer used to be spread over
      two pages, neither of which could show the collision that matters. */
+  var mine = drawn;
   Promise.all([api('fields'), loadCandidates()]).then(function (both) {
     var d = both[0];
-    if (!d.ok) { box.innerHTML = '<p class="bad">' + esc(d.error) + '</p>'; return; }
+    if (!d.ok) { settle(mine, box, '<p class="bad">' + esc(d.error) + '</p>'); return; }
     fieldsView = d;
     if (!d.stations.length) {
-      box.innerHTML = '<p class="dim">Nothing has uploaded yet.</p>';
+      settle(mine, box, '<p class="dim">Nothing has uploaded yet.</p>');
       return;
     }
     var several = d.stations.length > 1;
-    box.innerHTML = d.stations.map(function (s) {
+    settle(mine, box, d.stations.map(function (s) {
       return stationFields(s, several);
-    }).join('');
+    }).join(''));
   });
 }
 
 
 function drawRaw(box) {
+  var mine = drawn;
   api('raw?ident=' + encodeURIComponent(chosen)).then(function (d) {
-    if (!d.uploads.length) { box.innerHTML = '<p class="dim">Nothing kept yet.</p>'; return; }
-    box.innerHTML = '<p class="dim">The last ' + d.uploads.length +
+    if (!d.uploads.length) {
+      settle(mine, box, '<p class="dim">Nothing kept yet.</p>');
+      return;
+    }
+    settle(mine, box, '<p class="dim">The last ' + d.uploads.length +
       ' uploads, newest first. Whatever names the station has been replaced, so these ' +
       'are safe to paste into an issue.</p>' +
       d.uploads.map(function (u, i) {
@@ -1313,14 +1676,15 @@ function drawRaw(box) {
           (u.protocol ? ' \\u00b7 ' + esc(u.protocol) : '') + '</span>' +
           '<button class="act" data-copy="' + i + '">Copy</button></div>' +
           '<pre id="raw' + i + '">' + esc(u.text) + '</pre></div>';
-      }).join('');
+      }).join(''));
   });
 }
 
 
 function drawColumns(box) {
+  var mine = drawn;
   api('columns?ident=' + encodeURIComponent(chosen)).then(function (d) {
-    if (!d.ok) { box.innerHTML = '<p class="bad">' + esc(d.error) + '</p>'; return; }
+    if (!d.ok) { settle(mine, box, '<p class="bad">' + esc(d.error) + '</p>'); return; }
     var html = '';
     if (!d.missing.length) {
       html += '<p class="ok">Every reading this station sends has a column.</p>';
@@ -1349,7 +1713,7 @@ function drawColumns(box) {
         'It is one pass over the archive table, which takes a moment on a large ' +
         'database.</p><button class="act" id="checkdb">Check the database</button>';
     }
-    box.innerHTML = html;
+    settle(mine, box, html);
   });
 }
 
@@ -1396,7 +1760,7 @@ function loadWays() {
   api('ways').then(function (d) {
     if (!d.ok) return;
     ways = d;
-    if (tab === 'setup') drawSetup(document.getElementById('body'));
+    if (view === 'setup') drawSetup(document.getElementById('body'));
   });
 }
 
@@ -1409,7 +1773,7 @@ function hostedRoleSelect(chosenRole) {
 }
 
 function hostedBody(one) {
-  /* A hosted driver, on the Stations tab, where every other station is managed too.
+  /* A hosted driver, on the Console tab, where every other station is managed too.
      What it has instead of an upload path is a serial port, so that is what is
      shown; everything else on the card is the same. */
   var html = '';
@@ -1496,14 +1860,18 @@ function hostedThen(d) {
   typedBy = {};
   loadWays();
   loadSetup();
-  draw();
+  /* Not just a redraw: 'not mine' and 'move it here' take an identity out of the
+     overview, and the page is about whichever one is picked. Reading the overview
+     first is what lets keepOrDrop see that the picked one has gone. */
+  loadStations().then(loadState).then(draw);
 }
 
 /* ---------------------------------------------------------------- events */
 
 document.addEventListener('click', function (e) {
   var t = e.target;
-  if (t.dataset.tab) { show(t.dataset.tab); return; }
+  if (t.dataset.view) { show(t.dataset.view); return; }
+  if (t.dataset.tab) { showTab(t.dataset.tab); return; }
   if (t.dataset.relist) {
     formValues = hostedOptions(
       document.querySelector('[data-hostedopt]') ? 'data-hostedopt' : 'data-hwopt');
@@ -1676,16 +2044,6 @@ document.addEventListener('click', function (e) {
     }
     return;
   }
-  var head = t.closest ? t.closest('[data-open]') : null;
-  if (head) {
-    /* Taken from whatever inside the head was clicked, so that the name and the
-       line under it open the station too rather than only the caret. */
-    var which = head.dataset.open;
-    unfolded[which] = !unfolded[which];
-    if (!unfolded[which] && editing === which) editing = null;
-    draw();
-    return;
-  }
   if (t.dataset.edit) { editing = t.dataset.edit; draw(); return; }
   if (t.id === 'cancel') { editing = null; draw(); return; }
   if (t.id === 'save') {
@@ -1737,8 +2095,17 @@ document.addEventListener('click', function (e) {
     return;
   }
   if (t.dataset.goto) {
+    /* A jump from the checklist to where that step's work is done. Which axis it
+       lands on depends on the target: the field map is a view of its own, and
+       columns belong to one station, so that one needs a station picked first. */
+    var where = t.dataset.goto;
+    if (where === 'fields' || where === 'stations' || where === 'setup') {
+      show(where);
+      return;
+    }
     if (!chosen && state && state.stations.length) chosen = state.stations[0].ident;
-    show(t.dataset.goto);
+    view = 'stations';
+    showTab(where);
     return;
   }
   if (t.dataset.accept) {
@@ -1798,6 +2165,12 @@ function placeField(ident, raw, field, force) {
     });
 }
 
+document.addEventListener('input', function (e) {
+  if (e.target.id !== 'find') return;
+  finding = e.target.value.trim();
+  drawSidebar();
+});
+
 document.addEventListener('change', function (e) {
   if (e.target.dataset.askentity !== undefined) {
     /* One station is one device. A tick on another device's sensor starts that
@@ -1853,11 +2226,12 @@ loadState().then(function () { return loadStations(); })
   /* An installation with something still to do opens on the thing still to do. The
      fields of a station that has not uploaded are an empty table, and an empty table
      reads like a fault rather than like a step not taken yet. */
-  if (setup && !setup.done) tab = 'setup';
-  document.querySelectorAll('.tabs button').forEach(function (b) {
-    b.classList.toggle('on', b.dataset.tab === tab);
-  });
+  if (setup && !setup.done) view = 'setup';
   if (!chosen && state.stations.length) chosen = state.stations[0].ident;
+  /* Nothing recording and something knocking: that decision is the only thing on
+     this page worth opening on, and it is the one that leaves a console uploading
+     into nothing until it is made. */
+  if (!chosen && state.waiting.length) chosen = state.waiting[0].ident;
   drawSidebar();
   draw();
 });

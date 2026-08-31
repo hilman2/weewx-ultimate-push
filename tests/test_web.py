@@ -873,18 +873,28 @@ def test_the_page_calls_only_functions_it_defines():
     assert called <= defined, "called but never defined: %s" % sorted(called - defined)
 
 
-def test_every_tab_has_something_to_draw():
-    """A tab button with no renderer behind it is a button that does nothing."""
+def test_every_view_and_tab_has_something_to_draw():
+    """A button with no renderer behind it is a button that does nothing.
+
+    Two axes, and each has a dispatcher of its own: the top bar picks a view in
+    draw(), and one station's tabs are picked in drawStations(). Checking a tab
+    against draw() would pass while the button did nothing, because the name it looks
+    for is somewhere in the script either way.
+    """
     from ultimatepush import page
 
     script = page.PAGE.split('<script>')[1].split('</script>')[0]
-    dispatcher = script[script.index('function draw() {') :]
-    dispatcher = dispatcher[: dispatcher.index(NEWLINE + '}')]
 
-    for tab in sorted(set(re.findall(r'data-tab="([a-z]+)"', page.PAGE))):
-        renderer = 'draw' + tab.capitalize()
-        assert renderer in dispatcher, "the %s tab draws nothing" % tab
-        assert 'function %s(' % renderer in script, "%s does not exist" % renderer
+    for attribute, entry in (('data-view', 'draw'), ('data-tab', 'drawStations')):
+        dispatcher = script[script.index('function %s(' % entry) :]
+        dispatcher = dispatcher[: dispatcher.index(NEWLINE + '}')]
+        found = sorted(set(re.findall(r'%s="([a-z]+)"' % attribute, page.PAGE)))
+        assert found, "no %s buttons on the page at all" % attribute
+        for name in found:
+            renderer = 'draw' + name.capitalize()
+            gone = "the %s button: %s() does not dispatch %s" % (name, entry, renderer)
+            assert renderer in dispatcher, gone
+            assert 'function %s(' % renderer in script, "%s does not exist" % renderer
 
 
 def test_the_before_route_takes_a_channel_out_of_a_query_string(station):

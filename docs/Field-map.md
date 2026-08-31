@@ -39,7 +39,7 @@ because only the person who installed the sensor knows where it is.
 One thing still comes after it. A column belongs to whichever station fills it first,
 and a placement does not take a column away from the station that holds it: the
 reading is dropped instead, and the checklist reports it. Placing the same field for
-another station on the Fields tab does hand the column over, because that is a
+another station in the interface does hand the column over, because that is a
 decision made in front of what it costs. See [Stations](Stations.md).
 
 ## 2. The catalog

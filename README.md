@@ -14,7 +14,7 @@ And hardware that does neither. A PurpleAir has nowhere to type a server address
 so it is asked instead. A cheap 433 MHz thermometer cannot be asked or pointed either,
 so an RTL-SDR stick listens for it. Four ways in, one database, one set of reports.
 
-![The setup checklist, with six stations on five protocols](docs/img/01-setup.png)
+![The checklist, with what is still outstanding](docs/img/01-setup.png)
 
 The interface opens on whatever still stands between the current state and a station that
 records properly. It runs on a port of its own, is switched on by the installer, and the
@@ -39,7 +39,7 @@ is.
 
 ## Every reading, and where it goes
 
-![The fields tab](docs/img/03-fields.png)
+![Every station's readings on one page](docs/img/03-fields.png)
 
 What each station sends, and which database column each reading is written to. Placing a
 field takes effect on the next upload, with no restart and no editing of files.
@@ -51,7 +51,7 @@ selector offers the fields that measure the same thing first, then everything el
 
 ## Your stations
 
-![The stations tab](docs/img/02-stations.png)
+![The station list and one station's readings](docs/img/02-stations.png)
 
 Every station the driver knows, including those set up but never heard from. Each entry
 carries the console settings for that station and the archive columns it fills, and its
@@ -68,7 +68,7 @@ confirmed twice.
 
 ## Database columns
 
-![The database columns tab](docs/img/06-columns.png)
+![Which readings have no column yet](docs/img/06-columns.png)
 
 Which readings have nowhere to be written, with the `weectl` commands for exactly the
 columns this station needs, and what the archive table already holds.
