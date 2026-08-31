@@ -31,7 +31,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install black
-      - run: black --check --diff bin tools tests install.py
+      - run: black --check --diff $(python tools/checked_paths.py black)
 
   # Two checkers, because the types live in two places. mypy reads the code; the
   # second reads the Google docstrings, which no command line checker looks at and
@@ -48,7 +48,7 @@ jobs:
       - name: Docstring types against the signatures
         run: |
           python tools/check_docstring_types.py \
-            $(find bin/user/ultimatepush tools -name '*.py') install.py
+            $(python tools/checked_paths.py docstrings)
 
   # The driver has to keep running on the Python versions WeeWX still supports,
   # which is older than anything the runners will install.
@@ -60,13 +60,12 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install vermin
-      # tools/check_docstring_types.py is left out on purpose. It is a development
-      # tool, is in no release zip and is imported by nothing that ships, and its
-      # --mypy stage needs ast.unparse, which arrived in 3.9. Everything the driver
-      # loads has to clear 3.7.
+      # Which paths, and why the development tools are left out of them, is in
+      # tools/checked_paths.py. Stated there rather than here, so that this job and
+      # the container's `checks` service cannot come to check different things.
       - run: |
-          vermin --target=3.7 --violations bin install.py \
-            $(find tools -name '*.py' ! -name 'check_docstring_types.py')
+          vermin --target=3.7 --violations \
+            $(python tools/checked_paths.py vermin)
 
   # With WeeWX installed, the tests can also check that the bundled listener is
   # still identical to the one in the core.
