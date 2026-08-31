@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.17.0 (2026-08-31)
 
 **An Ambient Weather station read back from the account it uploads to.** The awnet app
 has room for one *Custom* server and older consoles have room for none, so a console
