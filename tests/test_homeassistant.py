@@ -146,7 +146,8 @@ def source_for(assistant, entities=None, **extra):
     Args:
         assistant (Assistant): The fake.
         entities (list | None): What to read. The outdoor device's, by default.
-        **extra: Anything else to put in the block.
+        **extra (str): Anything else to put in the block, as configobj hands
+            it over.
 
     Returns:
         polling.Source: The source.

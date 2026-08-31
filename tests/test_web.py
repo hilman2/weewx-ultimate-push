@@ -1025,7 +1025,7 @@ def wu_upload(driver, ident, password, temp='59.9'):
     """One Weather Underground upload, as a console sends it.
 
     Args:
-        driver (ultimatepush.driver.UltimatePushDriver): The driver to send to.
+        driver (UltimatePushDriver): The driver to send to.
         ident (str): The ID the console is set to.
         password (str): The PASSWORD it is set to.
         temp (str): An outdoor temperature, so the packet has a reading in it.
