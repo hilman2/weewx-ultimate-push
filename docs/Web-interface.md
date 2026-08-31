@@ -122,6 +122,10 @@ console that appears a year later puts its step back at the top.
 **Add** above the station list opens the form here. One form for every kind of station,
 grouped by what you have to do: point the console at this machine, let this machine read
 a driver, or change something on the network and wait for the station to turn up.
+
+Each entry names the models it covers, and the search box reads those as well as the
+names. Somebody holding a GW1100 does not have to know that this driver calls it
+Ecowitt.
 Selecting a role is part of that form: the first station is the main station, and every
 station after it is offered as an extra sensor. See [Stations](Stations.md) and
 [Hosted hardware](Hosted-hardware.md).

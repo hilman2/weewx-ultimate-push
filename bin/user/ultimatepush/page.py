@@ -203,11 +203,24 @@ pre { background: var(--code); border: 1px solid var(--line); border-radius: 4px
 .step > .head.shut { cursor: pointer; user-select: none; }
 .step > .head.shut:hover .caret { color: var(--accent); }
 .step > .head .caret { color: var(--dim); width: 12px; flex: none; }
-.pick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-.pick button { background: var(--panel); color: var(--ink2); border: 1px solid var(--line);
-  border-radius: 4px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
-.pick button.on { border-color: var(--accent); color: var(--accent); font-weight: 500;
-  background: var(--accent-soft); }
+/* Every kind of hardware this driver knows, as rows rather than pills. A pill can
+   only carry a name, so the models a name covers were shown after choosing it, which
+   is the wrong way round for somebody holding a box that says GW1100. */
+#hwfind { max-width: 24rem; margin-bottom: 4px; }
+.hwlist { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
+.hw { display: flex; align-items: baseline; gap: 12px; width: 100%; text-align: left;
+  padding: 8px 11px; background: none; border: 1px solid transparent; border-radius: 4px;
+  font: inherit; color: var(--ink); cursor: pointer; }
+.hw:hover { background: var(--sink); }
+.hw.on { border-color: var(--accent); background: var(--accent-soft); }
+.hw .what { font-weight: 600; font-size: 13.5px; flex: none; min-width: 12rem; }
+.hw .kit { color: var(--dim); font-size: 12.5px; flex: 1; min-width: 0; }
+.hw .why { color: var(--dim); font-size: 12px; flex: none; white-space: nowrap; }
+.hw[disabled] { opacity: .5; cursor: not-allowed; }
+.hw[disabled]:hover { background: none; }
+.hwhead { color: var(--dim); font-size: 13px; margin: 16px 0 6px; }
+.hwhead b { color: var(--ink); font-size: 13.5px; }
+.hwhead:first-child { margin-top: 4px; }
 .settings { border-collapse: collapse; margin-bottom: 10px; }
 .settings td, .settings th { border: 0; padding: 3px 14px 3px 0; text-transform: none;
   letter-spacing: 0; font-size: 13px; }
@@ -924,14 +937,36 @@ function hardwareBody(s) {
   /* One list, whatever the hardware is. "Polled" and "uploads" is a distinction
      this driver has and its user does not: they have a weather station. What they
      do have to know is what to do next, which is what the groups say. */
-  if (!ways) { loadWays(); return '<p class="dim">Loading.</p>'; }
+  if (!ways) { loadWays(); return LOADING; }
   var one = wayFor(picked) || ways.ways[0];
   if (!one) return '<p class="dim">No hardware this driver can read.</p>';
   picked = wayKey(one);
-  return GROUPS.map(function (g) { return groupOfWays(g, one); }).join('') +
-    '<p class="dim">' + esc(one.hardware) + '</p>' +
+  /* The search box is outside the list it filters, and typing replaces only the
+     list. Redrawing the box under somebody's cursor takes the focus with it, and
+     they lose the rest of what they were typing. */
+  return '<input type="text" id="hwfind" autocomplete="off" ' +
+    'placeholder="Search by make or model" value="' + esc(hwfind) + '">' +
+    '<div class="hwlist" id="hwlist">' + hwGroups(one) + '</div>' +
     (one.kind === 'driver' ? fetchBody(one)
       : (one.how === 'fetch' ? askBody(one) : pointBody(one)));
+}
+
+function hwMatches(one) {
+  /* Over the model list as well as the name. Somebody who has a GW1100 does not know
+     that Ecowitt is what this driver calls it, and that is exactly the person the
+     search is for. */
+  if (!hwfind) return true;
+  var needle = hwfind.toLowerCase();
+  return (one.label + ' ' + (one.hardware || '')).toLowerCase()
+    .indexOf(needle) >= 0;
+}
+
+function hwGroups(chosen) {
+  var out = GROUPS.map(function (g) { return groupOfWays(g, chosen); }).join('');
+  if (out) return out;
+  return '<p class="dim" style="padding:8px 0">Nothing here matches ' +
+    '\u2018' + esc(hwfind) + '\u2019. It may be hardware this driver does not ' +
+    'read yet.</p>';
 }
 
 function wayKey(one) {
@@ -946,20 +981,25 @@ function wayFor(key) {
 }
 
 function groupOfWays(group, chosen) {
-  var mine = ways.ways.filter(function (one) { return one.how === group[0]; });
+  var mine = ways.ways.filter(function (one) {
+    return one.how === group[0] && hwMatches(one);
+  });
   if (!mine.length) return '';
-  return '<p class="dim" style="margin-top:10px"><b>' + esc(group[1]) + '</b> ' +
-    esc(group[2]) + '</p><div class="pick">' +
+  return '<p class="hwhead"><b>' + esc(group[1]) + '</b> ' + esc(group[2]) + '</p>' +
     mine.map(function (one) {
       var key = wayKey(one);
-      var why = one.problem ? ' \u2014 ' + esc(one.problem)
-        : (one.taken ? ' \u2014 already set up'
-          : (one.enabled === false ? ' \u2014 not switched on' : ''));
-      return '<button data-pick="' + esc(key) + '"' +
-        (key === wayKey(chosen) ? ' class="on"' : '') +
+      var why = one.problem ? esc(one.problem)
+        : (one.taken ? 'already set up'
+          : (one.enabled === false ? 'not switched on' : ''));
+      return '<button class="hw' + (key === wayKey(chosen) ? ' on' : '') +
+        '" data-pick="' + esc(key) + '"' +
         (one.problem || one.taken ? ' disabled' : '') + '>' +
-        esc(one.label) + why + '</button>';
-    }).join('') + '</div>';
+        '<span class="what">' + esc(one.label) + '</span>' +
+        '<span class="kit' + (one.kind === 'driver' ? ' mono' : '') + '">' +
+        esc(one.hardware || '') + '</span>' +
+        (why ? '<span class="why">' + why + '</span>' : '') +
+        '</button>';
+    }).join('');
 }
 
 function pointBody(one) {
@@ -1210,6 +1250,18 @@ function watch() {
 }
 
 /* ---------------------------------------------------------------- a station */
+
+function refresh(then) {
+  /* Everything the page draws from, in the order the parts depend on each other. The
+     station list comes first because keepOrDrop reads it to decide whether the
+     station on the right is still there, and the suggestions are dropped because who
+     holds which column can have changed. */
+  candidates = null;
+  return loadStations().then(loadState).then(loadSetup).then(function () {
+    draw();
+    if (then) then();
+  });
+}
 
 function choose(ident) {
   chosen = ident;
@@ -1724,10 +1776,7 @@ function createStation(body) {
       ? 'Set up as the main station. Put the path below into the console.'
       : 'Set up as an extra sensor on channel ' + r.station.channel +
         '. Put the path below into the console.');
-    candidates = null;
-    loadState();
-    loadStations();
-    loadSetup(function () { draw(); });
+    refresh();
   });
 }
 
@@ -1737,9 +1786,7 @@ function saveStation(ident, body) {
     flash(r.ok ? 'Changed. It takes effect on the next upload.' : r.message, !r.ok);
     if (!r.ok) return;
     editing = null;
-    candidates = null;
-    loadState();
-    loadSetup(function () { draw(); });
+    refresh();
   });
 }
 
@@ -1749,6 +1796,9 @@ function saveStation(ident, body) {
    asking again for a list that has not changed would empty the fields somebody is
    typing a serial port into. */
 var ways = null;
+/* What has been typed into the hardware search. Held here rather than read off the
+   input, because choosing something redraws the whole form around it. */
+var hwfind = '';
 /* What is in the form now, and what its fields are, so that changing an option
    others depend on can rebuild it without losing what has been typed. */
 var formValues = null, formFields = null;
@@ -1859,11 +1909,7 @@ function hostedThen(d) {
   formValues = null;
   typedBy = {};
   loadWays();
-  loadSetup();
-  /* Not just a redraw: 'not mine' and 'move it here' take an identity out of the
-     overview, and the page is about whichever one is picked. Reading the overview
-     first is what lets keepOrDrop see that the picked one has gone. */
-  loadStations().then(loadState).then(draw);
+  refresh();
 }
 
 /* ---------------------------------------------------------------- events */
@@ -1890,12 +1936,12 @@ document.addEventListener('click', function (e) {
        looked up by identity: an identity is whatever the hardware says it is, and
        a selector built out of one would break on the first sensor with a quote in
        its model name. */
-    var picked = t.previousElementSibling;
-    if (!picked || !picked.value) {
+    var moving = t.previousElementSibling;
+    if (!moving || !moving.value) {
       flash('Choose which station moved onto this id.', true);
       return;
     }
-    api('rebind', { was: picked.value, now: t.dataset.moved }).then(hostedThen);
+    api('rebind', { was: moving.value, now: t.dataset.moved }).then(hostedThen);
     return;
   }
   if (t.dataset.askfind) {
@@ -1970,8 +2016,11 @@ document.addEventListener('click', function (e) {
          'the block for weewx.conf');
     return;
   }
-  if (t.dataset.pick) {
-    picked = t.dataset.pick;
+  var hw = t.closest ? t.closest('[data-pick]') : null;
+  if (hw) {
+    /* Taken from whatever inside the row was clicked, so that the model list opens
+       it too rather than only the name. */
+    picked = hw.dataset.pick;
     // A different driver is a different form.
     formValues = null;
     typedBy = {};
@@ -2001,8 +2050,7 @@ document.addEventListener('click', function (e) {
     api('role', { ident: t.dataset.ident || chosen, role: t.dataset.role })
       .then(function (r) {
       flash(r.ok ? 'Changed. It takes effect on the next upload.' : r.message, !r.ok);
-      candidates = null;
-      if (r.ok) { loadState(); loadSetup(); draw(); }
+      if (r.ok) refresh();
     });
     return;
   }
@@ -2033,14 +2081,14 @@ document.addEventListener('click', function (e) {
   }
   if (t.id === 'noconfirm') { pending = null; draw(); return; }
   if (t.id === 'doconfirm') {
-    var asked = pending;
+    var agreed = pending;
     pending = null;
-    if (asked.what === 'create') {
-      createStation({ protocol: asked.protocol, name: asked.name, role: asked.role,
-                      force: true });
+    if (agreed.what === 'create') {
+      createStation({ protocol: agreed.protocol, name: agreed.name,
+                      role: agreed.role, force: true });
     } else {
-      saveStation(asked.ident, { name: asked.name, role: asked.role,
-                                 channel: asked.channel, force: true });
+      saveStation(agreed.ident, { name: agreed.name, role: agreed.role,
+                                  channel: agreed.channel, force: true });
     }
     return;
   }
@@ -2074,7 +2122,7 @@ document.addEventListener('click', function (e) {
         'one is turned away from it. What is already in the archive stays.')) return;
     api('release', { ident: owner }).then(function (r) {
       flash(r.message, !r.ok);
-      if (r.ok) { candidates = null; loadState(); loadSetup(function () { draw(); }); }
+      if (r.ok) refresh();
     });
     return;
   }
@@ -2088,9 +2136,7 @@ document.addEventListener('click', function (e) {
       flash(r.ok ? 'Taken out.' : r.message, !r.ok);
       if (!r.ok) return;
       editing = null;
-      candidates = null;
-      loadState();
-      loadSetup(function () { draw(); });
+      refresh();
     });
     return;
   }
@@ -2113,7 +2159,7 @@ document.addEventListener('click', function (e) {
     api('accept', { ident: t.dataset.accept, name: input ? input.value : '' })
       .then(function (r) {
         flash(r.ok ? 'Let in. It records from its next upload.' : r.message, !r.ok);
-        if (r.ok) { loadState(); loadSetup(function () { draw(); }); }
+        if (r.ok) refresh();
       });
     return;
   }
@@ -2166,9 +2212,17 @@ function placeField(ident, raw, field, force) {
 }
 
 document.addEventListener('input', function (e) {
-  if (e.target.id !== 'find') return;
-  finding = e.target.value.trim();
-  drawSidebar();
+  if (e.target.id === 'find') {
+    finding = e.target.value.trim();
+    drawSidebar();
+    return;
+  }
+  if (e.target.id === 'hwfind') {
+    hwfind = e.target.value.trim();
+    var list = document.getElementById('hwlist');
+    // Only the list, so that the cursor stays where it is being typed.
+    if (list && ways) list.innerHTML = hwGroups(wayFor(picked) || ways.ways[0]);
+  }
 });
 
 document.addEventListener('change', function (e) {

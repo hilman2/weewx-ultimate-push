@@ -823,6 +823,75 @@ def test_the_page_declares_everything_it_writes_to():
     )
 
 
+def _shadowing_a_global(script):
+    """Names declared at the top level and declared again inside a function.
+
+    `var` is scoped to the whole function, not to the block it is written in, and it
+    is hoisted to the top of that function. So one `var x` anywhere inside a function
+    makes every mention of x in the whole of it local, including the ones written
+    before it and the ones meant for the global of the same name.
+
+    That shipped twice, both in the click handler, which is one function holding every
+    branch of the page. `var picked = t.previousElementSibling` in the branch for a
+    sensor that changed its id made the branch that chooses hardware write into a
+    variable the handler threw away, so the picker was stuck on whichever entry came
+    first. `var asked = pending` in the branch that confirms a change did the same to
+    the form that asks a source what it can see, so Find did nothing at all.
+
+    Neither shows up as a missing declaration, because both names are declared twice.
+    Nothing else here would have caught it: every test asks the driver for its
+    answers, and the driver's answers were right both times.
+
+    Args:
+        script (str): The page's script.
+
+    Returns:
+        set[str]: The names, empty when no function redeclares a global.
+    """
+    without_comments = re.sub(r'/\*.*?\*/', '', script, flags=re.S)
+    globals_here = set()
+    for line in without_comments.split(NEWLINE):
+        # A declaration in the first column is the page's own state. Anything
+        # indented is inside something.
+        if not line.startswith('var '):
+            continue
+        for part in line[len('var ') :].split(','):
+            name = part.split('=')[0].strip().rstrip(';')
+            if re.match(r'^[A-Za-z_$][\w$]*$', name):
+                globals_here.add(name)
+    inner = set(
+        re.findall(r'^[ 	]+var\s+([A-Za-z_$][\w$]*)', without_comments, flags=re.M)
+    )
+    return inner & globals_here
+
+
+def test_no_function_redeclares_one_of_the_pages_variables():
+    """See _shadowing_a_global. Two buttons did nothing for a release each."""
+    from ultimatepush import page
+
+    script = page.PAGE.split('<script>')[1].split('</script>')[0]
+    shadowed = _shadowing_a_global(script)
+
+    assert not shadowed, (
+        "a function declares %s, which the page also declares at the top level. Under "
+        "var's function scoping that makes the name local to the whole of that "
+        "function, so whatever it writes there never reaches the page's own copy."
+        % ', '.join(sorted(shadowed))
+    )
+
+
+def test_the_shadowing_check_would_notice():
+    """Because a check that cannot fail is not a check."""
+    page_var = "var picked = null;" + NEWLINE
+    assert _shadowing_a_global(page_var + "  var picked = x;") == {'picked'}
+    # A local whose name the page does not use is nobody's problem.
+    assert _shadowing_a_global(page_var + "  var moving = x;") == set()
+    # Nor is a second top-level declaration, which is not what this is about.
+    assert _shadowing_a_global(page_var + "var other = 1;") == set()
+    # A blank line before a top-level declaration is not an indent.
+    assert _shadowing_a_global(page_var + NEWLINE + "var picked = 1;") == set()
+
+
 def test_the_page_is_javascript_a_browser_can_parse():
     """A newline escape written with one backslash in the Python source reaches the
     page as a real newline. Inside a JavaScript string literal that is a syntax error,
