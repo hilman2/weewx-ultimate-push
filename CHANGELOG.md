@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.19.0 (2026-08-31)
+
+**The hardware picker is a list you can search.** Twenty-five kinds of station stood
+there as buttons, each carrying a name and nothing else. The models a name covers were
+shown only after choosing it. That is the wrong way round for the person it is for. They
+are holding a box with GW1100 printed on it, and have no reason to know that this driver
+files that under Ecowitt.
+
+Every entry names its models on its own row now, and the search box reads those as well
+as the names. Typing GW1100 leaves Ecowitt and the Ecowitt gateway API standing. Groups
+with nothing left in them go away. The three groups are unchanged: you point it at this
+machine, this machine reads it, it turns up on its own.
+
+**Two buttons did nothing at all.** Choosing a different kind of hardware left the
+picker on the first entry. **Find**, on a source that has to be told where to look,
+never went looking. One fault sat behind both: a `var` inside the click handler,
+declaring a name the page also uses for its own state. `var` is scoped to the whole
+function, not to the branch it is written in. So one such declaration made that name
+local everywhere in the handler, and what the other branches assigned went into a
+variable it threw away. A test fails now if any function declares a name the page
+declares at the top level.
+
+**A station you took out stayed in the list on the left** until the page next polled or
+you reloaded it. Seven buttons change a station between them. Each had its own idea of
+what to read back afterwards, and only one of the seven read back the list that draws
+it. They share one now.
+
 ## 0.18.0 (2026-08-31)
 
 **The web interface is a station console rather than five tabs.** The old page had two
