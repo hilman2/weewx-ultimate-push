@@ -35,16 +35,16 @@ services:
       - |
         set -e
         echo '--- black'
-        black --check bin tools tests install.py
+        black --check $(python tools/checked_paths.py black)
         echo '--- mypy'
         # Its cache cannot go beside the source, which is mounted read-only.
         mypy --cache-dir=/tmp/mypy
         echo '--- docstring types'
         python tools/check_docstring_types.py \
-          bin/user/ultimatepush/*.py bin/user/ultimatepush/*/*.py \
-          tools/*.py install.py
+          $(python tools/checked_paths.py docstrings)
         echo '--- vermin'
-        vermin --target=3.7 --violations bin install.py
+        vermin --target=3.7 --violations \
+          $(python tools/checked_paths.py vermin)
 
   # The same run, saying what it is doing while it does it: one line per test, and
   # anything the driver logs instead of being swallowed.
