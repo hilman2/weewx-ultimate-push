@@ -123,6 +123,7 @@ class UltimatePushInstaller(ExtensionInstaller):
                         'bin/user/ultimatepush/protocols/ambient.py',
                         'bin/user/ultimatepush/protocols/ecowitt.py',
                         'bin/user/ultimatepush/protocols/ecowitt_gateway.py',
+                        'bin/user/ultimatepush/protocols/ambient_cloud.py',
                         'bin/user/ultimatepush/protocols/homeassistant.py',
                         'bin/user/ultimatepush/protocols/lacrosse.py',
                         'bin/user/ultimatepush/protocols/weatherflow.py',

@@ -144,7 +144,10 @@ def device_time(raw, now=None, max_behind=MAX_BEHIND, max_ahead=MAX_AHEAD):
         return None
     try:
         parsed = time.strptime(stamp, DEVICE_TIME_FORMAT)
-    except ValueError:
+    except (TypeError, ValueError):
+        # TypeError as well as ValueError: a form arrives as strings and can only
+        # be the wrong shape, but a JSON upload can carry a number here, and
+        # strptime raises the other one for that.
         log.debug("Cannot read device time '%s'", stamp)
         return None
     # The device sends UTC. calendar.timegm would be the obvious call, but this keeps

@@ -136,6 +136,16 @@ def main(argv=None):
         help="Answer like Home Assistant's REST API on this port, so that a polled "
         "source can be tried without one. Default port 8123, which is its own.",
     )
+    parser.add_argument(
+        '--fake-ambient-cloud',
+        nargs='?',
+        const=8124,
+        type=int,
+        metavar='PORT',
+        help="Answer like the ambientweather.net API on this port, so that a "
+        "polled source can be tried without an account. Two stations on it, so "
+        "that picking one is part of what can be tried. Default port 8124.",
+    )
     parser.add_argument('--port', default=8000, help="Port to listen on. Default 8000.")
     parser.add_argument('--address', default='', help="Address to bind to.")
     parser.add_argument('--path', help="Accept this path only.")
@@ -210,6 +220,11 @@ def main(argv=None):
         from .simulate import serve_homeassistant
 
         return serve_homeassistant(args.fake_homeassistant)
+
+    if args.fake_ambient_cloud is not None:
+        from .simulate import serve_ambient_cloud
+
+        return serve_ambient_cloud(args.fake_ambient_cloud)
 
     if args.url:
         return _say_url(args.config)

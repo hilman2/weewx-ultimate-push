@@ -95,6 +95,9 @@ class Source:
             requests needs it here; see `_fetch`.
         headers (dict | None): Headers to send with every request to this source,
             beyond the ones every request carries.
+        query (dict | None): Query parameters to add to every request to this
+            source, for a service that takes its credential no other way. Held
+            apart from the URL so that nothing which prints the URL prints these.
         settings (dict | None): The block this source was built from, for a
             protocol that has settings of its own to read out of it.
     """
@@ -109,6 +112,7 @@ class Source:
         'stopped',
         'protocol',
         'headers',
+        'query',
         'settings',
         'held',
     )
@@ -122,6 +126,7 @@ class Source:
         path='',
         protocol=None,
         headers=None,
+        query=None,
         settings=None,
     ):
         self.name = name
@@ -135,6 +140,10 @@ class Source:
         # nowhere else. Nothing prints this: it is repeated on every request, so a
         # single log line holding it is a password in somebody's bug report.
         self.headers = dict(headers or {})
+        # Same again, for the services that will not take a credential in a header.
+        # polling.ask adds these when it asks; self.url never holds them, so the
+        # warning that says which address could not be reached cannot print one.
+        self.query = dict(query or {})
         self.settings = dict(settings or {})
         # Whatever the protocol worked out once and would rather not work out
         # again. Its own, and untouched by anything here.
@@ -374,7 +383,8 @@ def ask(source, url, body=None, content_type='application/json', limit=MAX_BODY)
     headers.update(source.headers)
     if body is not None:
         headers['Content-Type'] = content_type
-    asking = urllib.request.Request(url, data=body, headers=headers)
+    asking = urllib.request.Request(_asked(url, source.query), data=body,
+                                    headers=headers)
     answer = urllib.request.urlopen(asking, timeout=source.timeout)
     try:
         # Read one byte past the limit, so that an answer at exactly the limit is
@@ -390,6 +400,26 @@ def ask(source, url, body=None, content_type='application/json', limit=MAX_BODY)
         return read, got
     finally:
         answer.close()
+
+
+def _asked(url, query):
+    """The URL as it goes out, which is not the URL as it is kept.
+
+    A source's credential is added here and stored nowhere, so that the one thing
+    printed about a request that failed, the URL it was made to, cannot carry it.
+
+    Args:
+        url (str): What the caller wants to ask for.
+        query (dict): Parameters to add. Empty for everything but a vendor's API.
+
+    Returns:
+        str: The URL with the parameters on it, or the URL unchanged when there
+        are none.
+    """
+    if not query:
+        return url
+    joined = urllib.parse.urlencode(sorted(query.items()))
+    return url + ('&' if '?' in url else '?') + joined
 
 
 def _host_of(url):
@@ -491,6 +521,11 @@ def _source_from(name, block):
             )
     if not url:
         address = str(block.get('address', '')).strip()
+        if not address and protocol is not None:
+            # A vendor's API is at one name for everybody, so the block does not
+            # have to say it. Everything reached on somebody's own network still
+            # does, because only they know where it is.
+            address = protocol.fetch_host
         if not address:
             raise ValueError(
                 "'%s' under [[polling]] needs either a 'url' or an 'address'." % name
@@ -510,6 +545,7 @@ def _source_from(name, block):
         path=path_for(name, block),
         protocol=protocol,
         headers=protocol.headers_for(settings) if protocol is not None else None,
+        query=protocol.query_for(settings) if protocol is not None else None,
         settings=settings,
     )
 

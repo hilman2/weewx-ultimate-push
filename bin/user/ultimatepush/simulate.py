@@ -1187,3 +1187,226 @@ def serve_homeassistant(port, address='127.0.0.1', token=HA_TOKEN):
     finally:
         server.server_close()
     return 0
+
+
+# What the fake account holds. Two stations, because one is the case that needs no
+# 'mac' line and two is the case that does, and a fake with only the easy one in it
+# would never exercise the message that says which to pick.
+AMBIENT_KEYS = ('pretend-application-key', 'pretend-api-key')
+AMBIENT_STATIONS = (
+    {'mac': 'AA:BB:CC:11:22:33', 'name': 'Garten', 'location': 'Zuhause'},
+    {'mac': 'AA:BB:CC:44:55:66', 'name': 'Gartenhaus', 'location': 'Zuhause'},
+)
+
+# The readings, in the names Ambient's own consoles POST and their API answers with.
+# Imperial throughout, which is what the API gives whatever the display is set to.
+AMBIENT_WANDERS = {
+    'tempf': (59.9, 11.0, 86400.0),
+    'humidity': (61.0, 18.0, 40000.0),
+    'tempinf': (69.4, 3.0, 86400.0),
+    'humidityin': (44.0, 8.0, 50000.0),
+    'baromrelin': (30.05, 0.35, 172800.0),
+    'baromabsin': (28.71, 0.35, 172800.0),
+    'windspeedmph': (4.2, 4.0, 1700.0),
+    'windgustmph': (7.9, 6.0, 900.0),
+    'winddir': (210.0, 140.0, 5400.0),
+    'solarradiation': (310.0, 300.0, 86400.0),
+    'uv': (3.0, 3.0, 86400.0),
+    'soilhum1': (38.0, 9.0, 200000.0),
+}
+
+
+def ambient_reading(seconds, station):
+    """One station's lastData, at one moment.
+
+    Args:
+        seconds (float): The time, in seconds. The readings are a function of it, so
+            the same number twice gives the same answer, which is what makes a test
+            repeatable.
+        station (dict): Which one, for the small offset that keeps two stations on
+            one account from reporting the same numbers.
+
+    Returns:
+        dict: The readings, as ambientweather.net puts them under 'lastData'.
+    """
+    # The second station reads the clock six hours out, which puts every wander a
+    # good part of a turn from the first one's. Not realism: two stations reporting
+    # nearly the same numbers would leave a test unable to say which it was given.
+    away = 0.0 if station['mac'] == AMBIENT_STATIONS[0]['mac'] else 21600.0
+    minute = seconds - seconds % 60
+    reading = {
+        'dateutc': int(minute * 1000),
+        'date': _stamp_iso(minute),
+        'stationtype': 'AMBWeatherV4.3.4',
+        'tz': 'Europe/Berlin',
+    }
+    for name, (middle, spread, period) in AMBIENT_WANDERS.items():
+        reading[name] = _wander(seconds + away, middle, spread, period)
+    # The ones their consoles send as whole numbers.
+    for name in ('humidity', 'humidityin', 'winddir', 'uv', 'soilhum1'):
+        reading[name] = int(round(reading[name]))
+    reading['uv'] = max(0, reading['uv'])
+    reading['solarradiation'] = max(0.0, reading['solarradiation'])
+    reading['maxdailygust'] = round(reading['windgustmph'] + 3.4, 1)
+    reading['hourlyrainin'] = 0.0
+    reading['dailyrainin'] = 0.04
+    reading['weeklyrainin'] = 0.31
+    reading['monthlyrainin'] = 1.18
+    reading['yearlyrainin'] = 14.2
+    reading['battout'] = 1
+    reading['battin'] = 1
+    # Ambient's own arithmetic, which this driver leaves alone in favour of WeeWX's.
+    # Here so that leaving it alone is something a test can watch happen.
+    reading['feelsLike'] = round(reading['tempf'] - 0.6, 1)
+    reading['dewPoint'] = round(reading['tempf'] - 12.4, 2)
+    return reading
+
+
+def ambient_devices(seconds):
+    """The whole account, as /v1/devices answers it.
+
+    Args:
+        seconds (float): The time.
+
+    Returns:
+        list[dict]: One entry per station, each with its macAddress, its info and
+        its lastData.
+    """
+    return [
+        {
+            'macAddress': one['mac'],
+            'info': {'name': one['name'], 'location': one['location']},
+            'lastData': ambient_reading(seconds, one),
+        }
+        for one in AMBIENT_STATIONS
+    ]
+
+
+def _stamp_iso(seconds):
+    """The time, written the way Ambient's API writes it.
+
+    Args:
+        seconds (float): The time.
+
+    Returns:
+        str: e.g. '2026-08-31T09:04:00.000Z'.
+    """
+    import time
+
+    return time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime(seconds))
+
+
+def ambient_handler(keys=AMBIENT_KEYS, clock=None):
+    """The request handler the fake ambientweather.net answers with.
+
+    Handed out on its own so that a test can put it on a port of its own and get the
+    same refusal that ships.
+
+    Args:
+        keys (tuple): The (application key, API key) pair it insists on.
+        clock (callable | None): What to use for the time. The wall clock by
+            default. A test holds it still instead.
+
+    Returns:
+        type: A BaseHTTPRequestHandler subclass.
+    """
+    import time
+    import urllib.parse
+
+    if clock is None:
+        clock = time.time
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        """One endpoint and two keys, which is the whole of this API."""
+
+        def do_GET(self):
+            split = urllib.parse.urlsplit(self.path)
+            asked = urllib.parse.parse_qs(split.query)
+            if split.path != '/v1/devices':
+                self._say(404, {'error': 'not-found'})
+                return
+            # Both keys or neither. The real one answers 401 to a missing key the
+            # same as to a wrong one, and a driver that told the two apart would be
+            # telling somebody something the service never said.
+            given = (
+                (asked.get('applicationKey') or [''])[0],
+                (asked.get('apiKey') or [''])[0],
+            )
+            if given != tuple(keys):
+                self._say(401, {'error': 'invalid-application-key-or-api-key'})
+                return
+            self._say(200, ambient_devices(clock()))
+
+        def _say(self, status, body):
+            """Answer with JSON.
+
+            Args:
+                status (int): The status.
+                body (dict | list): What to say.
+            """
+            encoded = json.dumps(body).encode('utf-8')
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def log_message(self, fmt, *args):
+            """One line per question, which is the point of watching this run."""
+            print("asked: %s" % (fmt % args))
+
+    return Handler
+
+
+def serve_ambient_cloud(port, address='127.0.0.1', keys=AMBIENT_KEYS):
+    """Answer like the ambientweather.net API, until interrupted.
+
+    Args:
+        port (int): The port to listen on.
+        address (str): The address to bind to. The loopback by default, because an
+            account that does not exist has no business being on the network.
+        keys (tuple): The (application key, API key) pair it insists on.
+
+    Returns:
+        int: The exit status, which is 0 unless the port could not be had.
+    """
+    try:
+        server = socketserver.TCPServer((address, port), ambient_handler(keys))
+    except OSError as e:
+        print("Cannot listen on %s:%d: %s" % (address, port, e))
+        return 1
+    print(
+        "Answering as ambientweather.net on http://%s:%d/v1/devices\n"
+        "\n"
+        "Two stations on the account, so a block has to say which:\n"
+        "\n"
+        "    [[polling]]\n"
+        "        [[[%s]]]\n"
+        "            url = http://%s:%d\n"
+        "            protocol = ambient_cloud\n"
+        "            application_key = %s\n"
+        "            api_key = %s\n"
+        "            mac = %s\n"
+        "            interval = 10\n"
+        "\n"
+        "A 'url' rather than an 'address', because the real one is reached over "
+        "HTTPS\nat a name this driver already has. Leave 'mac' out to see what it "
+        "says.\n"
+        % (
+            address,
+            port,
+            AMBIENT_STATIONS[0]['name'].lower(),
+            address,
+            port,
+            keys[0],
+            keys[1],
+            AMBIENT_STATIONS[0]['mac'],
+        )
+    )
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Stopped.")
+    finally:
+        server.server_close()
+    return 0

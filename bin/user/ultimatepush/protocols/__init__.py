@@ -244,6 +244,13 @@ class Protocol:
     # no single thing to ask for; see fetch().
     fetch_path = ''
 
+    # Where this protocol is reached, when that is not somebody's own address. A
+    # PurpleAir is on the network the person owns and only they know where; a vendor's
+    # API is at one name for everybody. Set here, an address may be left out of the
+    # block, and typing api.ambientweather.net into every one of them buys nothing
+    # but the chance of a typo.
+    fetch_host = ''
+
     # What a [[polling]] block for this protocol needs beyond an address and an
     # interval, as (key, an example value) pairs. Only for the generated page: the
     # smallest configuration that works has to be a block somebody can copy, and a
@@ -290,6 +297,26 @@ class Protocol:
         Returns:
             dict: Header name to value. Empty for the protocols that need none,
             which is all but one of them.
+        """
+        return {}
+
+    @classmethod
+    def query_for(cls, settings):
+        """Query parameters every request to a source of this protocol carries.
+
+        The same job as headers_for and for the same reason, for the services that
+        will not take a credential in a header. Ambient Weather wants its two keys
+        in the query string and offers no other way, so they are kept here and
+        added by polling.ask at the moment of asking. What is stored on the source
+        as its URL, and therefore what a log line or the page of raw uploads can
+        print, never holds them.
+
+        Args:
+            settings (dict): The source's block, as it was written down.
+
+        Returns:
+            dict: Parameter name to value. Empty for everything reached locally,
+            which is most of them.
         """
         return {}
 
@@ -406,6 +433,7 @@ def registry():
         acurite,
         airlink,
         ambient,
+        ambient_cloud,
         ecowitt,
         ecowitt_gateway,
         homeassistant,
@@ -429,6 +457,7 @@ def registry():
         purpleair.PurpleAir,
         airlink.AirLink,
         ecowitt_gateway.EcowittGateway,
+        ambient_cloud.AmbientCloud,
         homeassistant.HomeAssistant,
     ]
 
