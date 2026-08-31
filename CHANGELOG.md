@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.16.0 (2026-08-31)
 
 **An Ecowitt gateway read over its own API.** The same hardware this driver already
 reads over HTTP, asked on TCP port 45000 instead of being pointed at a server. Nothing
@@ -104,7 +104,21 @@ drop the rest.
 **The front page lists every driver WeeWX ships**, with what each one reads and how
 it is reached, each linking to its own generated page.
 
-## 0.15.0
+**Three more third-party drivers can be hosted.** weewx-ws6in1, weewx-klimalogg and
+weewx-wxt5x0, beside the ones that were already there. Nine were put through the host
+and the other six raised nothing the matrix did not already cover.
+
+klimalogg keeps history over USB, which almost nothing on USB does, so it is the only
+thing in the matrix offering startup records. ws6in1 has a clock it can set and cannot
+read. Nothing WeeWX ships is like that, so the two are now asked for separately: the
+one it has is delegated, and the one it has not raises where WeeWX understands it.
+
+**Hardware.md no longer tells anybody to install weewx-wh23xx.** It is a print
+statement away from Python 2 and has been since 2020, so it cannot load at all. The
+page now says the driver exists, says that, and says that nothing here reads that
+console.
+
+## 0.15.0 (2026-08-30)
 
 **Cheap radio sensors, by way of rtl_433.** A twenty-five euro USB stick hears
 every sensor within a few hundred metres that talks on 433, 868 or 915 MHz: outdoor
