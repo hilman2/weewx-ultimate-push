@@ -719,11 +719,7 @@ def _one_read(node, held, constants=None):
     if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
         if node.value.id != held:
             return None, None
-        part = node.slice
-        # Python 3.8 and older wrap a subscript in an Index; 3.9 dropped it.
-        if isinstance(part, getattr(ast, 'Index', ())):
-            part = getattr(part, 'value', part)
-        name = _literal(part)
+        name = _literal(_sliced(node))
         if isinstance(name, str):
             return name, ''
     return None, None
@@ -955,6 +951,27 @@ def _prompted_name(value):
     return first.value
 
 
+def _sliced(node):
+    """What is between the brackets of a subscript, on every Python this runs on.
+
+    Before 3.9 the parser wrapped it in an ast.Index, so reading `node.slice`
+    directly gives the wrapper rather than the value, and every isinstance against
+    it fails. Newer Pythons have dropped ast.Index altogether, so the wrapper is
+    recognised by its class name rather than by the class: naming it would be an
+    AttributeError on the Pythons that no longer have it.
+
+    Args:
+        node (ast.Subscript): The subscript.
+
+    Returns:
+        ast.expr: The expression inside the brackets.
+    """
+    held = node.slice
+    if held.__class__.__name__ == 'Index':
+        return getattr(held, 'value', held)
+    return held
+
+
 def _plain_name(target):
     """The name an assignment writes to, for the two shapes the editors use.
 
@@ -967,12 +984,10 @@ def _plain_name(target):
     """
     if isinstance(target, ast.Name):
         return target.id
-    if (
-        isinstance(target, ast.Subscript)
-        and isinstance(target.slice, ast.Constant)
-        and isinstance(target.slice.value, str)
-    ):
-        return target.slice.value
+    if isinstance(target, ast.Subscript):
+        inside = _sliced(target)
+        if isinstance(inside, ast.Constant) and isinstance(inside.value, str):
+            return inside.value
     return None
 
 
