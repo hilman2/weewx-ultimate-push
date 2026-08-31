@@ -958,7 +958,8 @@ def by_path(tmp_path, **options):
 
     Args:
         tmp_path (pathlib.Path): Where its files go.
-        **options: Extra options for the station section.
+        **options (str): Extra options for the station section, as configobj
+            hands them over.
 
     Returns:
         UltimatePushDriver: The driver.

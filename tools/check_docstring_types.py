@@ -16,12 +16,12 @@ annotations.
 
 Two modes:
 
-    check_docstring_types.py bin/user/ultimatepush/mapping.py
+    check_docstring_types.py src/weewx/jsongenerator.py
         Checks the docstrings on their own: parameter names and order against the
         signature, whether each type expression parses, whether the names in it
         resolve, and whether a parameter defaulting to None admits None.
 
-    check_docstring_types.py --mypy bin/user/ultimatepush/mapping.py
+    check_docstring_types.py --mypy src/weewx/jsongenerator.py
         Writes a copy with the docstring types as annotations, runs mypy over it,
         and reports what mypy makes of them. This is the part that finds a type
         which is simply wrong, rather than merely malformed.
@@ -29,13 +29,15 @@ Two modes:
 
 import argparse
 import ast
+import builtins
+import importlib.util
 import io
 import os
 import re
 import subprocess
 import sys
 import tempfile
-from typing import Dict
+import typing
 
 # 'name (type): text', the Google form. The type may hold brackets and pipes, so
 # it is taken up to the last closing parenthesis before the colon.
@@ -57,8 +59,10 @@ NOISE = re.compile(
 )
 
 # Names a type expression may use without importing anything. PyCharm resolves
-# these on its own, and so does this.
-BUILTIN = {
+# these on its own, and so does this. builtins carries the exceptions and the
+# lesser types that a hand-kept list forgets: BaseException was missing, and
+# every docstring naming it was reported as unresolved.
+BUILTIN = set(dir(builtins)) | {
     'Any',
     'AnyStr',
     'Callable',
@@ -81,29 +85,275 @@ BUILTIN = {
     'Type',
     'TypeVar',
     'Union',
-    'bool',
-    'bytes',
-    'callable',
-    'complex',
-    'dict',
-    'float',
-    'frozenset',
-    'int',
-    'list',
-    'object',
-    'set',
-    'str',
-    'tuple',
     'None',
     'NoneType',
     'Ellipsis',
-    'bytearray',
-    'type',
-    'Exception',
-    'memoryview',
-    'range',
-    'slice',
 }
+
+
+def project_root(paths):
+    """The directory the project's own modules live under.
+
+    PyCharm resolves a docstring name against the whole project, not only against
+    the module's own imports. Doing the same means finding the project first. A
+    marker directory above one of the checked files settles it.
+
+    Args:
+        paths (list[str]): The files being checked.
+
+    Returns:
+        str|None: The root, or None if nothing marks one.
+    """
+    markers = ('.git', 'pyproject.toml', 'setup.py', 'setup.cfg')
+    for path in paths:
+        here = os.path.dirname(os.path.abspath(path))
+        while True:
+            if any(os.path.exists(os.path.join(here, m)) for m in markers):
+                return here
+            parent = os.path.dirname(here)
+            if parent == here:
+                break
+            here = parent
+    return None
+
+
+def build_index(root):
+    """Every name the project defines or imports anywhere, and where it came from.
+
+    This is the stand-in for PyCharm's index. A docstring in `manager.py` naming
+    `Path` resolves for anyone with PyCharm open, because `pathlib` is indexed; it
+    resolves for nobody reading the file on its own. Both are worth knowing and
+    they are not the same finding, so the origin is kept.
+
+    First definition wins. A name defined twice is reported against one of the
+    two, which is enough to say "this exists, just not here".
+
+    Args:
+        root (str): The project directory to walk.
+
+    Returns:
+        tuple[dict[str, str], list[str]]: Name to its origin, either a module name
+            or a path; and the packages the project imports anywhere, for a bare
+            name that is bound nowhere.
+    """
+    # The first definition of a name wins, written as a membership test rather than
+    # with setdefault. setdefault on a dict that starts out empty says nothing about
+    # what goes into it, and mypy then asks for an annotation this project does not
+    # write: its types are in the docstrings.
+    index = {}
+    modules = set()
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [
+            d for d in dirnames if not d.startswith('.') and d != '__pycache__'
+        ]
+        for filename in filenames:
+            if not filename.endswith('.py'):
+                continue
+            full = os.path.join(dirpath, filename)
+            try:
+                tree = ast.parse(read_source(full))
+            except (SyntaxError, OSError, ValueError):
+                continue
+            where = os.path.relpath(full, root).replace(os.sep, '/')
+            for node in tree.body:
+                if isinstance(
+                    node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+                ):
+                    if node.name not in index:
+                        index[node.name] = where
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    modules.add(node.module)
+                    for alias in node.names:
+                        bound = alias.asname or alias.name
+                        if bound not in index:
+                            index[bound] = node.module
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        modules.add(alias.name)
+                        bound = alias.asname or alias.name
+                        if bound not in index:
+                            index[bound] = alias.name
+    return index, sorted(modules)
+
+
+def carries(module_name, attr):
+    """Whether an importable module has an attribute.
+
+    The module is imported rather than merely located, because locating it only
+    answers half the question. `typing.Iterabel` needs the other half.
+
+    Three answers, not two. "The module is not here" and "the module is here and
+    the attribute is not" lead to opposite conclusions: the first says look
+    elsewhere, the second says this is a typo. A checker run outside the project's
+    own environment sees the first constantly - `weeutil.weeutil` is not on its
+    path - and must not read that as an error.
+
+    Args:
+        module_name (str): A module or package, e.g. 'argparse'.
+        attr (str): The attribute to look for.
+
+    Returns:
+        bool|None: True if the module has it, False if the module is importable
+            and does not, None if the module cannot be reached from here.
+    """
+    try:
+        if importlib.util.find_spec(module_name) is None:
+            return None
+        return hasattr(importlib.import_module(module_name), attr)
+    except Exception:
+        # A package that raises on import tells us nothing either way, and a
+        # checker is not the place to let that stop the run.
+        return None
+
+
+def in_library(name, modules=()):
+    """Where an installed package carries a name, if one does.
+
+    Two cases, and PyCharm resolves both. `argparse.Namespace` says which module
+    to look in, so it is looked up directly. A bare `ConfigObj` says nothing, so
+    the packages the project imports somewhere are asked in turn: every weewx
+    module writes `import configobj`, never `from configobj import ConfigObj`, and
+    the name is therefore bound nowhere in the project while being perfectly real.
+
+    Args:
+        name (str): A dotted or bare name out of a type expression.
+        modules (list[str]): The packages the project imports anywhere.
+
+    Returns:
+        str|None: The module that has it, or None.
+    """
+    if '.' in name:
+        module_name, _, attr = name.rpartition('.')
+        return module_name if carries(module_name, attr) else None
+    for module_name in modules:
+        if carries(module_name, name):
+            return module_name
+    return None
+
+
+class Project(object):
+    """The project's names, indexed the first time one is asked for.
+
+    Indexing means parsing every file under the root, which is 2.6 of the 2.9
+    seconds a run over weewx takes. Most runs never need it: a file whose
+    docstring types all resolve in its own module asks nothing. So the index is
+    built when the first name falls through, and not before.
+
+    Args:
+        root (str|None): The project directory, or None to index nothing.
+    """
+
+    def __init__(self, root):
+        self.root = root
+        self.index = None
+        self.modules = ()
+
+    def find(self, name, head):
+        """Where the project or its packages carry a name.
+
+        Args:
+            name (str): The name as the docstring writes it.
+            head (str): Its first segment, for a dotted name.
+
+        Returns:
+            str|None: The module or path that has it, or None.
+        """
+        if self.index is None:
+            if self.root:
+                self.index, self.modules = build_index(self.root)
+            else:
+                self.index = {}
+        return (
+            self.index.get(name)
+            or self.index.get(head)
+            or in_library(name, self.modules)
+        )
+
+
+def resolve(name, known, project):
+    """Where a docstring type name resolves, in the order PyCharm would try.
+
+    The module's own scope first, then the project, then the packages the project
+    imports. A dotted name is held to its attribute as well as to its module: a
+    module the checker can import gives a definite answer about what is in it, and
+    `argparse.Namespac` is then a typo rather than a name to go looking for. A
+    module it cannot import decides nothing, and the project is asked instead.
+
+    Args:
+        name (str): A dotted or bare name out of a type expression.
+        known (set[str]): What the module itself defines or imports.
+        project (Project): The project to fall back on.
+
+    Returns:
+        tuple[bool, str|None]: Whether this module resolves it on its own, and
+            where else it was found. (False, None) means nowhere at all.
+    """
+    head = name.split('.')[0]
+    if in_typing(name):
+        return True, None
+    if '.' in name:
+        module_name, _, attr = name.rpartition('.')
+        has = carries(module_name, attr)
+        if has is True:
+            return head in known, module_name
+        if has is False:
+            # The module is right here and the attribute is not in it. Nothing
+            # the project holds can make that name mean anything.
+            return False, None
+    if name in known or head in known:
+        return True, None
+    return False, project.find(name, head)
+
+
+def read_source(path):
+    """The text of a Python file, whatever it is encoded in.
+
+    Not every file in a long-lived project is UTF-8. `weeutil/Sun.py` carries a
+    Latin-1 name in a comment and brought the whole run down with it. A byte that
+    does not decode is replaced rather than raised: it can only be in a comment or
+    a string, and neither affects a signature or a docstring type.
+
+    Args:
+        path (str): The file to read.
+
+    Returns:
+        str: The source.
+    """
+    try:
+        return io.open(path, encoding='utf-8').read()
+    except UnicodeDecodeError:
+        return io.open(path, encoding='utf-8', errors='replace').read()
+
+
+def compare_names(documented, declared):
+    """How an Args: block and a signature differ over the parameter names.
+
+    A missing `**kwargs` and a misspelled parameter are both worth knowing about,
+    but they are not the same thing: one leaves the caller uninformed, the other
+    tells the caller something untrue. They are reported apart so that a run over a
+    large file does not bury the second sort under the first.
+
+    The stars themselves are not held against anyone. WeeWX writes `**option_dict`
+    as `option_dict (dict)`, and PyCharm reads it either way.
+
+    Args:
+        documented (list[str]): The names the Args: block gives, in its order.
+        declared (list[str]): The names the signature gives, in its order, with
+            `*args` and `**kwargs` still starred.
+
+    Returns:
+        tuple[bool, list[str]]: Whether the named parameters agree, and the
+            variadic parameters the block leaves out.
+    """
+    plain = [name.lstrip('*') for name in documented]
+    missing = [
+        name
+        for name in declared
+        if name.startswith('*') and name.lstrip('*') not in plain
+    ]
+    kept = [name for name in declared if name not in missing]
+    return plain == [name.lstrip('*') for name in kept], missing
 
 
 class Finding(object):
@@ -214,6 +464,24 @@ def normalize(expr):
     return expr
 
 
+def in_typing(name):
+    """Whether a dotted name is something the typing module carries.
+
+    The bare names from typing need no import, and neither does the qualified form:
+    a module that never imports typing may still write `typing.TextIO` and have
+    PyCharm resolve it. A name typing does not actually carry is still a miss, so
+    `typing.Iterabel` is caught rather than waved through.
+
+    Args:
+        name (str): A dotted name out of a type expression.
+
+    Returns:
+        bool: True if typing has it.
+    """
+    parts = name.split('.')
+    return len(parts) == 2 and parts[0] == 'typing' and hasattr(typing, parts[1])
+
+
 def names_in(node):
     """Every dotted name a type expression uses.
 
@@ -247,40 +515,25 @@ def names_in(node):
     return found
 
 
-def _is_namedtuple(value):
-    """Whether an assigned value is a namedtuple being defined.
+def module_names(tree):
+    """The names a type expression may use in this module without qualifying them.
 
-    Args:
-        value (ast.expr): The right-hand side of a module-level assignment.
-
-    Returns:
-        bool: Whether it is a call to namedtuple or collections.namedtuple.
-    """
-    if not isinstance(value, ast.Call):
-        return False
-    called = value.func
-    name = getattr(called, 'attr', None) or getattr(called, 'id', None)
-    return name == 'namedtuple'
-
-
-def module_imports(tree):
-    """The names a module has imported, as a type expression may use them.
+    Its imports, and what it defines itself. The second half matters more than it
+    looks: `units.py` documents a return of `Formatter`, and `Formatter` is a class
+    three hundred lines further down the same file. Counting only imports reports
+    every such type as unresolved.
 
     Args:
         tree (ast.Module): The parsed module.
 
     Returns:
-        set[str]: Importable names, including the dotted forms of 'import a.b.c' and
-        the classes and functions the module defines itself.
+        set[str]: The names, including the dotted forms of 'import a.b.c'.
     """
     out = set()
     for node in tree.body:
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             out.add(node.name)
-        # A namedtuple is a class the module defines too, just with a call rather
-        # than with 'class'. Only namedtuple, so that a module's constants do not
-        # quietly become acceptable type names.
-        elif isinstance(node, ast.Assign) and _is_namedtuple(node.value):
+        elif isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     out.add(target.id)
@@ -333,18 +586,22 @@ def signature(func):
     return names, defaults
 
 
-def check_file(path):
+def check_file(path, project=None):
     """Every problem with the docstring types in one file.
 
     Args:
         path (str): The file to check.
+        project (Project|None): What to fall back on for a name this module does
+            not itself carry. Without one, every such name is reported as
+            unresolvable, even where the project plainly has it.
 
     Returns:
         list[Finding]: What is wrong, in the order it appears in the file.
     """
-    source = io.open(path, encoding='utf-8').read()
+    project = project or Project(None)
+    source = read_source(path)
     tree = ast.parse(source)
-    known = module_imports(tree) | BUILTIN
+    known = module_names(tree) | BUILTIN
     findings = []
 
     for node in ast.walk(tree):
@@ -370,7 +627,8 @@ def check_file(path):
             continue
 
         got = [n for n, _ in declared]
-        if got != real:
+        agree, missing = compare_names(got, real)
+        if not agree:
             findings.append(
                 Finding(
                     path,
@@ -378,6 +636,16 @@ def check_file(path):
                     node.name,
                     'mismatch',
                     'documents (%s) but takes (%s)' % (', '.join(got), ', '.join(real)),
+                )
+            )
+        for name in missing:
+            findings.append(
+                Finding(
+                    path,
+                    node.lineno,
+                    node.name,
+                    'undocumented',
+                    "takes '%s', which the Args: block does not name" % name,
                 )
             )
 
@@ -397,15 +665,28 @@ def check_file(path):
                 )
                 continue
             for used in names_in(parsed.body):
-                root = used.split('.')[0]
-                if used not in known and root not in known:
+                here, where = resolve(used, known, project)
+                if here:
+                    continue
+                if where:
+                    findings.append(
+                        Finding(
+                            path,
+                            node.lineno,
+                            node.name,
+                            'unqualified',
+                            "type of '%s' names '%s', which this module does not import "
+                            "(%s has it)" % (name, used, where),
+                        )
+                    )
+                else:
                     findings.append(
                         Finding(
                             path,
                             node.lineno,
                             node.name,
                             'unresolved',
-                            "type of '%s' names '%s', which the module does not import"
+                            "type of '%s' names '%s', which nothing in the project defines"
                             % (name, used),
                         )
                     )
@@ -444,7 +725,7 @@ def annotate(path):
     Returns:
         str: Python source, ready for mypy.
     """
-    tree = ast.parse(io.open(path, encoding='utf-8').read())
+    tree = ast.parse(read_source(path))
 
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -550,10 +831,12 @@ def run_mypy(path, keep):
     io.open(target, 'w', encoding='utf-8').write(rewritten)
 
     annotated_lines = enclosing(rewritten)
-    original_lines = {}  # type: Dict[str, int]
-    for node in ast.walk(ast.parse(io.open(path, encoding='utf-8').read())):
+    # First definition wins, and written out for the reason given in build_index.
+    original_lines = {}
+    for node in ast.walk(ast.parse(read_source(path))):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            original_lines.setdefault(node.name, node.lineno)
+            if node.name not in original_lines:
+                original_lines[node.name] = node.lineno
 
     result = subprocess.run(
         # 'check-untyped-defs' matters more than it looks: without it mypy walks
@@ -595,11 +878,18 @@ def main(argv=None):
     parser.add_argument(
         '--keep', action='store_true', help="with --mypy, keep the annotated copy"
     )
+    parser.add_argument(
+        '--project',
+        metavar='DIR',
+        help="the project root to index. Found from the checked " "files if not given.",
+    )
     args = parser.parse_args(argv)
+
+    project = Project(args.project or project_root(args.files))
 
     total = 0
     for path in args.files:
-        findings = check_file(path)
+        findings = check_file(path, project)
         for finding in findings:
             print(finding)
         total += len(findings)
