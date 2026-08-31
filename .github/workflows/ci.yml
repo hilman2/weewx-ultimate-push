@@ -69,12 +69,22 @@ jobs:
 
   # With WeeWX installed, the tests can also check that the bundled listener is
   # still identical to the one in the core.
+  #
+  # On both ends of the range, not on 3.12 alone. The tests that read a hosted
+  # driver's source need WeeWX to have one to read, so they are skipped by the
+  # matrix above, and 3.8 parses that source into a shape 3.9 dropped. A driver
+  # option that only applies sometimes was therefore read correctly on the version
+  # this job ran and not on the oldest one anybody has.
   with-weewx:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.8', '3.12']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python }}
       - run: pip install pytest weewx
       - run: python -m pytest tests -q
