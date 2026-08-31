@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.20.0 (2026-08-31)
+
+**Setting a station up is two steps now.** Giving every kind of hardware the models it
+covers made the list worth reading and made it 1268 pixels long. The form for whichever
+one you chose sat under all of it, so choosing was followed by scrolling past a screen
+and a half of hardware you had just ruled out. The form itself is 140 pixels.
+
+The first step is the list and nothing else. It scrolls inside itself, so the rest of
+the checklist stays where it is. The second step is the form and nothing else, and it
+starts where the list started. Above it is the way back, carrying the name of what you
+chose rather than the word back: while you are naming a station, the one thing worth
+checking is which hardware it is for. Going back keeps what you searched for.
+
+Nothing is chosen until you choose it. The list used to open on its first entry, which
+put an Ecowitt form under the list for everybody, including people who own a Vantage.
+
 ## 0.19.0 (2026-08-31)
 
 **The hardware picker is a list you can search.** Twenty-five kinds of station stood
