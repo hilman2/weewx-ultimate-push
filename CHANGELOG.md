@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.18.0 (2026-08-31)
+
+**The web interface is a station console rather than five tabs.** The old page had two
+ways to move around it and they disagreed. A list on the left picked a station. Five
+tabs sat beside it, of which two read that pick and three ignored it. Setup, the page
+that says what is still in the way, was one of the five, and the page opened on Fields,
+which is an empty table until something has uploaded.
+
+There are three views now. **Stations** is a list on the left and one station on the
+right, under four tabs: Console, Readings, Raw uploads and Columns. Everything under
+those tabs is about the station you picked, so a tab means the same thing wherever you
+reached it from. **Field map** is every station's readings on one page, for the question
+a single station cannot answer: who fills `outTemp`. **Checklist** is what is still
+outstanding. It carries a count, and a strip under the top bar repeats that count on
+every view, because a station that is uploading happily looks healthy on its own page
+while the reason none of it is recorded is a console two entries down being turned away.
+
+The station list holds the three states in one place: being refused, recording, and set
+up but not heard from yet. A console being turned away used to be a card in that list
+with a form inside it. It has a page of its own now, with the readings it last sent,
+which is what tells your own new console apart from a stranger's.
+
+**An answer that arrived after you had moved on landed on the wrong page.** Picking a
+second station while the first one's readings were still being fetched drew the first
+station's table under the second station's name. Every fetch now carries the number of
+the draw that asked for it, and one from an older draw is dropped.
+
+**A station you took out left the page showing nothing.** After **Not mine** on a
+console being refused, or **Take it out** on one of your own, the detail side went on
+standing there as though the station were still coming. The pick moves to one that
+still exists.
+
+**Grey and blue rather than brown and cream**, in a system font stack. The interface is
+still one file with no stylesheet, no script and no font to fetch.
+
 ## 0.17.0 (2026-08-31)
 
 **An Ambient Weather station read back from the account it uploads to.** The awnet app
