@@ -383,8 +383,9 @@ def ask(source, url, body=None, content_type='application/json', limit=MAX_BODY)
     headers.update(source.headers)
     if body is not None:
         headers['Content-Type'] = content_type
-    asking = urllib.request.Request(_asked(url, source.query), data=body,
-                                    headers=headers)
+    asking = urllib.request.Request(
+        _asked(url, source.query), data=body, headers=headers
+    )
     answer = urllib.request.urlopen(asking, timeout=source.timeout)
     try:
         # Read one byte past the limit, so that an answer at exactly the limit is

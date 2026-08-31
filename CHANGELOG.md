@@ -1,5 +1,56 @@
 # Changelog
 
+## Unreleased
+
+**An Ambient Weather station read back from the account it uploads to.** The awnet app
+has room for one *Custom* server and older consoles have room for none, so a console
+whose slot is already taken cannot be pointed at this driver at all. Its readings are
+on ambientweather.net either way, and this reads them from there. Nothing is set on
+the console.
+
+```ini
+[[polling]]
+    [[[garden]]]
+        protocol = ambient_cloud
+        application_key = the-application-key-from-your-account-page
+        api_key = the-api-key-from-your-account-page
+```
+
+It is also the only way to read a station that is not on your network: a second home,
+a relative's garden, a club's field.
+
+No address, because there is only one. A block for a service that lives at a single
+name for everybody does not have to write it down, and one that cannot be got wrong
+cannot be got wrong.
+
+The same catalog as the pushed Ambient protocol. Their API answers with the names
+their consoles POST, so a station moved from one to the other keeps its columns.
+
+The two account keys go in the query string, because Ambient takes them no other way.
+They are held apart from the URL and added at the moment of asking, so what the driver
+keeps as an address, and therefore what a log line, an error message or the page of
+raw uploads can print, never has them in it.
+
+An account with one station on it needs nothing else. One with several is refused with
+a message naming every station it found, rather than recording whichever came first.
+
+`python -m user.ultimatepush --fake-ambient-cloud` answers like the API, with two
+stations on it so that picking one can be tried too.
+
+**A driver option that only applies sometimes is read on Python 3.8 too.** The form
+for a hosted driver reads the driver's own configuration editor to find out that a
+Vantage takes a port or a host and never both. Python 3.8 parses that source into a
+shape 3.9 dropped, and one of the two places that read it did not allow for the
+older one, so on 3.8 nothing came out conditional and the form offered both boxes.
+
+Nothing in CI covered it: the version matrix runs without WeeWX, which skips every
+test that needs a driver to read, and the job that has WeeWX ran one version. It now
+runs the oldest as well as the newest.
+
+**A JSON upload carrying a numeric timestamp no longer raises.** `dateutc` arrives as
+a string from every console that POSTs a form, and `time.strptime` raises `TypeError`
+rather than `ValueError` for a number. The driver was catching only the second.
+
 ## 0.16.0 (2026-08-31)
 
 **An Ecowitt gateway read over its own API.** The same hardware this driver already

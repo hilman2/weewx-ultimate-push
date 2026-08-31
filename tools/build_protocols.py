@@ -43,12 +43,16 @@ FETCH_ADDRESS = {'homeassistant': '1.2.3.4:8123'}
 # rain counter is the weather station, and that is wrong for Home Assistant, which
 # has one because an integration reporting rain reports a total, and is still most
 # often a room sensor standing beside somebody's weather station.
-IS_THE_STATION = {'ecowitt_gateway'}
+IS_THE_STATION = {'ecowitt_gateway', 'ambient_cloud'}
 
 # What the block is called, where 'air' is wrong. It is the station's name, so it has
 # to read like the readings in it: a Home Assistant block whose example entities are
 # sensor.garden_temperature cannot be called 'air'.
-FETCH_BLOCK = {'homeassistant': 'garden', 'ecowitt_gateway': 'garden'}
+FETCH_BLOCK = {
+    'homeassistant': 'garden',
+    'ecowitt_gateway': 'garden',
+    'ambient_cloud': 'garden',
+}
 PATH = '/abcdefg12345/report'
 IDENT = 'up-abcde123'
 PASSWORD = 'abcdefg12345'
@@ -297,6 +301,74 @@ from another machine to prove the port is open.
 Uploads arrive but are refused: the driver does not know this console yet. It appears
 in the web interface as a station waiting to be let in.""",
     },
+    'ambient_cloud': {
+        'good': """This is your own Ambient station, read back from Ambient's servers instead
+of received from the console. The readings are the same ones and they land in the
+same columns, because the API answers with the names the console posts.
+
+Worth doing when the console cannot be pointed at this driver. The awnet app offers
+one *Customized* server and older models offer none, so a station whose one slot is
+already taken has no way to reach a driver on its own network. It is also the only
+way to read a station that is not on that network at all: a second home, a
+relative's garden, a club's field.
+
+**Make two keys first.** Sign in at ambientweather.net, open your account page, and
+create an application key and an API key. The application key names the program and
+the API key names the account. Neither is typed into the console and neither is your
+password.
+
+Together they can read everything on the account. Keep them the way you would keep
+the password. They go in `weewx.conf`, which is readable by whoever can read that
+file, or in the settings file the web interface writes, which is the same. This
+driver never puts them in the URL it keeps, so they are not in a log line, not on
+the page that shows what arrived, and not in an error message.
+
+**One station on the account needs nothing else.** Several needs a `mac` line saying
+which, and a block without one is refused with a message listing every station it
+found and what each is called, so the right address can be copied straight out of it.
+
+Sixty seconds is a sensible interval. Ambient's servers have something new about once
+a minute, and their documentation caps a key at one request a second, which nothing
+here comes near.
+
+Leave it as the main station. This is your weather station, so its temperature is the
+outdoor temperature. That is the difference between it and a PurpleAir or an AirLink,
+which are set up as extra stations because their thermometers are inside their own
+housings.
+
+**This and the console's *Customized* upload can both be on.** They are two ways of
+reading one station and neither knows about the other, so nothing has to be switched
+off to try this and nothing stops working if you go back to the other.
+
+Everything arrives in Fahrenheit, inches and miles an hour, whatever the console's
+display is set to. There is no unit setting in this API. WeeWX converts to whatever
+your reports are in, so this changes nothing about what you see.
+
+`feelsLike` and `dewPoint` are left alone. Ambient work both out and so does WeeWX,
+and a column filled from two different sums is worse than one filled from either.
+
+No account yet? `python -m user.ultimatepush --fake-ambient-cloud` answers like one,
+with two stations on it so that picking one can be tried too.""",
+        'wrong': """Nothing is recorded and the log says the keys were refused: one of the two
+is wrong, or was deleted from the account page. Both are refused the same way, so the
+message cannot say which. It is said once and then the driver stays quiet, so look at
+the start of the log rather than the end.
+
+The log says the account has several stations and the block has to say which. It
+lists them with their MAC addresses; copy the one you want into a `mac` line.
+
+The log says no station on the account has that MAC address. The station was removed
+and added again, which gives it a new one, or the line has a typo. The same message
+lists what is there.
+
+The readings stop changing and nothing is refused. The console has stopped reaching
+Ambient's servers, and their API keeps answering with the last thing it had. The
+station's page at ambientweather.net says when it was last heard from.
+
+The temperature is right and the rain is nonsense. Every Ambient console reports the
+total so far, and WeeWX has to be told to difference it. That is `[StdWXCalculate]`
+and the driver says so at startup if it is not set.""",
+    },
     'ecowitt_gateway': {
         'good': """Nothing is set on the console. This is the one kind of weather
 station here where the hardware is told nothing at all: the driver connects to the
@@ -492,7 +564,14 @@ def minimal(protocol):
             '',
             '    [[polling]]',
             '        [[[%s]]]' % FETCH_BLOCK.get(protocol.name, 'air'),
-            '            address = %s' % FETCH_ADDRESS.get(protocol.name, ADDRESS),
+        ]
+        # No address line for a protocol that has one address for everybody. Writing
+        # api.ambientweather.net into the block is a line that can only be got wrong.
+        if not protocol.fetch_host:
+            lines.append(
+                '            address = %s' % FETCH_ADDRESS.get(protocol.name, ADDRESS)
+            )
+        lines += [
             '            protocol = %s' % protocol.name,
         ]
         # What this one protocol cannot do without. A block missing the line that
@@ -577,6 +656,13 @@ ABOUT_MINIMAL = {
     # be told which part of it is the station. It gets a sentence of its own about
     # role, because what is behind one of its entities is not stated anywhere: a
     # PurpleAir is an air quality sensor and this could be a soil probe.
+    # And for one that lives at an address nobody types, because the service has
+    # one for everybody. Said rather than left out: a block with no address in it
+    # looks incomplete to somebody who has set up every other source here.
+    'fetch-fixed': "There is nothing to identify, nothing to wait for and no address"
+    " to look up. This service is at one name for the whole world and the driver has"
+    " it, so the block above is the whole of the station: it is recording from the"
+    " first answer, with nothing to adopt and nothing to let in.",
     'chosen': "There is nothing to identify and nothing to wait for: the driver knows"
     " what answered because it knows what it asked. What it does have to be told is"
     " which sensors to read and what to authenticate itself with, which is the two"
@@ -596,6 +682,8 @@ def _about_minimal(protocol):
     if protocol.fetched:
         kind = 'chosen' if protocol.discovers else 'fetch'
         said = ABOUT_MINIMAL[kind]
+        if protocol.fetch_host:
+            said = ABOUT_MINIMAL['fetch-fixed']
         if protocol.name not in IS_THE_STATION:
             said += ' ' + ABOUT_MINIMAL[kind + '-extra']
         return said

@@ -286,7 +286,9 @@ driver knows which sensor answered because it knows which address it asked.
 #### address
 
 Where the sensor is. The protocol says what to ask it for, so this is a host or an
-address and nothing more. Required, unless `url` is given.
+address and nothing more. Required, unless `url` is given, or unless the protocol is
+one that lives at a single address for everybody. `ambient_cloud` is the one of those
+today, and its page says so.
 
 #### url
 
@@ -307,6 +309,12 @@ allowed.
 #### timeout
 
 Seconds to wait for an answer before treating the sensor as away. Default is 10.
+
+#### Whatever the protocol itself needs
+
+A few protocols need a line no other one does: a token, the sensors to read, a key
+pair. Those belong to the protocol rather than to polling, so they are named on its
+own page rather than here. Under `[[polling]]` they are written like any other line.
 
 #### role, channel, name, field_map_extensions
 

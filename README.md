@@ -92,6 +92,7 @@ port. See [Web interface](https://github.com/hilman2/weewx-ultimate-push/wiki/We
 | PurpleAir | PA-II, PA-II-SD and PA-I | asked over HTTP, on a schedule |
 | Davis AirLink | AirLink | asked over HTTP, on a schedule |
 | rtl_433 | any 433, 868 or 915 MHz sensor it decodes | UDP from rtl_433, which does the radio |
+| Ambient Weather (ambientweather.net) | the same hardware as the row above, and the models with no *Custom* upload | asked over their REST API, on a schedule, with nothing set on the console |
 | Home Assistant | any sensor Home Assistant can read, which is very nearly all of them | asked over its REST API, on a schedule |
 
 Every device by name, with what it takes to reach each one, is in
@@ -182,6 +183,7 @@ answered because it knows which address it asked.
 |---|---|
 | `airlink` | Davis AirLink |
 | `ecowitt_gateway` | Ecowitt GW1000, GW1100, GW1200, GW2000, GW3000, WH2650, WN1900 |
+| `ambient_cloud` | any Ambient console on an ambientweather.net account |
 | `homeassistant` | anything Home Assistant can read |
 
 The first two are air quality sensors, which is what tends to be sold with a local
@@ -190,12 +192,19 @@ pointed and does not have to be: an Ecowitt gateway answers its own protocol on 
 45000 whether or not its *Customized* upload is on, so both can run and nothing has
 to be set on the console to use this one.
 
+The fourth is the same trick as the third, from the other side. An Ambient
+console offers one *Custom* server and older ones offer none, so a station whose
+slot is taken cannot be pointed here at all. Reading it back from the account it
+already uploads to needs nothing set on the console, and it is also the only way
+to read a station that is not on your network.
+
 The last is not a make of hardware at all. Home Assistant has an integration for
 very nearly every sensor sold, so if it can read your thermometer, this can record
 it.
 
 No sensor yet? `python -m user.ultimatepush --fake-purpleair`, `--fake-airlink`,
-`--fake-gw1000` and `--fake-homeassistant` answer like one each.
+`--fake-gw1000`, `--fake-ambient-cloud` and `--fake-homeassistant` answer like
+one each.
 
 The third is not hardware. Home Assistant has an integration for very nearly every
 sensor that exists and publishes them all through one API with the type and the unit
