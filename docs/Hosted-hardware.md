@@ -20,8 +20,8 @@ How it is put together is in [Architecture](Architecture.md#hosted-drivers).
 ## Adding one in the web interface
 
 Setting up a wired station is the same flow as setting up any other: **Add**, above
-the station list. The list there is every kind of station, searchable by make or
-model, in three groups by what you have to do:
+the station list. The first of its two steps is every kind of station, searchable by
+make or model, in three groups by what you have to do:
 
 - **You point it at this machine** — Ecowitt, Ambient and Weather Underground consoles.
   You type an address into the app that configures the console.

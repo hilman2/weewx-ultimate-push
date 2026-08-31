@@ -117,15 +117,24 @@ console that appears a year later puts its step back at the top.
 
 ### Setting up a station
 
-![Setting up a station](img/04-add-station.png)
+![Choosing the hardware, the first of the two steps](img/04-add-station.png)
 
-**Add** above the station list opens the form here. One form for every kind of station,
-grouped by what you have to do: point the console at this machine, let this machine read
-a driver, or change something on the network and wait for the station to turn up.
+**Add** above the station list opens this. It is two steps, because the list of
+hardware and the form for one of them do not fit on a screen together.
 
-Each entry names the models it covers, and the search box reads those as well as the
-names. Somebody holding a GW1100 does not have to know that this driver calls it
-Ecowitt.
+**Choose the hardware.** Every kind of station this driver knows, in three groups by
+what you have to do: point the console at this machine, let this machine read a driver,
+or change something on the network and wait for the station to turn up. Each entry names
+the models it covers, and the search box reads those as well as the names, so somebody
+holding a GW1100 does not have to know that this driver calls it Ecowitt. The list
+scrolls inside itself, and the rest of the checklist stays where it is.
+
+![The second step, with the form for the hardware you chose](img/07-set-it-up.png)
+
+**Set it up.** The list goes away and the form takes its place. Above it is the way
+back, carrying the name of what you chose, so there is no guessing which hardware the
+form belongs to. Going back keeps what you searched for.
+
 Selecting a role is part of that form: the first station is the main station, and every
 station after it is offered as an extra sensor. See [Stations](Stations.md) and
 [Hosted hardware](Hosted-hardware.md).

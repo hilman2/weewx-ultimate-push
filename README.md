@@ -27,7 +27,7 @@ http://1.2.3.4:8080/?token=abcdefg12345
 
 ## Setting a station up
 
-![Setting up a station](docs/img/04-add-station.png)
+![Choosing the hardware, the first of the two steps](docs/img/04-add-station.png)
 
 Enter a name and select the hardware. For hardware whose upload path is yours to choose,
 the driver generates one and shows the settings to type into the app that configures the

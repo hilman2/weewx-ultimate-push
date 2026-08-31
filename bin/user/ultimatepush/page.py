@@ -206,8 +206,29 @@ pre { background: var(--code); border: 1px solid var(--line); border-radius: 4px
 /* Every kind of hardware this driver knows, as rows rather than pills. A pill can
    only carry a name, so the models a name covers were shown after choosing it, which
    is the wrong way round for somebody holding a box that says GW1100. */
-#hwfind { max-width: 24rem; margin-bottom: 4px; }
-.hwlist { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
+/* Two steps, because the list and the form do not fit on one screen together.
+   Twenty-five kinds of hardware, each carrying the models it covers, is a thousand
+   pixels before the first field of the form. Step one is the list and nothing else;
+   step two is the form and nothing else. */
+.steps { display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.steps .at { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px;
+  color: var(--dim); }
+.steps .at.now { color: var(--ink); font-weight: 600; }
+.steps .n { width: 21px; height: 21px; border-radius: 11px; background: var(--soft);
+  color: var(--dim); font-size: 12px; font-weight: 600; display: inline-flex;
+  align-items: center; justify-content: center; flex: none; }
+.steps .at.now .n { background: var(--accent); color: #fff; }
+.steps .sep { color: var(--dim); }
+.hwrow { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+#hwfind { max-width: 24rem; margin-bottom: 0; }
+/* The list scrolls inside itself. Letting it push the rest of the checklist down
+   is what put the form a screen and a half away in the first place. */
+.hwlist { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px;
+  max-height: 52vh; overflow-y: auto; }
+.hwpicked { margin-bottom: 18px; }
+.hwpicked b { font-size: 15px; }
+.hwpicked .kit { color: var(--dim); font-size: 12.5px; margin-top: 3px; }
 .hw { display: flex; align-items: baseline; gap: 12px; width: 100%; text-align: left;
   padding: 8px 11px; background: none; border: 1px solid transparent; border-radius: 4px;
   font: inherit; color: var(--ink); cursor: pointer; }
@@ -936,17 +957,54 @@ var GROUPS = [
 function hardwareBody(s) {
   /* One list, whatever the hardware is. "Polled" and "uploads" is a distinction
      this driver has and its user does not: they have a weather station. What they
-     do have to know is what to do next, which is what the groups say. */
+     do have to know is what to do next, which is what the groups say.
+
+     Nothing is chosen until somebody chooses it. Opening on the first entry looked
+     helpful and was not: it put a form for an Ecowitt under the list for everybody,
+     including the person who owns a Vantage. */
   if (!ways) { loadWays(); return LOADING; }
-  var one = wayFor(picked) || ways.ways[0];
-  if (!one) return '<p class="dim">No hardware this driver can read.</p>';
-  picked = wayKey(one);
+  if (!ways.ways.length) {
+    return '<p class="dim">No hardware this driver can read.</p>';
+  }
+  var one = wayFor(picked);
+  return hwSteps(one) + (one ? hwForm(one) : hwChoose());
+}
+
+function hwSteps(one) {
+  /* Where you are, and the way back. The back button carries the name of what was
+     chosen rather than the word 'back', because that name is the one thing somebody
+     wants to check while they are filling the form in. */
+  var first = one
+    ? '<button class="act" id="hwback">\u2190 ' + esc(one.label) + '</button>'
+    : '<span class="at now"><span class="n">1</span>Choose the hardware</span>';
+  return '<div class="steps">' + first + '<span class="sep">\u203a</span>' +
+    '<span class="at' + (one ? ' now' : '') + '"><span class="n">2</span>' +
+    'Set it up</span></div>';
+}
+
+function hwChoose() {
   /* The search box is outside the list it filters, and typing replaces only the
      list. Redrawing the box under somebody's cursor takes the focus with it, and
      they lose the rest of what they were typing. */
-  return '<input type="text" id="hwfind" autocomplete="off" ' +
+  return '<div class="hwrow">' +
+    '<input type="text" id="hwfind" autocomplete="off" ' +
     'placeholder="Search by make or model" value="' + esc(hwfind) + '">' +
-    '<div class="hwlist" id="hwlist">' + hwGroups(one) + '</div>' +
+    '<span class="dim" style="font-size:12.5px" id="hwcount">' + hwCount() +
+    '</span></div>' +
+    '<div class="hwlist" id="hwlist">' + hwGroups() + '</div>';
+}
+
+function hwCount() {
+  var all = ways.ways.length;
+  var hits = ways.ways.filter(hwMatches).length;
+  if (hits === all) return all + ' kinds of station';
+  return hits + ' of ' + all;
+}
+
+function hwForm(one) {
+  return '<div class="hwpicked"><b>' + esc(one.label) + '</b>' +
+    (one.hardware ? '<div class="kit' + (one.kind === 'driver' ? ' mono' : '') +
+      '">' + esc(one.hardware) + '</div>' : '') + '</div>' +
     (one.kind === 'driver' ? fetchBody(one)
       : (one.how === 'fetch' ? askBody(one) : pointBody(one)));
 }
@@ -961,8 +1019,8 @@ function hwMatches(one) {
     .indexOf(needle) >= 0;
 }
 
-function hwGroups(chosen) {
-  var out = GROUPS.map(function (g) { return groupOfWays(g, chosen); }).join('');
+function hwGroups() {
+  var out = GROUPS.map(groupOfWays).join('');
   if (out) return out;
   return '<p class="dim" style="padding:8px 0">Nothing here matches ' +
     '\u2018' + esc(hwfind) + '\u2019. It may be hardware this driver does not ' +
@@ -980,19 +1038,17 @@ function wayFor(key) {
   return found;
 }
 
-function groupOfWays(group, chosen) {
+function groupOfWays(group) {
   var mine = ways.ways.filter(function (one) {
     return one.how === group[0] && hwMatches(one);
   });
   if (!mine.length) return '';
   return '<p class="hwhead"><b>' + esc(group[1]) + '</b> ' + esc(group[2]) + '</p>' +
     mine.map(function (one) {
-      var key = wayKey(one);
       var why = one.problem ? esc(one.problem)
         : (one.taken ? 'already set up'
           : (one.enabled === false ? 'not switched on' : ''));
-      return '<button class="hw' + (key === wayKey(chosen) ? ' on' : '') +
-        '" data-pick="' + esc(key) + '"' +
+      return '<button class="hw" data-pick="' + esc(wayKey(one)) + '"' +
         (one.problem || one.taken ? ' disabled' : '') + '>' +
         '<span class="what">' + esc(one.label) + '</span>' +
         '<span class="kit' + (one.kind === 'driver' ? ' mono' : '') + '">' +
@@ -1287,8 +1343,9 @@ function draw() {
 
 function show(which) {
   /* Leaving the checklist abandons a half-filled add form, which is what clicking
-     away from it means. */
-  if (which !== 'setup') adding = false;
+     away from it means. The hardware goes with it, so coming back starts at the
+     first step rather than in the middle of somebody else's choice. */
+  if (which !== 'setup') { adding = false; picked = null; }
   view = which;
   draw();
 }
@@ -1908,6 +1965,7 @@ function hostedThen(d) {
   stationList = null;
   formValues = null;
   typedBy = {};
+  if (d.ok) picked = null;
   loadWays();
   refresh();
 }
@@ -2014,6 +2072,13 @@ document.addEventListener('click', function (e) {
   if (t.dataset.hwcopy) {
     copy(document.getElementById('hwconf' + t.dataset.hwcopy).textContent,
          'the block for weewx.conf');
+    return;
+  }
+  if (t.id === 'hwback') {
+    /* Back to the list, with whatever was searched for still in the box: somebody
+       comparing two of four matches would otherwise type it again. */
+    picked = null;
+    drawSetup(document.getElementById('body'));
     return;
   }
   var hw = t.closest ? t.closest('[data-pick]') : null;
@@ -2220,8 +2285,10 @@ document.addEventListener('input', function (e) {
   if (e.target.id === 'hwfind') {
     hwfind = e.target.value.trim();
     var list = document.getElementById('hwlist');
-    // Only the list, so that the cursor stays where it is being typed.
-    if (list && ways) list.innerHTML = hwGroups(wayFor(picked) || ways.ways[0]);
+    var count = document.getElementById('hwcount');
+    // Only the list and its count, so the cursor stays where it is being typed.
+    if (list && ways) list.innerHTML = hwGroups();
+    if (count && ways) count.textContent = hwCount();
   }
 });
 
