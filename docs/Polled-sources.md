@@ -10,6 +10,14 @@ this driver reads it that way too; it also answers a protocol of its own, and re
 it that way means nothing has to be set on the console at all. See
 [Ecowitt gateway API](Protocol-Ecowitt-gateway.md).
 
+An Ambient console is here for a third reason. It can be pointed at a server, but
+the awnet app has room for one and older models have room for none, so a console
+whose slot is already taken cannot be pointed here at all. Its readings are on
+ambientweather.net either way, and the driver reads them back from there. That is
+also the only way to read a station that is not on your network: a second home, a
+relative's garden. See
+[Ambient Weather (ambientweather.net)](Protocol-Ambient-cloud.md).
+
 So the driver asks. Every so often it fetches the sensor's own answer, reads it the
 same way it reads an upload, and records it. From there nothing is different: the
 same field map, the same channels, the same rule about which station owns which
@@ -83,6 +91,7 @@ long for anything on your own network.
 | `purpleair` | PurpleAir PA-II, PA-II-SD and PA-I | [PurpleAir](Protocol-Purpleair.md) |
 | `airlink` | Davis AirLink | [Davis AirLink](Protocol-Airlink.md) |
 | `ecowitt_gateway` | Ecowitt GW1000, GW1100, GW1200, GW2000, GW3000, WH2650, WN1900 | [Ecowitt gateway API](Protocol-Ecowitt-gateway.md) |
+| `ambient_cloud` | any Ambient console on an ambientweather.net account | [Ambient Weather (ambientweather.net)](Protocol-Ambient-cloud.md) |
 | `homeassistant` | anything Home Assistant can read | [Home Assistant](Protocol-Homeassistant.md) |
 
 The last one is not a make of hardware. Home Assistant has an integration for very
@@ -118,11 +127,16 @@ python -m user.ultimatepush --fake-gw1000
 python -m user.ultimatepush --fake-homeassistant
 ```
 
+```bash
+python -m user.ultimatepush --fake-ambient-cloud
+```
+
 The first two answer on ports 8081 and 8082, the gateway on 45000 and the Home
-Assistant on 8123, which are the ports the real ones use. All four send readings
-that move. Point a source at
-`127.0.0.1:8081` and the whole of this page can be walked through before the real
-sensor arrives.
+Assistant on 8123, which are the ports the real ones use. The Ambient one answers on
+8124, which is nobody's real port: that service is on the internet rather than on
+your network, so a source is pointed at the fake with a `url` line instead of an
+address. All five send readings that move. Point a source at `127.0.0.1:8081` and
+the whole of this page can be walked through before the real sensor arrives.
 
 The last one insists on a token, the way the real one does, and prints the block to
 copy when it starts. It has two devices, one outdoors and one indoors, and three

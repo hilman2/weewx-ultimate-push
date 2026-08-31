@@ -26,9 +26,15 @@ driver keeps. See Protocol.query_for.
 import json
 import time
 import urllib.error
+from typing import TYPE_CHECKING
 
 from .. import catalogs
 from . import US, Protocol
+
+# For the docstring types only. polling imports this package, so naming the class
+# at run time would be a circle. Nothing here imports it.
+if TYPE_CHECKING:
+    from ..polling import Source
 
 _catalog = catalogs.ambient
 
@@ -82,18 +88,23 @@ class AmbientCloud(Protocol):
     contested = _catalog.CONTESTED
     contested_with = _catalog.CONTESTED_WITH
     placement_unknown = _catalog.PLACEMENT_UNKNOWN
-    metadata = frozenset(NOT_READINGS | {'macAddress', 'stationtype', 'model', 'tz'})
+    # 'macAddress' and 'name' come down off the wrapper, so they are here too:
+    # readings() folds them in, and neither measures anything.
+    metadata = frozenset(
+        NOT_READINGS | {'macAddress', 'name', 'stationtype', 'model', 'tz'}
+    )
 
+    # What the block cannot do without, and nothing else. Why sixty seconds, why
+    # it stays the main station and what happens with several stations on one
+    # account are on the generated page under 'Worth knowing'; saying either here
+    # as well is the same fact in two files.
     notes = (
-        "Two keys, both from the account page at ambientweather.net. The "
-        "application key names the program and the API key names the account. "
-        "Neither is typed into the console and neither is your password.",
-        "An account with one station needs nothing else. An account with several "
-        "needs 'mac' as well, and a block without one says which stations it "
-        "found so that you can copy the right address out of the message.",
-        "Ambient caps a key at one request a second. Sixty seconds between "
-        "readings, which is this driver's default, is well inside that, and is "
-        "also as often as their servers have anything new.",
+        "Nothing is set on the console, and there is no address to look up. What "
+        "this needs is two keys, both from the account page at "
+        "ambientweather.net: an application key, which names the program, and an "
+        "API key, which names the account.",
+        "An account with more than one station on it needs a 'mac' line as well, "
+        "saying which of them this block is for.",
     )
 
     @classmethod
@@ -146,7 +157,7 @@ class AmbientCloud(Protocol):
             raise
         devices = json.loads(body.decode('utf-8'))
         chosen = cls._chosen(source, devices if isinstance(devices, list) else [])
-        return json.dumps(cls._reading(chosen)).encode('utf-8'), headers
+        return json.dumps(cls._wrapped(chosen)).encode('utf-8'), headers
 
     @classmethod
     def _chosen(cls, source, devices):
@@ -204,54 +215,79 @@ class AmbientCloud(Protocol):
         return ', '.join(said) or 'none'
 
     @classmethod
-    def _reading(cls, device):
-        """One station's entry, as the rest of this driver expects an upload.
+    def _wrapped(cls, device):
+        """One station's entry, in a wrapper only this can have produced.
 
-        Two things change. The MAC address moves in, because that is what names the
-        station and it sits outside lastData; and the timestamp is rewritten, because
-        Ambient counts milliseconds where a console writes a date.
+        Nothing sends this over the network: it is built here, and a pushed Ambient
+        console speaks the same vocabulary, so a flat body would be two protocols
+        looking at one another's uploads and guessing. The wrapper is what claims()
+        recognises. readings() takes it off again.
 
         Args:
             device (dict): One entry from the account's list.
 
         Returns:
-            dict: The reading, flat, in the names protocols/ambient.py already knows.
+            dict: {'ambientweather': what names the station, 'readings': the
+            readings, in the names protocols/ambient.py already knows}.
         """
         reading = {}
         last = device.get('lastData')
         if isinstance(last, dict):
             reading.update(last)
-        reading['macAddress'] = device.get('macAddress', '')
         stamp = _seconds(reading.get('dateutc'))
         if stamp is None:
             reading.pop('dateutc', None)
         else:
             reading['dateutc'] = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(stamp))
-        return reading
+        info = device.get('info') or {}
+        return {
+            'ambientweather': {
+                'macAddress': str(device.get('macAddress') or ''),
+                'name': str(info.get('name') or ''),
+            },
+            'readings': reading,
+        }
 
     @classmethod
     def claims(cls, request, raw):
-        """Never. This is asked for by name, so nothing has to be recognised.
+        """What this driver's own fetch produced, and nothing else.
 
-        Args:
-            request (weewx.listener.Request): The upload.
-            raw (dict): What was in it.
-
-        Returns:
-            int: Zero. A source says `protocol = ambient_cloud` and that settles it.
+        A pushed Ambient console sends these same field names, so the readings
+        cannot say which of the two this is. The wrapper can: nothing on the network
+        sends one, because _wrapped is the only thing that builds it.
         """
-        return 0
+        about = raw.get('ambientweather')
+        if not isinstance(about, dict) or not about.get('macAddress'):
+            return 0
+        if not isinstance(raw.get('readings'), dict):
+            return 0
+        return 5
+
+    @classmethod
+    def readings(cls, request, raw):
+        """Take the wrapper off, so the rest of the driver sees one flat set.
+
+        What is above the readings names the station, and comes down with them
+        because that is what the page shows.
+        """
+        held = raw.get('readings')
+        named = dict(held) if isinstance(held, dict) else {}
+        about = raw.get('ambientweather')
+        if isinstance(about, dict):
+            for key, value in about.items():
+                named.setdefault(key, value)
+        return named
 
     @classmethod
     def station_of(cls, raw):
-        """Which station this reading is from.
+        """The MAC address, which is what the account calls a station.
 
-        Args:
-            raw (dict): The reading.
-
-        Returns:
-            str: Its MAC address, which is what the account calls it.
+        Read off the wrapper rather than the readings, because Ambient keep it
+        beside lastData rather than in it.
         """
+        about = raw.get('ambientweather')
+        if isinstance(about, dict):
+            return str(about.get('macAddress') or '').strip()
         return str(raw.get('macAddress', '')).strip()
 
 

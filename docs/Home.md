@@ -39,6 +39,7 @@ Setting each kind up by hand, with everything that is only its own.
 - **[Acurite](Protocol-Acurite.md)**
 - **[Davis AirLink](Protocol-Airlink.md)**
 - **[Ambient](Protocol-Ambient.md)**
+- **[Ambient Weather (ambientweather.net)](Protocol-Ambient-cloud.md)** — the same hardware read back from the account it uploads to
 - **[Ecowitt](Protocol-Ecowitt.md)**
 - **[Ecowitt gateway API](Protocol-Ecowitt-gateway.md)** — the same hardware asked rather than pointed, with nothing set on the console
 - **[Home Assistant](Protocol-Homeassistant.md)** — anything Home Assistant can read
@@ -96,6 +97,7 @@ Generated from the drivers installed here, so they cannot describe a version nob
 | I have an air quality sensor | [Sensors this driver asks](Polled-sources.md) |
 | I have cheap 433 MHz sensors | [rtl_433](Protocol-Rtl433.md) |
 | My sensor is already in Home Assistant | [Home Assistant](Protocol-Homeassistant.md) |
+| My Ambient console cannot be pointed here | [Ambient Weather (ambientweather.net)](Protocol-Ambient-cloud.md) |
 | My station is on a cable, not the network | [Hosted hardware](Hosted-hardware.md) |
 | A reading vanishes at the archive interval | [Database columns](Database-columns.md) |
 | This port is on the internet | [Keeping strangers out](Security.md) |

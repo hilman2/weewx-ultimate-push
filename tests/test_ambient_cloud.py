@@ -18,6 +18,7 @@ WeeWX computes both and a station whose dew point came from two different sums i
 worse than one whose dew point came from either.
 """
 
+import io
 import json
 import socketserver
 import threading
@@ -105,16 +106,28 @@ def source_for(account, **extra):
 
 
 def read(source):
-    """One reading, as the driver would take it.
+    """One answer, as fetch built it.
 
     Args:
         source (polling.Source): What to ask.
 
     Returns:
-        dict: What was in lastData, decoded.
+        dict: The wrapper, with what names the station beside the readings.
     """
     body, _ = AmbientCloud.fetch(source, polling.ask)
     return json.loads(body.decode('utf-8'))
+
+
+def flat(source):
+    """The same answer with the wrapper off, as the rest of the driver sees it.
+
+    Args:
+        source (polling.Source): What to ask.
+
+    Returns:
+        dict: One flat set of names.
+    """
+    return AmbientCloud.readings(None, read(source))
 
 
 # ---- the keys, which are somebody's account ---------------------------------
@@ -173,14 +186,14 @@ def test_an_account_with_two_stations_will_not_guess(account):
 def test_the_mac_picks_the_station(account):
     garden = read(source_for(account, mac=GARDEN['mac']))
     shed = read(source_for(account, mac=SHED['mac']))
-    assert garden['macAddress'] == GARDEN['mac']
-    assert shed['macAddress'] == SHED['mac']
-    assert garden['tempf'] != shed['tempf']
+    assert garden['ambientweather']['macAddress'] == GARDEN['mac']
+    assert shed['ambientweather']['macAddress'] == SHED['mac']
+    assert garden['readings']['tempf'] != shed['readings']['tempf']
 
 
 def test_the_mac_is_read_whatever_its_case(account):
     reading = read(source_for(account, mac=GARDEN['mac'].lower()))
-    assert reading['macAddress'] == GARDEN['mac']
+    assert reading['ambientweather']['macAddress'] == GARDEN['mac']
 
 
 def test_a_mac_no_station_has_says_which_it_found(account):
@@ -209,7 +222,7 @@ def test_an_empty_account_says_to_add_the_console():
 
 
 def test_the_readings_arrive_under_the_names_the_console_posts(account):
-    reading = read(source_for(account, mac=GARDEN['mac']))
+    reading = flat(source_for(account, mac=GARDEN['mac']))
     for name in ('tempf', 'humidity', 'baromrelin', 'windspeedmph', 'soilhum1'):
         assert name in reading
 
@@ -223,7 +236,7 @@ def test_the_catalog_is_the_one_the_pushing_protocol_uses():
 
 
 def test_every_reading_the_fake_sends_is_one_the_catalog_places(account):
-    reading = read(source_for(account, mac=GARDEN['mac']))
+    reading = flat(source_for(account, mac=GARDEN['mac']))
     unplaced = [
         name
         for name in reading
@@ -246,10 +259,16 @@ def test_the_station_is_named_by_its_mac(account):
     assert AmbientCloud.station_of(reading) == GARDEN['mac']
 
 
-def test_nothing_claims_this_protocol_by_recognising_it():
-    # It is asked for by name. A protocol that claimed an arriving upload here
-    # would be claiming somebody else's, because nothing arrives on its own.
-    assert AmbientCloud.claims(None, {'tempf': '59.9'}) == 0
+def test_it_recognises_what_its_own_fetch_built(account):
+    assert AmbientCloud.claims(None, read(source_for(account, mac=GARDEN['mac']))) > 0
+
+
+def test_a_pushed_ambient_upload_is_not_claimed():
+    # A console POSTing to this driver speaks the same vocabulary. What tells the
+    # two apart is the wrapper, which nothing on the network sends.
+    pushed = {'PASSKEY': 'ABC', 'stationtype': 'AMBWeatherV4.3.4', 'tempf': '59.9'}
+    assert AmbientCloud.claims(None, pushed) == 0
+    assert AmbientCloud.claims(None, {'ambientweather': {}, 'readings': {}}) == 0
 
 
 # ---- the timestamp, which arrives in a shape nothing else sends ---------------
@@ -258,19 +277,19 @@ def test_nothing_claims_this_protocol_by_recognising_it():
 def test_the_millisecond_stamp_becomes_one_the_driver_reads(account):
     from ultimatepush import transport
 
-    reading = read(source_for(account, mac=GARDEN['mac']))
+    reading = flat(source_for(account, mac=GARDEN['mac']))
     assert transport.device_time(reading) == pytest.approx(
         account.pinned - account.pinned % 60, abs=1
     )
 
 
 def test_a_stamp_that_is_not_a_number_leaves_the_clock_to_the_driver():
-    made = AmbientCloud._reading({'macAddress': 'x', 'lastData': {'dateutc': 'now'}})
-    assert 'dateutc' not in made
+    made = AmbientCloud._wrapped({'macAddress': 'x', 'lastData': {'dateutc': 'now'}})
+    assert 'dateutc' not in made['readings']
 
 
 def test_a_number_in_dateutc_does_not_reach_strptime():
-    # It cannot after _reading, but device_time is shared with everything else and
+    # It cannot after _wrapped, but device_time is shared with everything else and
     # a JSON upload from anywhere may carry one. strptime raises TypeError for it,
     # which is not the error the caller was catching.
     from ultimatepush import transport
@@ -295,3 +314,111 @@ def test_a_block_needs_no_address():
 
 def test_an_address_still_wins_where_one_is_given(account):
     assert source_for(account).url == account.url
+
+
+# ---- and the whole way through ------------------------------------------------
+
+
+def test_a_station_records_through_the_whole_driver(account, tmp_path):
+    """One block of configuration, and a loop packet out of the far end.
+
+    The one test that would have caught claims() returning nothing: every other
+    test here calls fetch or readings directly, and a body no protocol recognises
+    gets that far and no further.
+    """
+    pytest.importorskip('weewx', reason="WeeWX is not installed")
+    from ultimatepush.driver import UltimatePushDriver
+
+    driver = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        weewx_root=str(tmp_path),
+        polling={
+            'garten': {
+                'url': account.url,
+                'protocol': 'ambient_cloud',
+                'application_key': APPLICATION_KEY,
+                'api_key': API_KEY,
+                'mac': GARDEN['mac'],
+                'interval': '5',
+            }
+        },
+    )
+    try:
+        assert [one.name for one in driver.stations.values()] == ['garten']
+        got = []
+
+        def pull():
+            for packet in driver.genLoopPackets():
+                got.append(packet)
+                return
+
+        reader = threading.Thread(target=pull, daemon=True)
+        reader.start()
+        reader.join(20)
+        assert got, "nothing came out of the driver"
+        packet = got[0]
+        sent = simulate.ambient_reading(account.pinned, simulate.AMBIENT_STATIONS[0])
+        assert packet['station'] == 'garten'
+        assert packet['outTemp'] == pytest.approx(sent['tempf'])
+        assert packet['outHumidity'] == pytest.approx(sent['humidity'])
+        assert packet['pressure'] == pytest.approx(sent['baromabsin'])
+        assert packet['windSpeed'] == pytest.approx(sent['windspeedmph'])
+        assert packet['windDir'] == pytest.approx(sent['winddir'])
+        # Fahrenheit, inches and miles an hour, which is what the API answers in
+        # whatever the console's display is set to.
+        assert packet['usUnits'] == 1
+    finally:
+        driver.closePort()
+
+
+def test_the_keys_reach_nothing_that_is_written_down(account, tmp_path):
+    """A whole cycle, and then every place a credential could have ended up."""
+    pytest.importorskip('weewx', reason="WeeWX is not installed")
+    import logging
+
+    from ultimatepush.driver import UltimatePushDriver
+
+    held = logging.StreamHandler(io.StringIO())
+    root = logging.getLogger()
+    root.addHandler(held)
+    was = root.level
+    root.setLevel(logging.DEBUG)
+    driver = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        weewx_root=str(tmp_path),
+        polling={
+            'garten': {
+                'url': account.url,
+                'protocol': 'ambient_cloud',
+                'application_key': APPLICATION_KEY,
+                'api_key': API_KEY,
+                'mac': GARDEN['mac'],
+                'interval': '5',
+            }
+        },
+    )
+    try:
+        got = []
+
+        def pull():
+            for packet in driver.genLoopPackets():
+                got.append(packet)
+                return
+
+        reader = threading.Thread(target=pull, daemon=True)
+        reader.start()
+        reader.join(20)
+        assert got, "nothing came out of the driver"
+        written = [held.stream.getvalue(), json.dumps(driver.web_ways(), default=str)]
+        for one in tmp_path.iterdir():
+            if one.is_file():
+                written.append(one.read_text(encoding='utf-8', errors='replace'))
+        for text in written:
+            assert APPLICATION_KEY not in text
+            assert API_KEY not in text
+    finally:
+        root.removeHandler(held)
+        root.setLevel(was)
+        driver.closePort()
