@@ -44,6 +44,7 @@ WITHOUT_WEEWX = [
     'ultimatepush.protocols.purpleair',
     'ultimatepush.protocols.airlink',
     'ultimatepush.protocols.rtl433',
+    'ultimatepush.protocols.ambient_cloud',
     'ultimatepush.protocols.homeassistant',
     'ultimatepush.catalogs.purpleair',
     'ultimatepush.catalogs.airlink',
