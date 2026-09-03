@@ -474,11 +474,14 @@ def test_the_waiting_list_survives_thirty_things_talking_at_once(receiver):
     from ultimatepush.activity import Log, Upload
 
     log = Log()
+    # Recent, because unknown_stations drops anything nothing has been heard from
+    # for FORGET_REFUSED. A fixed timestamp passes until the day it is two days old.
+    now = time.time()
     for round_ in range(40):
         for which in range(30):
             log.refused(
                 Upload(
-                    at=1788121515.0 + round_,
+                    at=now - 40 + round_,
                     client='127.0.0.1',
                     method='',
                     path='/',
@@ -502,7 +505,7 @@ def test_the_one_heard_most_often_is_offered_first(receiver):
         for _ in range(times):
             log.refused(
                 Upload(
-                    at=1788121515.0,
+                    at=now,
                     client='127.0.0.1',
                     method='',
                     path='/',
@@ -515,6 +518,7 @@ def test_the_one_heard_most_often_is_offered_first(receiver):
             )
 
     log = Log()
+    now = time.time()
     heard('Passing-Car/1', 1)
     heard('Mine/57/1', 60)
     heard('NextDoor/12/2', 9)
@@ -542,7 +546,7 @@ def test_a_sensor_that_is_not_mine_stops_being_asked_about(tmp_path):
         for ident in ('Mine/57/1', 'NextDoor/12/2'):
             driver.activity.refused(
                 Upload(
-                    at=1788121515.0,
+                    at=time.time(),
                     client='127.0.0.1',
                     method='',
                     path='/',
