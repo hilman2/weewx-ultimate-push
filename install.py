@@ -79,6 +79,7 @@ class UltimatePushInstaller(ExtensionInstaller):
                         'bin/user/ultimatepush/admin.py',
                         'bin/user/ultimatepush/checklist.py',
                         'bin/user/ultimatepush/columns.py',
+                        'bin/user/ultimatepush/conf.py',
                         'bin/user/ultimatepush/consoles.py',
                         'bin/user/ultimatepush/driver.py',
                         'bin/user/ultimatepush/hardware.py',

@@ -21,6 +21,10 @@ WITHOUT_WEEWX = [
     'ultimatepush.activity',
     'ultimatepush.checklist',
     'ultimatepush.columns',
+    # weewx.conf is a configobj file, and reading one takes configobj and nothing
+    # else. Which is the point: the page can show the file on a machine where the
+    # engine will not start.
+    'ultimatepush.conf',
     'ultimatepush.infer',
     'ultimatepush.mapping',
     'ultimatepush.overrides',

@@ -113,6 +113,13 @@ It is still plain HTTP, so the token travels in clear and ends up in the browser
 history. Bind it to `localhost` and use an SSH tunnel, or put TLS in front, unless the
 network is one you trust. See [Web interface](Web-interface.md).
 
+The interface also shows `weewx.conf`, and will write it where the file belongs to the
+user WeeWX runs as. Under a package installation it does not, so the page is read-only
+there until somebody gives it the file. Doing that is worth a moment's thought: it makes
+the token worth as much as a terminal, rather than as much as a field map. Settings whose
+name says they hold a secret are listed without their value either way, so a password in
+that file is not sent to the browser.
+
 ## What none of this does
 
 **Encryption.** All of these protocols are plain HTTP, and none of the hardware offers

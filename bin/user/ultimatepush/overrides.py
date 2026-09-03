@@ -5,24 +5,26 @@
 #
 """Settings the web interface may change, kept where a driver can change them.
 
-`weewx.conf` is not that place, for three reasons that are all about the file rather
-than about the interface:
+`weewx.conf` is not that place, for two reasons that are about the file rather than
+about the interface:
 
     WeeWX is running from it.  A change written there takes effect at the next
-    restart, and a driver cannot restart the engine it is a part of. So a web
-    interface that wrote it would be a web interface whose changes did nothing until
-    somebody went to a terminal anyway.
+    restart, and a driver cannot restart the engine it is a part of. A field map has
+    to take effect on the next upload, which is the whole reason the interface exists,
+    so writing one there would be writing it where it cannot work.
 
     It is often not writable.  Under a package installation it belongs to root and
-    the driver runs as the weewx user.
-
-    It is somebody's file.  It has their comments in it, and their layout, and a
-    driver rewriting it is a driver that can lose those.
+    the driver runs as the weewx user. A driver whose field map could only be changed
+    on some installations would be worse than one that never used that file.
 
 So the settings the interface can change live in a file of the driver's own, beside
 the console list, in the same format as `weewx.conf` so that it reads the same way.
 They take effect on the next upload, without a restart. Everything else the interface
 shows as a block to paste, because everything else needs one.
+
+`weewx.conf` itself is a page of its own, and conf.py is that. It is the rest of the
+file, none of which is this driver's, and every change there carries the restart that
+this file exists to avoid.
 
 One rule keeps the two files from fighting: **a field named in `weewx.conf` is never
 touched here.** The interface shows it, says where it is set, and declines to change

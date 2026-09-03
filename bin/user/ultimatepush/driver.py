@@ -35,6 +35,7 @@ Configuration:
 
 import importlib
 import logging
+import os.path
 import time
 from typing import Any, Dict, List, Optional, Set
 
@@ -48,6 +49,7 @@ from . import (
     admin,
     checklist,
     columns,
+    conf,
     consoles,
     hardware,
     mapping,
@@ -386,6 +388,16 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         # start bouncing.
         self.paths_proven = False
         self.config_path = _config_path(stn_dict.get('config_dict'))
+        # weewx.conf as a file, for the page that shows the whole of it. Nothing is
+        # read here: it is read when somebody looks, so that the page shows the file
+        # rather than what it said when WeeWX started. See conf.py.
+        #
+        # The settings file's directory is where the backup goes when weewx.conf's
+        # own cannot be written, because that one is known to be writable: the driver
+        # has been writing the settings file in it since it started.
+        self.conf = conf.File(
+            self.config_path, backup_to=os.path.dirname(self.overrides.path)
+        )
         self.occupied = None
         # Whether the archive table has been asked what it already holds. Apart from
         # `occupied` being None, because "not read" and "read, and holds nothing" are
@@ -933,9 +945,10 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         A hosted driver is loaded exactly as WeeWX loads one, which means its loader
         looks its settings up in `config_dict[station_type]`. For a driver set up in
         weewx.conf that section is already there. For one set up in the web
-        interface it is not, because this driver does not write weewx.conf: WeeWX is
-        running from that file, it is often not writable, and it is somebody's file
-        with their comments in it. See overrides.py.
+        interface it is not, because setting a driver up writes the settings file
+        rather than weewx.conf: WeeWX is running from that file, so a section
+        written there would do nothing until a restart. See overrides.py, and
+        conf.py for the page that does write weewx.conf and what that costs.
 
         So the section is kept in the settings file and put into a copy of the
         config_dict on the way past. The child cannot tell the difference. What is
@@ -4230,6 +4243,92 @@ class UltimatePushDriver(weewx.drivers.AbstractDevice):
         self.hardware_section = self._hardware_section(self.stn_dict)
         return True, message
 
+    # ---- weewx.conf itself ---------------------------------------------------
+    #
+    # The settings on the rest of this page are the driver's own and take effect on
+    # the next upload. These are the file's, and take effect at the next restart.
+    # conf.py holds the reasoning and the writing; what is here is the difference
+    # between the file and what this engine is running on, which only the driver
+    # knows.
+
+    def web_conf(self):
+        """The whole of weewx.conf, and where it no longer matches this engine.
+
+        Returns:
+            dict: What conf.File.view returns, plus whether a restart is owed,
+            which is the one thing the file itself cannot say.
+        """
+        answer = self.conf.view(self.stn_dict.get('config_dict'))
+        if answer.get('ok'):
+            answer['stale'] = sum(
+                1
+                for section in answer['sections']
+                for entry in section['entries']
+                if entry['differs']
+            )
+        return answer
+
+    def web_conf_set(self, where, key, value):
+        """Change a setting weewx.conf already has.
+
+        Args:
+            where (list): The headings above it, outermost first.
+            key (str): The setting.
+            value (str): Its new value, as it would be typed in the file.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        return self.conf.set(_headings(where), key, value)
+
+    def web_conf_add(self, where, key, value):
+        """Put a setting weewx.conf does not have into one of its sections.
+
+        Args:
+            where (list): The headings of the section it goes in, outermost first.
+            key (str): The setting's name.
+            value (str): Its value, as it would be typed in the file.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        return self.conf.add(_headings(where), key, value)
+
+    def web_conf_remove(self, where, key):
+        """Take a setting out of weewx.conf.
+
+        Args:
+            where (list): The headings above it, outermost first.
+            key (str): The setting.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        return self.conf.remove(_headings(where), key)
+
+    def web_conf_add_section(self, where):
+        """Add an empty section to weewx.conf.
+
+        Args:
+            where (list): The new section's whole heading path, outermost first.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        return self.conf.add_section(_headings(where))
+
+    def web_conf_remove_section(self, where, force=False):
+        """Take a section out of weewx.conf, with everything under it.
+
+        Args:
+            where (list): Its heading path, outermost first.
+            force (bool): Needed when the section is not empty.
+
+        Returns:
+            tuple: (ok, message).
+        """
+        return self.conf.remove_section(_headings(where), force=force)
+
     def _new_child(self, station_type, options):
         """A hosted driver, not yet opened, with the stanza it is being given.
 
@@ -4739,6 +4838,26 @@ def _unit_system_name(system):
         if value == system:
             return name
     return str(system)
+
+
+def _headings(where):
+    """A heading path as it arrived over the API, cleaned up.
+
+    The page sends a list, and a request that is not the page can send anything. A
+    single string is taken as one heading rather than refused, because that is what
+    somebody driving the API by hand means by it.
+
+    Args:
+        where (Any): What the request carried.
+
+    Returns:
+        list[str]: The headings, outermost first. Empty for the top of the file.
+    """
+    if where is None:
+        return []
+    if isinstance(where, str):
+        where = [where]
+    return [str(name) for name in where if str(name).strip()]
 
 
 def _config_path(config_dict):

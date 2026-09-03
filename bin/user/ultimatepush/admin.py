@@ -403,6 +403,8 @@ class Site:
             return _json(_catalog_of(query.get('protocol', '')))
         if route == 'ways':
             return _json(self.driver.web_ways())
+        if route == 'conf':
+            return _json(self.driver.web_conf())
         return _json({'ok': False, 'error': "No such route: %s" % route})
 
     # ---- writing -------------------------------------------------------------
@@ -533,6 +535,32 @@ class Site:
         if route == 'hardware/order':
             ok, message = self.driver.web_hardware_order(
                 body.get('station_types') or []
+            )
+            return _json({'ok': ok, 'message': message})
+        # weewx.conf. Changing a setting and adding one are two routes rather than
+        # one, because a key that is not in the file is nearly always a typo, and a
+        # typo written there is a setting that looks set and does nothing.
+        if route == 'conf/set':
+            ok, message = self.driver.web_conf_set(
+                body.get('section'), body.get('key', ''), body.get('value', '')
+            )
+            return _json({'ok': ok, 'message': message})
+        if route == 'conf/add':
+            ok, message = self.driver.web_conf_add(
+                body.get('section'), body.get('key', ''), body.get('value', '')
+            )
+            return _json({'ok': ok, 'message': message})
+        if route == 'conf/remove':
+            ok, message = self.driver.web_conf_remove(
+                body.get('section'), body.get('key', '')
+            )
+            return _json({'ok': ok, 'message': message})
+        if route == 'conf/section':
+            ok, message = self.driver.web_conf_add_section(body.get('section'))
+            return _json({'ok': ok, 'message': message})
+        if route == 'conf/remove-section':
+            ok, message = self.driver.web_conf_remove_section(
+                body.get('section'), force=bool(body.get('force'))
             )
             return _json({'ok': ok, 'message': message})
         return _json({'ok': False, 'error': "No such route: %s" % route})

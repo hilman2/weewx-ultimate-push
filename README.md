@@ -66,6 +66,20 @@ away from another station, and writing into a column that already holds readings
 are stated in full, with the row counts and dates out of the archive table, and both are
 confirmed twice.
 
+## The rest of weewx.conf
+
+![weewx.conf as a table, with one setting the engine has not read yet](docs/img/08-weewx-conf.png)
+
+The configuration file itself, section by section, with the comment above each setting
+beside it. Most of it is not this driver's: `[Station]`, `[StdReport]` and every skin
+under it, the stanza of every service you run. A change there takes effect at the next
+restart, and every setting the file and the running engine now disagree about says so.
+
+Where `weewx.conf` belongs to root, as it does under a package installation, the page
+reads it and offers each line with its headings to paste. `chown weewx` on the file is
+enough to change it from here; the directory stays root's. A setting whose name says it
+holds a password is listed without its value, because this is HTTP.
+
 ## Database columns
 
 ![Which readings have no column yet](docs/img/06-columns.png)

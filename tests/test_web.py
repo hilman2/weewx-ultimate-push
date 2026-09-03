@@ -564,6 +564,126 @@ def test_a_broken_settings_file_does_not_stop_the_readings(tmp_path, payload):
     assert packet['outTemp'] == 59.7
 
 
+# ---------------------------------------------------------------- weewx.conf
+#
+# What the module does with the file is tests/test_conf.py. What is here is that the
+# routes reach it, over a socket, with a token, because that is the part the module
+# cannot be asked about.
+
+
+@pytest.fixture
+def with_a_config(tmp_path):
+    """A driver that was started from a weewx.conf, as WeeWX starts one."""
+    import configobj
+
+    config = configobj.ConfigObj(encoding='utf-8')
+    config.filename = str(tmp_path / 'weewx.conf')
+    config['debug'] = '0'
+    config['Station'] = {'location': 'Nowhere', 'rain_year_start': '1'}
+    config.write()
+
+    made = UltimatePushDriver(
+        port=0,
+        address='127.0.0.1',
+        passkey=PASSKEY,
+        report_file='',
+        console_file=str(tmp_path / 'consoles.txt'),
+        override_file=str(tmp_path / 'web.conf'),
+        config_dict=config,
+        web={'enable': 'true', 'port': 0, 'address': '127.0.0.1', 'token': TOKEN},
+    )
+    yield made
+    made.closePort()
+
+
+def test_the_conf_route_serves_the_file_the_driver_was_started_from(with_a_config):
+    status, kind, answer = web(with_a_config, '/api/conf')
+
+    assert status == 200
+    assert kind == 'application/json'
+    assert answer['ok']
+    assert answer['path'].endswith('weewx.conf')
+    assert '[Station]' in [s['heading'] for s in answer['sections']]
+
+
+def test_the_conf_route_needs_the_token_like_everything_else(with_a_config):
+    _, _, answer = web(with_a_config, '/api/conf', token='wrong')
+
+    assert answer['ok'] is False
+
+
+def test_a_setting_changed_over_the_api_is_in_the_file(with_a_config):
+    _, _, answer = web(
+        with_a_config,
+        '/api/conf/set',
+        {'section': ['Station'], 'key': 'rain_year_start', 'value': '7'},
+    )
+
+    assert answer['ok'], answer['message']
+    assert 'rain_year_start = 7' in open(with_a_config.config_path).read()
+
+
+def test_the_change_is_visible_on_the_next_read_and_marked_as_owed(with_a_config):
+    """It is in the file and the engine is still running on what it read at
+    startup. The page says both, which is the whole reason it says either."""
+    web(
+        with_a_config,
+        '/api/conf/set',
+        {'section': ['Station'], 'key': 'rain_year_start', 'value': '7'},
+    )
+    _, _, answer = web(with_a_config, '/api/conf')
+    row = [
+        entry
+        for section in answer['sections']
+        if section['heading'] == '[Station]'
+        for entry in section['entries']
+        if entry['key'] == 'rain_year_start'
+    ][0]
+
+    assert row['value'] == '7'
+    assert row['differs']
+    assert row['running'] == '1'
+    assert answer['stale'] == 1
+
+
+def test_a_setting_added_over_the_api_lands_in_the_section_asked_for(with_a_config):
+    _, _, answer = web(
+        with_a_config,
+        '/api/conf/add',
+        {'section': ['Station'], 'key': 'altitude', 'value': '35, meter'},
+    )
+
+    assert answer['ok'], answer['message']
+    assert 'altitude = 35, meter' in open(with_a_config.config_path).read()
+
+
+def test_a_section_can_be_added_and_taken_away_again(with_a_config):
+    _, _, made = web(with_a_config, '/api/conf/section', {'section': ['StdReport']})
+    assert made['ok'], made['message']
+    _, _, gone = web(
+        with_a_config, '/api/conf/remove-section', {'section': ['StdReport']}
+    )
+    assert gone['ok'], gone['message']
+    assert 'StdReport' not in open(with_a_config.config_path).read()
+
+
+def test_a_setting_can_be_taken_out_over_the_api(with_a_config):
+    _, _, answer = web(
+        with_a_config, '/api/conf/remove', {'section': ['Station'], 'key': 'location'}
+    )
+
+    assert answer['ok'], answer['message']
+    assert 'location' not in open(with_a_config.config_path).read()
+
+
+def test_a_driver_with_no_configuration_file_says_so_on_that_route(station):
+    """Which is how the tests run it, and how `--url` runs it."""
+    _, _, answer = web(station, '/api/conf')
+
+    assert answer['ok'] is False
+    assert 'without a configuration file' in answer['error']
+
+
 def test_an_unknown_route_answers_rather_than_hanging(station):
     status, _, answer = web(station, '/api/nonesuch')
 

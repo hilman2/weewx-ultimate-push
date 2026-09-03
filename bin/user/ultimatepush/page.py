@@ -278,6 +278,34 @@ button.act[disabled] { opacity: .5; cursor: not-allowed; }
 button.act[disabled]:hover { border-color: var(--line); }
 .waiting { color: var(--dim); font-size: 13px; }
 .waiting b { color: var(--warn); }
+/* weewx.conf, a section at a time. The file is the only thing this view is about,
+   so the section heading is written the way the file writes it: somebody who has to
+   go and edit it over ssh afterwards is looking for '[[Defaults]]', not for a
+   breadcrumb. */
+.conf { max-width: 64rem; }
+.conf .sec { margin-top: 20px; }
+.conf .sechead { display: flex; gap: 10px; align-items: baseline; padding: 7px 0;
+  border-bottom: 1px solid var(--line); user-select: none; }
+.conf .sechead .path { font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.conf .sechead .caret { cursor: pointer; }
+.conf .sechead .acts { margin-left: auto; display: flex; gap: 6px; flex: none; }
+.conf .sechead .acts button.act { height: 26px; font-size: 12px; }
+.conf .secwhy { color: var(--dim); font-size: 12px; margin: 6px 0 0;
+  white-space: pre-wrap; }
+.conf table { table-layout: fixed; }
+.conf th.key { width: 24%; } .conf th.val { width: 52%; } .conf th.does { width: 24%; }
+.conf th, .conf td { padding: 8px 14px 8px 0; }
+/* The boxes fill the column. The 240px cap that suits a name field leaves a report
+   path or a comma-separated list of six services showing about a third of itself. */
+.conf input[type=text] { max-width: none; }
+.conf #conffind { max-width: 30rem; }
+.conf .why { color: var(--dim); font-size: 12px; margin-top: 4px;
+  white-space: pre-wrap; overflow-wrap: anywhere; }
+.conf tr.stale td { background: var(--warn-soft); }
+.conf .held { color: var(--dim); font-size: 12.5px; font-style: italic; }
+.conf .rowacts { display: flex; gap: 6px; }
+.conf .rowacts button.act { height: 26px; font-size: 12px; }
 #flash { position: fixed; right: 16px; bottom: 16px; background: var(--panel);
   border: 1px solid var(--line); border-radius: 4px; padding: 9px 14px; font-size: 13px;
   box-shadow: 0 6px 20px rgba(0,0,0,.13); display: none; max-width: 380px; }
@@ -293,6 +321,7 @@ button.act[disabled]:hover { border-color: var(--line); }
   <nav class="views">
     <button data-view="stations" class="on">Stations</button>
     <button data-view="fields">Field map</button>
+    <button data-view="conf">weewx.conf</button>
     <button data-view="setup">Checklist<span class="count" id="opencount"></span></button>
   </nav>
   <span class="meta" id="meta">loading</span>
@@ -358,6 +387,12 @@ folded.driverrest = true;
    found. Held here rather than in the DOM because looking redraws the page, and a
    redraw would otherwise empty the two fields that were used to look. */
 var asked = { what: '', address: '', token: '', found: null, chosen: {}, device: '' };
+
+/* weewx.conf as the last read of it found it, what has been typed into the filter
+   over it, and which sections have been folded away. The file is a few hundred
+   settings, so folding is how a section is read on its own; it is remembered here
+   because saving one setting redraws the lot. */
+var confView = null, confFind = '', confShut = {};
 
 /* The same word everywhere something is being fetched. A page that says one thing
    in one place and another somewhere else reads like two different waits. */
@@ -1338,6 +1373,7 @@ function draw() {
   markNav();
   if (view === 'setup') return drawSetup(box);
   if (view === 'fields') { box.innerHTML = LOADING; return drawFields(box); }
+  if (view === 'conf') return drawConf(box);
   return drawStations(box);
 }
 
@@ -1346,6 +1382,10 @@ function show(which) {
      away from it means. The hardware goes with it, so coming back starts at the
      first step rather than in the middle of somebody else's choice. */
   if (which !== 'setup') { adding = false; picked = null; }
+  /* Coming to weewx.conf reads it again. It is a file other people edit, over ssh
+     and with weectl, and a cached copy of somebody else's file is the one thing this
+     view must not show. Which sections are folded is not the file, so it stays. */
+  if (which === 'conf') confView = null;
   view = which;
   draw();
 }
@@ -1521,6 +1561,16 @@ function drawHead() {
     box.innerHTML = '<div class="name"><b>Field map</b></div><div class="about">' +
       'Every reading of every station, and which column it fills. The question is ' +
       'not what one station sends, it is who fills outTemp.</div>';
+    return;
+  }
+  if (view === 'conf') {
+    box.innerHTML = '<div class="name"><b>weewx.conf</b></div>' +
+      '<div class="about"><span>The file itself, section by section. Everything ' +
+      'else on this page takes effect on the next upload; this takes effect at the ' +
+      'next restart.</span>' +
+      (confView && confView.path
+        ? '<span class="mono">' + esc(confView.path) + '</span>' : '') +
+      '</div>';
     return;
   }
   if (!chosen) { box.innerHTML = ''; return; }
@@ -1769,6 +1819,278 @@ function drawFields(box) {
 }
 
 
+/* ---------------------------------------------------------------- weewx.conf */
+
+/* The one view that is not about this driver. Everything else on this page takes
+   effect on the next upload; these take effect at the next restart, and half of them
+   belong to services this driver has never heard of. What it buys is that the file
+   is readable from here at all: today the answer to "what is my archive interval"
+   is an ssh session, and the answer to "why is nothing in the report" is often two
+   lines further down the same file. */
+
+function drawConf(box) {
+  /* Drawn from the last read rather than a fresh one, so that folding a section or
+     typing in the filter does not fetch a few hundred settings again. Every write
+     clears it, which is what makes the page show the file rather than a memory of
+     it. */
+  if (confView) { box.innerHTML = confHtml(confView); return; }
+  var mine = drawn;
+  box.innerHTML = LOADING;
+  api('conf').then(function (d) {
+    confView = d;
+    // The header names the file, and it was drawn before there was one to name.
+    drawHead();
+    settle(mine, box, confHtml(d));
+  });
+}
+
+function confHtml(d) {
+  if (!d.ok) return '<p class="bad">' + esc(d.error) + '</p>';
+  return '<div class="conf">' + confNote(d) +
+    '<div class="row">' +
+    '<input type="text" id="conffind" placeholder="Filter by section, setting, ' +
+    'value or comment" value="' + esc(confFind) + '">' +
+    '<button class="act" data-conffold="all">Fold all</button>' +
+    '<button class="act" data-conffold="none">Unfold all</button>' +
+    (d.writable
+      ? '<button class="act" data-confnewsec="">Add a section</button>' : '') +
+    '</div><div id="confsecs">' + confSections(d) + '</div></div>';
+}
+
+function confNote(d) {
+  /* Two different pieces of news, and only one of them is about this page. Which
+     one comes first is which one changes what somebody can do next. */
+  var html = '';
+  if (!d.writable) {
+    html += '<div class="note"><b>This page can read ' + esc(d.path) +
+      ' and not write it.</b> Under a package installation the file belongs to root ' +
+      'while WeeWX runs as another user. Every setting below still has a button that ' +
+      'copies the line with its headings, ready to paste into the file.</div>';
+  } else {
+    html += '<div class="note"><b>A change here takes effect when WeeWX ' +
+      'restarts.</b> The engine read this file at startup and a driver cannot ' +
+      'restart the engine it is part of. What the file said before the most recent ' +
+      'change from this page is kept in <code>' + esc(d.backup) + '</code>.</div>';
+  }
+  if (d.stale) {
+    html += '<div class="note">' + d.stale + ' setting' +
+      (d.stale === 1 ? '' : 's') + ' in this file no longer ' +
+      (d.stale === 1 ? 'matches' : 'match') + ' what WeeWX is running on. The rows ' +
+      'are marked, and each one says what the engine has until it is restarted.</div>';
+  }
+  return html;
+}
+
+function confSections(d) {
+  var drawnAny = 0;
+  var html = d.sections.map(function (s, i) {
+    var rows = [];
+    s.entries.forEach(function (e, j) {
+      if (confMatches(s, e)) rows.push(confRow(i, j, e, d.writable));
+    });
+    /* A filter that matches nothing in a section hides the section. Without that,
+       narrowing to 'interval' leaves sixty empty headings to scroll past. */
+    if (confFind && !rows.length) return '';
+    drawnAny += 1;
+    var key = s.path.join('/');
+    /* Folding is off while a filter is on: what the filter found is the point of
+       typing it, and finding it folded away would be the wrong answer. */
+    var shut = !confFind && !!confShut[key];
+    return '<div class="sec"><div class="sechead">' +
+      '<span class="caret" data-conftoggle="' + esc(key) + '">' +
+      (shut ? '\\u25b8' : '\\u25be') + '</span>' +
+      '<span class="path" data-conftoggle="' + esc(key) + '">' + esc(s.heading) +
+      '</span><span class="dim">' + rows.length + ' of ' + s.entries.length +
+      '</span><span class="acts">' + confSectionActs(s, i, d.writable) +
+      '</span></div>' +
+      (shut ? '' : (s.comment
+        ? '<p class="secwhy">' + esc(s.comment) + '</p>' : '') +
+        (rows.length ? confTable(rows) : '<p class="dim secwhy">No settings of its ' +
+          'own. What is under it follows.</p>')) +
+      '</div>';
+  }).join('');
+  if (!drawnAny) return '<p class="dim">Nothing in the file matches that.</p>';
+  return html;
+}
+
+function confSectionActs(s, i, writable) {
+  if (!writable) return '';
+  return '<button class="act" data-confadd="' + i + '">Add a setting</button>' +
+    (s.path.length
+      ? '<button class="act" data-confdropsec="' + i + '">Remove</button>' : '');
+}
+
+function confTable(rows) {
+  return '<table><thead><tr><th class="key">Setting</th>' +
+    '<th class="val">Value</th><th class="does"></th></tr></thead>' +
+    '<tbody>' + rows.join('') + '</tbody></table>';
+}
+
+function confRow(i, j, e, writable) {
+  /* Addressed by its place in the answer rather than by its name. A key is whatever
+     the file says it is, and a selector built out of one would break on the first
+     setting with a quote in it. */
+  var at = i + ':' + j;
+  var box = e.single
+    ? '<input type="text" data-confval="' + at + '" value="' + esc(e.value) + '"' +
+      (e.hidden ? ' placeholder="set, and not shown here"' : '') + '>'
+    : '<pre>' + esc(e.value) + '</pre>';
+  return '<tr' + (e.differs ? ' class="stale"' : '') + '>' +
+    '<td><span class="mono">' + esc(e.key) + '</span>' +
+    (e.comment ? '<div class="why">' + esc(e.comment) + '</div>' : '') + '</td>' +
+    '<td>' + box + confWhy(e) + '</td>' +
+    '<td><div class="rowacts">' + confRowActs(at, e, writable) +
+    '</div></td></tr>';
+}
+
+function confWhy(e) {
+  var html = '';
+  if (e.inline) html += '<div class="why">' + esc(e.inline) + '</div>';
+  if (e.hidden) {
+    html += '<div class="why">The name says this holds a secret, and this page is ' +
+      'HTTP, so the value is not sent to it. Typing one replaces it.</div>';
+  }
+  if (!e.single) {
+    html += '<div class="why">This value runs over more than one line, so it is ' +
+      'shown here and changed in the file.</div>';
+  }
+  if (e.differs) {
+    html += '<div class="why warn">WeeWX is running on ' +
+      (e.running ? '<code>' + esc(e.running) + '</code>' : 'something else') +
+      ' until it is restarted.</div>';
+  }
+  return html;
+}
+
+function confRowActs(at, e, writable) {
+  if (!e.single) return '';
+  if (!writable) {
+    return '<button class="act" data-confline="' + at + '">Copy the line</button>';
+  }
+  return '<button class="act" data-confsave="' + at + '">Save</button>' +
+    '<button class="act" data-confdrop="' + at + '">Remove</button>';
+}
+
+function confMatches(s, e) {
+  if (!confFind) return true;
+  return (s.heading + ' ' + s.path.join(' ') + ' ' + e.key + ' ' + e.value + ' ' +
+    e.comment + ' ' + e.inline).toLowerCase().indexOf(confFind.toLowerCase()) >= 0;
+}
+
+function confAt(at) {
+  /* The section and the setting a data attribute names, or nulls when the answer
+     has been reloaded under it. */
+  var parts = String(at).split(':');
+  var s = confView && confView.sections ? confView.sections[+parts[0]] : null;
+  if (!s) return { section: null, entry: null };
+  return { section: s, entry: s.entries[+parts[1]] || null };
+}
+
+function confTyped(at) {
+  var box = document.querySelector('[data-confval="' + at + '"]');
+  return box ? box.value : null;
+}
+
+function confSave(at) {
+  var found = confAt(at);
+  if (!found.entry) { flash('Reload the page.', true); return; }
+  var typed = confTyped(at);
+  if (typed === null) return;
+  if (found.entry.hidden && !typed.trim()) {
+    flash('Type the new value. An empty box here would wipe the one in the file.',
+      true);
+    return;
+  }
+  api('conf/set', {
+    section: found.section.path, key: found.entry.key, value: typed
+  }).then(confThen);
+}
+
+function confDrop(at) {
+  var found = confAt(at);
+  if (!found.entry) { flash('Reload the page.', true); return; }
+  if (!window.confirm('Take ' + found.entry.key + ' out of ' +
+      found.section.heading + '?\\nWhatever WeeWX does without it is what it ' +
+      'will do after the next restart.')) {
+    return;
+  }
+  api('conf/remove', {
+    section: found.section.path, key: found.entry.key
+  }).then(confThen);
+}
+
+function confAdd(i) {
+  var s = confView && confView.sections ? confView.sections[i] : null;
+  if (!s) { flash('Reload the page.', true); return; }
+  var key = (window.prompt('The name of a setting to add to ' + s.heading + '.',
+    '') || '').trim();
+  if (!key) return;
+  var value = window.prompt('What ' + key + ' should be. Written as the file writes ' +
+    'it: several values separated by commas are a list, and a value that holds a ' +
+    'comma of its own goes in quotes.', '');
+  if (value === null) return;
+  api('conf/add', { section: s.path, key: key, value: value }).then(confThen);
+}
+
+function confNewSection() {
+  var where = (window.prompt('A section to add. Give the whole path, one heading ' +
+    'per line, outermost first, the way the file nests them.\\n\\n' +
+    'StdReport\\nMyReport', '') || '').trim();
+  if (!where) return;
+  var path = where.split('\\n').map(function (one) { return one.trim(); })
+    .filter(function (one) { return one; });
+  api('conf/section', { section: path }).then(confThen);
+}
+
+function confDropSection(i) {
+  var s = confView && confView.sections ? confView.sections[i] : null;
+  if (!s) { flash('Reload the page.', true); return; }
+  if (!window.confirm('Take ' + s.heading + ' out of the file, with everything ' +
+      'under it?')) {
+    return;
+  }
+  api('conf/remove-section', { section: s.path }).then(function (d) {
+    /* A section that holds something is refused once and asked about again, with
+       the count in the question. The driver counts it, because the page has the
+       section it clicked on and not the ones nested inside it. */
+    if (!d.ok && /holds \\d+ settings/.test(d.message || '')) {
+      if (!window.confirm(d.message + '\\n\\nRemove it anyway?')) return;
+      api('conf/remove-section', { section: s.path, force: true }).then(confThen);
+      return;
+    }
+    confThen(d);
+  });
+}
+
+function confLine(at) {
+  /* For the installation where the file is root's. The headings go with the line,
+     because a setting pasted into the wrong section is a setting that does nothing
+     and reads as though it should. */
+  var found = confAt(at);
+  if (!found.entry) { flash('Reload the page.', true); return; }
+  var typed = confTyped(at);
+  var lines = [];
+  found.section.path.forEach(function (name, depth) {
+    var marks = depth + 1;
+    lines.push(new Array(depth + 1).join('    ') +
+      new Array(marks + 1).join('[') + name + new Array(marks + 1).join(']'));
+  });
+  lines.push(new Array(found.section.path.length + 1).join('    ') +
+    found.entry.key + ' = ' + (typed === null ? found.entry.value : typed));
+  copy(lines.join('\\n') + '\\n', 'the line and its headings');
+}
+
+function confThen(d) {
+  flash(d.ok ? 'Written. It takes effect at the next restart.' :
+    d.message || 'That did not work.', !d.ok);
+  /* Read again rather than patched here. What the file says after a write is the
+     file's answer, and a page that kept its own would drift from it the first time
+     configobj wrote a value differently from the way it was typed. */
+  if (d.ok) confView = null;
+  draw();
+}
+
+
 function drawRaw(box) {
   var mine = drawn;
   api('raw?ident=' + encodeURIComponent(chosen)).then(function (d) {
@@ -1989,6 +2311,30 @@ document.addEventListener('click', function (e) {
     api('ignore', { ident: t.dataset.notmine, yes: true }).then(hostedThen);
     return;
   }
+  if (t.dataset.conftoggle !== undefined) {
+    var section = t.dataset.conftoggle;
+    if (confShut[section]) delete confShut[section]; else confShut[section] = true;
+    draw();
+    return;
+  }
+  if (t.dataset.conffold) {
+    confShut = {};
+    if (t.dataset.conffold === 'all') {
+      (confView && confView.sections ? confView.sections : []).forEach(function (s) {
+        /* The top of the file has no heading to click on, so it cannot be folded
+           back open. It stays. */
+        if (s.path.length) confShut[s.path.join('/')] = true;
+      });
+    }
+    draw();
+    return;
+  }
+  if (t.dataset.confsave) { confSave(t.dataset.confsave); return; }
+  if (t.dataset.confdrop) { confDrop(t.dataset.confdrop); return; }
+  if (t.dataset.confline) { confLine(t.dataset.confline); return; }
+  if (t.dataset.confadd) { confAdd(+t.dataset.confadd); return; }
+  if (t.dataset.confdropsec) { confDropSection(+t.dataset.confdropsec); return; }
+  if (t.dataset.confnewsec !== undefined) { confNewSection(); return; }
   if (t.dataset.moved) {
     /* The picker is the element just before the button, rather than something
        looked up by identity: an identity is whatever the hardware says it is, and
@@ -2282,6 +2628,13 @@ document.addEventListener('input', function (e) {
     drawSidebar();
     return;
   }
+  if (e.target.id === 'conffind') {
+    confFind = e.target.value.trim();
+    // Only the sections, so the cursor stays where it is being typed.
+    var secs = document.getElementById('confsecs');
+    if (secs && confView) secs.innerHTML = confSections(confView);
+    return;
+  }
   if (e.target.id === 'hwfind') {
     hwfind = e.target.value.trim();
     var list = document.getElementById('hwlist');
@@ -2290,6 +2643,17 @@ document.addEventListener('input', function (e) {
     if (list && ways) list.innerHTML = hwGroups();
     if (count && ways) count.textContent = hwCount();
   }
+});
+
+/* Enter in a weewx.conf box writes that setting. Everything else on this page is a
+   button, and this is one too; what Enter buys is the person going down a section
+   changing four values, for whom the mouse is the slow part. */
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter') return;
+  var at = e.target.dataset ? e.target.dataset.confval : null;
+  if (!at) return;
+  e.preventDefault();
+  if (confView && confView.writable) confSave(at); else confLine(at);
 });
 
 document.addEventListener('change', function (e) {

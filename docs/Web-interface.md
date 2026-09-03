@@ -83,9 +83,10 @@ written, whether a column exists, and how many earlier values that column holds.
 
 ## Moving around it
 
-The top bar has three views. **Stations** is where the work is done, one station at a
-time. **Field map** puts every station's readings on one page. **Checklist** is what is
-still in the way, with a count beside it.
+The top bar has four views. **Stations** is where the work is done, one station at a
+time. **Field map** puts every station's readings on one page. **weewx.conf** is the
+configuration file itself. **Checklist** is what is still in the way, with a count
+beside it.
 
 A strip under the top bar repeats that count on every view. A station that is uploading
 happily looks healthy on its own page, and the reason none of it is being recorded can
@@ -231,20 +232,102 @@ Readings tab, for the question a single station cannot answer: not what a given 
 sends, but which station fills `outTemp`. With a station per page that answer is spread
 over two pages, neither of which shows the collision that matters.
 
-## Where the settings are written
+## weewx.conf
 
-Not to `weewx.conf`, for three reasons that concern the file rather than the interface.
-WeeWX is running from it, so a change written there has no effect until a restart, and a
-driver cannot restart the engine it is part of. Under a package installation the file is
-owned by root while the driver runs as the `weewx` user. And it is your file, with your
-comments in it.
+![weewx.conf as a table, with one setting the engine has not read yet](img/08-weewx-conf.png)
+
+The whole configuration file, section by section, with the comment above each setting
+beside it. `[Station]`, `[StdReport]` and every skin under it, `[StdWXCalculate]`, the
+stanza of every service you run. Most of it belongs to WeeWX rather than to this driver,
+and today the only way to read it is an ssh session.
+
+Section headings are written the way the file writes them, `[[Defaults]]` and
+`[[[[Groups]]]]`, so that what you read here is what you look for if you do open the
+file. The filter matches a section, a setting, a value or a comment. Sections fold, and
+a filter unfolds whatever it found.
+
+A change takes effect when WeeWX restarts. The engine read the file at startup, and a
+driver cannot restart the engine it is part of. Every setting the file and the running
+engine now disagree about is marked, and the row says what the engine has until then.
+
+Values are written the way the file writes them: several values separated by commas are
+a list, and a value with a comma of its own is quoted. `location = "Berlin, Germany"` is
+one string and shows its quotes for that reason. A value with a `#` in it is refused
+unless it is quoted, because everything after an unquoted one is a comment.
+
+**Adding.** *Add a setting* on a section heading puts a new one in that section, and
+refuses a name the section already has. *Add a section* takes the whole heading path,
+one heading per line, and the section above the last one has to exist already. Changing
+and adding are separate for one reason: a typed name that is not in the file is nearly
+always a typo, and a typo written to `weewx.conf` is a setting that looks set and does
+nothing.
+
+**Removing** a section that holds settings asks twice, with the count in the question.
+
+### A file this driver cannot write
+
+Under a package installation `weewx.conf` belongs to root while WeeWX runs as the
+`weewx` user, so the page can read the file and not change it. It says so above the
+table, and every row offers the line with its headings, ready to paste into the file:
+
+```ini
+[StdReport]
+    [[Defaults]]
+        [[[Units]]]
+            [[[[Groups]]]]
+                group_altitude = meter
+```
+
+To change it from here instead, give the file to the user WeeWX runs as:
+
+```
+sudo chown weewx /etc/weewx/weewx.conf
+```
+
+The directory it is in stays root's. That is enough, because the file is filled in
+place where the directory cannot be written. What it means is that anybody holding the
+token can change `weewx.conf`, which is the same access `weectl` gives from a terminal
+and a larger thing than placing a field. On a network you do not trust, leave it.
+
+### Settings that are not shown
+
+A setting whose name says it holds a secret — `password`, `token`, `api_key` and the
+like — is listed with an empty box rather than its value. The interface is HTTP, so
+anything it shows travels in the clear over whatever is in between, and a database
+password does not need to. Typing a new value replaces it; an empty box changes nothing.
+
+### What a write does to the file
+
+Comments, quoting and layout survive, because the file is read and one value changed in
+it rather than being rebuilt. What the file said before the most recent change from this
+page is kept beside it as `weewx.conf.before-web-edit`, overwritten each time.
+
+The first write indents the blank lines inside a section, which is how `configobj`
+writes them. Nothing else in the file moves.
+
+Where the directory can be written, the file is replaced rather than filled: the new one
+is written beside it and moved into place, so a power cut leaves the old file rather than
+half of a new one. It keeps its mode and takes the owner WeeWX runs as. Where the
+directory belongs to somebody else, the file is filled in place instead, and a power cut
+in the middle of that leaves it short. The backup is what puts it back.
+
+The file is read again immediately before every write, so an edit made in a terminal
+between two changes here is carried over rather than overwritten.
+
+## Where the driver's own settings are written
+
+Not to `weewx.conf`, for two reasons that concern the timing rather than the file. WeeWX
+is running from it, so a placement written there has no effect until a restart, and a
+field map has to take effect on the next upload. And a field map is this driver's, while
+`weewx.conf` is yours.
 
 Settings the interface changes are written to `ultimate-push-web.conf`, beside the
 console list, in the same format as `weewx.conf`. They are read on the next upload,
 without a restart.
 
 Anything that does require a restart — the port, `protocols`, `path` — is displayed as a
-block to copy rather than written.
+block to copy rather than written. The weewx.conf view above will write those, with the
+restart that they cost.
 
 The file holds three kinds of entry:
 
@@ -451,5 +534,7 @@ displayed; running them is yours.
 memory and is lost on restart. The database holds the readings; this holds what happened
 to them on the way in.
 
-**Change the port, the protocols or the path.** Those define the socket, which is
-created once at startup. The interface displays the block to paste.
+**Put a change to the port, the protocols or the path into effect.** Those define the
+socket, which is created once at startup. They can be written to `weewx.conf` from the
+weewx.conf view, and they apply at the next restart like anything else there. The
+driver's own pages display the block to paste instead.
