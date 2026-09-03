@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.21.0 (2026-09-03)
+
+**weewx.conf is on the page now.** Everything the interface could change until now was
+this driver's own. The rest of the file was what you opened a terminal for, and the rest
+of the file is most of it: `[Station]`, `[StdReport]` and every skin under it,
+`[StdWXCalculate]`, the stanza of every service you run.
+
+A fourth view shows the whole file, section by section, with the comment above each
+setting beside it. Section headings are written the way the file writes them,
+`[[Defaults]]` and `[[[[Groups]]]]`, so what you read here is what you look for if you
+do open the file. The filter reads sections, settings, values and comments. Sections
+fold, and a filter unfolds whatever it found.
+
+A change takes effect at the next restart, because the engine read the file when it
+started and a driver cannot restart the engine it is part of. Every setting the file and
+the running engine now disagree about is marked, and the row says what the engine has
+until then.
+
+Changing a setting and adding one are separate. A typed name that is not in the file is
+nearly always a typo, and a typo written to `weewx.conf` is a setting that looks set and
+does nothing. Removing a section that holds settings asks twice, with the count in the
+question.
+
+**Under a package installation the file belongs to root.** The page reads it and offers
+each line with its headings, ready to paste. Where the directory cannot be written the
+file is filled in place rather than replaced, so `chown weewx` on the file alone is
+enough to change it from here. What that costs is the power cut, and the copy kept beside
+the file is what covers it.
+
+**A setting whose name says it holds a secret is listed without its value.** `password`,
+`token`, `api_key` and the like are not sent to the browser at all, because the interface
+is HTTP. Typing a new one replaces it; an empty box changes nothing.
+
+Values go through `configobj` in both directions rather than through a rule of this
+driver's. `location = "Berlin, Germany"` stays one string and shows its quotes for that
+reason, `35, meter` stays a list, and `%H:%M` stays as the file has it. A value with an
+unquoted `#` in it is refused, because everything after one is a comment.
+
 ## 0.20.0 (2026-08-31)
 
 **Setting a station up is two steps now.** Giving every kind of hardware the models it
